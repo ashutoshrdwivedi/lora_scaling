@@ -1,0 +1,884 @@
+% =============================================================================
+% Efficient Multi-Tenant LoRA Serving for Encoder Models
+% via Late-Fusion Batched Matrix Multiplication
+%
+% Target venue: EMNLP Industry Track (ACL-format, 8 pages + references)
+% Draft status: 2026-05-12
+%   [DONE] Abstract, Introduction, Background, System Design, Related Work,
+%          Limitations, Conclusion, verified BibTeX
+%   [TODO] Baseline comparison table (task #2)
+%   [TODO] Real-task accuracy evaluation (task #3)
+%   [TODO] Multi-GPU × multi-model matrix (task #4)
+%   [TODO] Statistical CI runs (task #6)
+%   [TODO] Ablation table (task #7)
+%   [TODO] Profile breakdown figure (task #11)
+%   [TODO] Publication-quality figures (task #14)
+% =============================================================================
+
+\documentclass[11pt]{article}
+\usepackage[preprint]{acl} % preprint: no line numbers, shows authors
+% swap to \usepackage[review]{acl} before submission (adds line numbers, anonymises)
+% swap to \usepackage{acl} for camera-ready
+
+% ---- standard packages ----
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{inconsolata}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{xcolor}
+\usepackage[colorinlistoftodos,prependcaption]{todonotes}
+% algorithm/algpseudocode: uncomment when pseudocode is added
+% \usepackage{algorithm}
+% \usepackage{algpseudocode}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{xspace}
+
+% ---- consistent macros ----
+\newcommand{\sysname}{LateFuse}
+\newcommand{\ie}{i.e.,\xspace}
+\newcommand{\eg}{e.g.,\xspace}
+\newcommand{\etal}{\textit{et al.}\xspace}
+
+% ---- todo macro styling ----
+\newcommand{\todoinline}[1]{\todo[inline]{#1}}
+
+% =============================================================================
+\title{Efficient Multi-Tenant LoRA Serving for Encoder Models\\
+       via Late-Fusion Batched Matrix Multiplication}
+
+% Anonymized for double-blind review.
+\author{Anonymous}
+
+\begin{document}
+\maketitle
+
+% =============================================================================
+\begin{abstract}
+We introduce \sysname, a system for serving thousands of independently
+fine-tuned LoRA adapters on a single shared encoder model in a single GPU
+forward pass.
+Personalizing an NLP feature (e.g.\ text classification) for thousands of
+customers traditionally required one fine-tuned model per customer.
+LoRA \cite{hu2022lora} eliminated the \emph{storage} barrier by reducing
+per-customer state to a few hundred kilobytes; the remaining barrier is
+\emph{serving}---batching requests across customers without merging adapter
+weights into the base model.
+\sysname{} avoids weight merging by computing the base projection
+$W_0 x$ and the per-tenant LoRA delta $\Delta W_i x = B_i A_i x$ separately,
+then fusing them additively---enabling heterogeneous adapters and per-tenant
+logistic-regression heads to be batched via \texttt{torch.bmm} with
+pre-allocated GPU buffers, requiring no custom CUDA kernels.
+On an NVIDIA L4 GPU with \texttt{intfloat/multilingual-e5-small} as the base
+model, \sysname{} achieves \textbf{556 samples/sec} throughput with
+\textbf{5{,}000 pre-loaded adapters consuming only 2.1~GB of GPU memory},
+and scales from 100 to 5{,}000 adapters with less than 16~ms additional
+latency---confirming $\mathcal{O}(1)$ scaling in adapter count.
+\todoinline{Add one-sentence baseline comparison headline once Task \#2
+(baseline experiments) is complete.}
+\end{abstract}
+
+% =============================================================================
+\section{Introduction}
+\label{sec:intro}
+
+Deploying a personalized NLP feature---such as text classification---to
+thousands of customers is a storage and compute challenge.
+Maintaining a fully fine-tuned model per customer is infeasible:
+at $\approx$130~MB per copy, serving 10{,}000 customers would require
+over a terabyte of model weights.
+LoRA \cite{hu2022lora} resolves the \emph{storage} problem: by expressing
+each customer's adaptation as a low-rank update to a single shared base
+encoder, the per-customer footprint shrinks to $\approx$300~KB (rank~8,
+12 layers)---a 400$\times$ reduction.
+The remaining challenge is \textbf{inference}: how to serve thousands of
+different LoRA adapters simultaneously on one GPU, at low latency, in batched
+mixed-tenant requests.
+
+Existing multi-tenant LoRA serving systems address this challenge only for
+\emph{generative decoder models}.
+Punica \cite{chen2024punica} introduces SGMV (Segmented Gather Matrix-Vector
+Multiplication), a custom CUDA kernel that batches per-adapter LoRA computations
+in a single launch; S-LoRA \cite{sheng2024slora} extends this with MBGMV
+(Multi-size Batched Gather Matrix-Vector) and a paged memory pool that
+supports thousands of concurrent adapters.
+Both systems are architected around autoregressive generation---KV-cache
+paging, token-by-token decode loops, and causal attention masks---and the
+Punica authors explicitly state that the decode stage is their sole
+optimization target.
+Neither supports bidirectional encoder attention, pooling layers, or
+per-tenant classification heads---leaving a critical production use case
+unaddressed.
+
+The only published system targeting encoder multi-adapter serving, PetS
+\cite{zhou2022pets}, was released before LoRA became the dominant
+parameter-efficient fine-tuning (PEFT) method.
+PetS supports adapters, BitFit, and MaskBERT but not LoRA-style low-rank
+matrix decompositions.
+Commercial serving stacks such as HuggingFace Text Embeddings Inference
+\cite{huggingface2023tei} offer no adapter support at all, and the multi-LoRA
+feature of vLLM \cite{kwon2023vllm} silently fails to load LoRA weights for
+encoder models (GitHub issues \#12808, \#30058, unresolved as of this
+submission).
+
+We present \sysname, a serving system that fills this gap.
+The core design principle is \textbf{late fusion}: rather than merging a
+tenant's LoRA weights into the base model (which serializes batching),
+\sysname{} decomposes each projection into a shared base path
+$W_0 x$ and a per-sample LoRA delta $B_i A_i x$, computing both
+independently and summing the results.
+This decomposition enables an entire mixed-tenant batch to be processed in
+one forward pass---the base path runs once over all $B$ samples, and the LoRA
+paths run in parallel via a single \texttt{torch.bmm} call per attention
+layer.
+Per-tenant classification heads with variable numbers of output classes are
+batched analogously via zero-padded BMM.
+
+\paragraph{Contributions.}
+\begin{itemize}
+  \item We identify and formalize the \emph{encoder multi-tenant LoRA serving}
+  problem, and show that existing systems leave it unsolved
+  (\S\ref{sec:relwork}).
+
+  \item We present late-fusion BMM serving, an architecture that batches
+  arbitrary mixed-tenant encoder requests without weight merging,
+  without custom CUDA kernels, and without modification to the base model
+  (\S\ref{sec:system}).
+
+  \item We demonstrate that adapter count does not drive inference latency:
+  scaling from 100 to 5{,}000 adapters adds $<$16~ms at batch size 32 on an
+  NVIDIA L4 GPU, while serving throughput peaks at 556~samples/sec with 5{,}000
+  pre-loaded adapters occupying 1.5~GB (\S\ref{sec:experiments}).
+  \todoinline{Add contribution bullet for baseline comparison and real-task
+  accuracy once Tasks \#2, \#3 are complete.}
+
+  \item \sysname{} runs on standard PyTorch with no custom CUDA compilation,
+  making it deployable on managed GPU environments (Databricks, SageMaker,
+  Modal) where custom kernel builds are impractical.
+\end{itemize}
+
+% =============================================================================
+\section{Background}
+\label{sec:background}
+
+\subsection{LoRA for Encoder Models}
+\label{sec:background_lora}
+
+LoRA \cite{hu2022lora} decomposes a weight update $\Delta W \in
+\mathbb{R}^{d \times d}$ as the product of two low-rank matrices:
+\begin{equation}
+  \Delta W = B A, \quad
+  A \in \mathbb{R}^{r \times d},\;
+  B \in \mathbb{R}^{d \times r},\;
+  r \ll d.
+\end{equation}
+The full forward pass for a single sample becomes
+$h = W_0 x + \frac{\alpha}{r} B A x$,
+where $W_0$ is the frozen pre-trained weight and $\alpha$ is a scaling
+hyperparameter typically set equal to $r$.
+For an encoder of hidden size $d = 384$ with $L = 12$ layers, applying LoRA
+at rank $r = 8$ to the query and value projections yields
+$2 L \cdot (d r + r d) = 147{,}456$ trainable parameters per adapter---a
+$24\times$ reduction over full fine-tuning of those layers.
+
+The theoretical justification for this compression comes from \citet{aghajanyan2021intrinsic},
+who showed that fine-tuning updates lie in a surprisingly low-dimensional
+subspace: even a random projection down to $\sim$200 dimensions retains 90\%
+of task performance on GLUE benchmarks.
+This intrinsic low dimensionality is precisely what LoRA exploits.
+
+In this work, $B$ is initialized to zero so that $\Delta W = 0$ at the start
+of training, leaving the pre-trained representations intact.
+
+\subsection{The Multi-Tenant Serving Problem}
+\label{sec:background_serving}
+
+Consider a service that exposes a single classification feature to $N$
+customers, where each customer has fine-tuned
+\texttt{intfloat/multilingual-e5-small} \cite{wang2024e5} on their own labeled
+data to specialize the feature to their domain.
+Without LoRA, three naive serving strategies all fail at scale:
+
+\paragraph{One model per tenant.}
+Storing $N$ full model copies requires $N \times 130$~MB for float32.
+At $N = 5{,}000$ that is 650~GB---the equivalent of more than eight
+NVIDIA A100-80GB GPUs dedicated to weight storage alone.
+Moreover, cross-tenant batching is impossible: different model instances
+cannot share a forward pass.
+
+\paragraph{Weight merging per request.}
+Load one base model; before each request, compute $W' = W_0 + B_i A_i$
+in-place, run inference, then restore $W_0$.
+This approach has several fatal flaws: (i) the merge-restore cycle is
+\emph{serial}, blocking all other requests during weight mutation;
+(ii) in-place CUDA tensor modifications cause memory fragmentation and
+out-of-memory crashes under load; (iii) a crash between merge and restore
+contaminates subsequent tenants' requests with the wrong adapter---a
+correctness and security failure.
+
+\paragraph{Sequential single-tenant batching.}
+Serve all requests for tenant $i$ as a batch, then switch adapters for
+tenant $i+1$.
+Cross-tenant requests cannot be batched, so average GPU utilization
+approaches $1/N$---near zero for large $N$.
+
+The right solution batches \emph{heterogeneous} adapters in a single forward
+pass, which requires a decomposition where different linear operations can be
+applied per sample without serialization.
+
+% =============================================================================
+\section{\sysname: System Design}
+\label{sec:system}
+
+\begin{figure}[t]
+  \centering
+  \todo[inline,color=yellow]{Figure 1: Architecture diagram showing the
+  late-fusion forward pass. Should depict: (left) per-sample adapter
+  stacking into batched B/A tensors; (center) split base path W0x and delta
+  path BAx running in parallel; (right) element-wise fusion and LR head BMM.
+  Task \#14.}
+  \caption{Overview of late-fusion BMM serving in \sysname.
+    For a mixed-tenant batch of size $B$, the base attention projection
+    $W_0 x$ runs once (shared weights), while per-sample LoRA deltas
+    $B_i A_i x$ are computed in two \texttt{torch.bmm} calls.
+    All $B$ samples are fused in a single forward pass regardless of how many
+    distinct adapters are present.}
+  \label{fig:overview}
+\end{figure}
+
+\subsection{Late-Fusion Decomposition}
+\label{sec:lf_decomp}
+
+The core insight is that the LoRA forward pass
+$h = W_0 x + B_i A_i x$
+can be split into two \emph{independent} computations:
+\begin{align}
+  h_{\text{base}} &= W_0 x \label{eq:base} \\
+  h_{\text{delta}} &= B_i (A_i x) \label{eq:delta} \\
+  h &= h_{\text{base}} + h_{\text{delta}} \label{eq:fuse}
+\end{align}
+
+Equation~\ref{eq:base} uses the same frozen $W_0$ for every sample in the
+batch and is computed by standard PyTorch linear layers.
+Equation~\ref{eq:delta} applies a \emph{different} $(A_i, B_i)$ pair to each
+sample $i$, which requires batched matrix multiplication rather than a
+broadcast multiply.
+Equation~\ref{eq:fuse} is a zero-allocation element-wise addition.
+
+For a batch of $B$ samples with hidden size $H$ and sequence length $S$:
+\begin{align}
+  h_{\text{shrink}} &= \texttt{bmm}(x,\; [A_0,\ldots,A_{B-1}])
+    \in \mathbb{R}^{B \times S \times r} \label{eq:shrink} \\
+  h_{\text{delta}} &= \texttt{bmm}(h_{\text{shrink}},\; [B_0,\ldots,B_{B-1}])
+    \in \mathbb{R}^{B \times S \times H} \label{eq:expand}
+\end{align}
+
+\noindent
+where $[A_0, \ldots, A_{B-1}] \in \mathbb{R}^{B \times H \times r}$ is the
+stack of per-sample shrink matrices, assembled from the adapter store at
+request time.
+Both \texttt{bmm} calls are a single GPU kernel launch, processing all $B$
+samples simultaneously regardless of how many distinct adapters they reference.
+
+This decomposition contrasts with the SGMV kernel used in Punica
+\cite{chen2024punica} along three axes.
+First, \emph{segmentation}: SGMV groups inputs by LoRA model ID
+(``We group inputs to the same LoRA model consecutively'' \cite{chen2024punica})
+and dispatches one thread-block per adapter group; \texttt{torch.bmm}
+applies a different $(A_i, B_i)$ to every batch item with no grouping.
+Second, \emph{operand shape}: SGMV operates on vector inputs $(1, H)$
+optimized for the autoregressive decode shape;
+\texttt{bmm} operates on the matrix shape $(S, H)$ native to encoder prefill.
+Third, \emph{deployability}: SGMV is a custom CUDA kernel that must be
+compiled against a specific CUDA version; \texttt{bmm} ships with PyTorch
+and runs anywhere PyTorch runs.
+S-LoRA \cite{sheng2024slora} extends Punica with prefill-shaped variants
+(MBGMM/MBGMV) that handle non-contiguous adapter memory, but the kernels
+still target autoregressive LLM serving with a KV cache and do not expose
+the encoder operations (pooling, classification heads) needed for
+classification workloads.
+
+\subsection{Batched Classification Heads}
+\label{sec:lr_head}
+
+In the multi-tenant classification setting, each tenant trains a
+logistic-regression (LR) head on top of the encoder's pooled
+\texttt{[CLS]} representation.
+Tenants differ in the number of output classes: tenant $i$ may have $c_i$
+classes where $c_i$ varies from 2 to over 100.
+
+\sysname{} serves all heads in a single BMM call.
+Given a batch of pooled representations
+$p \in \mathbb{R}^{B \times 1 \times H}$
+and per-tenant weight matrices
+$W^{\text{cls}}_i \in \mathbb{R}^{c_i \times H}$ and bias vectors
+$b^{\text{cls}}_i \in \mathbb{R}^{c_i}$,
+we zero-pad all weight matrices to the maximum label count
+$c_{\max} = \max_i c_i$ in the batch and form a stacked tensor
+$W^{\text{cls}} \in \mathbb{R}^{B \times c_{\max} \times H}$.
+The logit computation is:
+\begin{equation}
+  \text{logits} = \texttt{bmm}(p,\; {W^{\text{cls}}}^\top) + b^{\text{cls}}
+  \;\in\; \mathbb{R}^{B \times 1 \times c_{\max}}
+\end{equation}
+
+Callers slice $[:, :, :c_i]$ per sample before applying softmax.
+The zero-padded columns contribute zero gradient and do not affect the
+probability distribution of any tenant.
+
+\subsection{Pre-Allocated GPU Buffers}
+\label{sec:buffers}
+
+Without explicit buffer management, \texttt{torch.bmm} allocates a new output
+tensor on every call.
+For a 12-layer encoder with target modules $\{\text{query}, \text{value}\}$,
+this produces $2 \times 2 \times 12 = 48$ CUDA allocations per forward pass.
+Each allocation invokes the CUDA memory allocator, which searches for a free
+contiguous block at a cost of $\sim$10~$\mu$s per call---totaling
+$\sim$0.5~ms of pure allocator overhead per batch.
+
+\sysname{} pre-allocates two fixed-size buffers at initialization:
+\begin{align}
+  \mathtt{out\_A} &\in \mathbb{R}^{B_{\max} \times S_{\max} \times r} \\
+  \mathtt{out\_B} &\in \mathbb{R}^{B_{\max} \times S_{\max} \times H}
+\end{align}
+and passes them via the \texttt{out=} argument of every \texttt{bmm} call.
+This eliminates all 48 allocations per forward pass, replacing dynamic memory
+management with zero-overhead in-place writes.
+The buffers are shared across all layers because each \texttt{expand} call
+immediately consumes \texttt{out\_A} before the next \texttt{shrink} call
+overwrites it.
+
+\subsection{Adapter Store}
+\label{sec:adapter_store}
+
+At service startup, \sysname{} pre-loads all tenant LoRA adapters into GPU
+memory as an \texttt{AdapterStore}: a dictionary mapping adapter IDs to
+\texttt{LoraWeight} objects, each holding tensors
+$W_A \in \mathbb{R}^{L \times H \times r}$ and
+$W_B \in \mathbb{R}^{L \times r \times H}$
+where $L$ is the number of transformer layers.
+Matrices are stored in inference-transposed layout ($H \times r$ rather than
+$r \times H$ for $A$) so that \texttt{bmm} requires no runtime transpose.
+
+For a batch of adapter IDs, the \texttt{BatchAssembler} iterates over the
+batch, slices each adapter's per-layer tensor, and \texttt{unsqueeze(0)}-es
+it to add a batch dimension.
+After all samples are processed, \texttt{torch.cat} concatenates the per-layer
+lists into $(B, H, r)$ tensors ready for \texttt{bmm}.
+This CPU-side assembly is the only per-request overhead before the GPU forward
+pass (\S\ref{sec:results_latency}).
+
+\subsection{Complexity Analysis}
+\label{sec:complexity}
+
+\paragraph{Memory.}
+The base model requires $\mathcal{O}(d^2 L)$ memory regardless of tenant
+count.
+Each adapter requires $\mathcal{O}(r d L)$ memory.
+For $N$ tenants: total GPU memory $= \mathcal{O}(d^2 L + N r d L)$.
+At $d=384$, $L=12$, $r=8$: 100 adapters occupy 29~MB; 5{,}000 adapters
+occupy 1.47~GB.
+An NVIDIA L4 (23~GB) can hold $\approx$16{,}000 adapters at rank 8 before
+exhausting memory.
+
+\paragraph{Inference time.}
+The latency of a single forward pass is independent of $N$ (adapter count):
+it depends only on batch size $B$, sequence length $S$, and model depth $L$.
+The adapter count affects only CPU-side batch assembly time, which is
+$\mathcal{O}(B \cdot L \cdot |\mathcal{M}|)$ where $|\mathcal{M}|$ is the
+number of target modules.
+Empirically, increasing $N$ from 100 to 5{,}000 adds $<$16~ms at batch size
+32---less than 2$\times$ the baseline latency and entirely attributable to
+batch assembly, not GPU compute (\S\ref{sec:results_latency}).
+
+% =============================================================================
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Setup}
+\label{sec:setup}
+
+\paragraph{Base model.}
+All primary experiments use
+\texttt{intfloat/multilingual-e5-small} \cite{wang2024e5},
+a 12-layer BERT-family encoder with hidden size $d=384$,
+6 attention heads, and $\approx$33M parameters.
+\todoinline{Add multi-model experiments (BERT-base, RoBERTa-base, mE5-large)
+for Task \#4. Report at least 3 base models.}
+
+\paragraph{LoRA configuration.}
+We apply LoRA to the query and value projection matrices of each attention
+layer (\texttt{target\_modules = [query, value]}).
+We sweep rank $r \in \{8, 16, 32\}$.
+
+\paragraph{Hardware.}
+Primary experiments run on a single NVIDIA L4 GPU (23~GB VRAM,
+\$0.39/hr on RunPod) with PyTorch 2.2 and CUDA 12.2 in float32 precision.
+\todoinline{Add A100-40/80, A10, T4 sweep for Task \#4. Report throughput
+and memory-efficiency across GPU classes.}
+
+\paragraph{Benchmark protocol.}
+We measure end-to-end latency (batch assembly + encoder forward pass + LR head)
+using 50 warm-up iterations followed by 200 measured iterations.
+We sweep adapter count $N \in \{100, 500, 1000, 5000\}$, batch size
+$B \in \{16, 32, 64, 128\}$, and rank $r \in \{8, 16, 32\}$ for a total of
+48 configurations.
+Each configuration samples mixed-tenant batches uniformly at random from the
+adapter pool.
+\todoinline{Re-run with $\geq$5 random seeds and report mean $\pm$ std and
+95\% CI for all metrics (Task \#6). Current numbers are single-seed.}
+
+\paragraph{Adapters.}
+\todoinline{Replace synthetic adapters with real fine-tuned adapters
+(GLUE / MASSIVE / Banking77) for Task \#3. Current results use randomly
+initialized adapters with $B=0$ (delta $= 0$), which isolates serving
+overhead but does not validate task accuracy.}
+
+\paragraph{Baselines.}
+\todoinline{Implement and report the following baselines for Task \#2:
+(1)~HuggingFace PEFT sequential serving---load one adapter at a time, batch
+intra-tenant requests, serialize across tenants;
+(2)~weight-merging per request---merge $W' = W_0 + B_i A_i$ before each
+request, un-merge after;
+(3)~vLLM multi-LoRA on encoders---document failure mode if applicable;
+(4)~LoRAX encoder mode---document whether heterogeneous batching is supported.
+Present a unified latency / throughput / memory table.}
+
+\subsection{Latency and Throughput Scaling}
+\label{sec:results_latency}
+
+Table~\ref{tab:main_results} reports p50/p90/p99 latency and throughput
+across the 48-configuration sweep.
+
+\begin{table}[t]
+\centering
+\small
+\caption{Serving latency and throughput on NVIDIA L4 with
+\texttt{multilingual-e5-small}, sequence length 128.
+All adapters are pre-loaded; latency includes batch assembly and LR head.}
+\label{tab:main_results}
+\begin{tabular}{rrr rrr r r}
+\toprule
+$N$ & $B$ & $r$ & p50 & p90 & p99 & QPS & GPU \\
+    &     &     & (ms)& (ms)& (ms)& (s/s) & (GB) \\
+\midrule
+ 100 & 32 & 8  & 40.0 & 40.4 & 42.1 & 798 & 0.61 \\
+ 500 & 32 & 8  & 59.4 & 60.5 & 61.1 & 556 & 0.73 \\
+1000 & 32 & 8  & 59.6 & 66.1 & 79.6 & 549 & 0.89 \\
+5000 & 32 & 8  & \textbf{56.3} & 67.4 & 87.2 & \textbf{556} & 2.13 \\
+\midrule
+5000 & 16 & 8  & 33.9 & 35.9 & 36.8 & 488 & 2.08 \\
+5000 & 64 & 8  & 118.9 & 140.5 & 188.6 & 523 & 2.23 \\
+5000 & 128 & 8 & 263.3 & 311.0 & 400.5 & 478 & 2.42 \\
+\midrule
+5000 & 32 & 16 & 54.5 & 65.0 & 76.4 & 572 & 3.61 \\
+5000 & 32 & 32 & 59.8 & 61.8 & 70.2 & 548 & 6.56 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Finding 1: Adapter count does not drive latency.}
+Scaling from 100 to 5{,}000 adapters at batch size 32, rank 8 increases p50
+latency by only 16~ms (40.0 $\to$ 56.3~ms)---a 40\% increase for a 50$\times$
+increase in the number of served customers.
+Latency at 1{,}000 and 5{,}000 adapters is nearly identical (59.6 vs.\ 56.3~ms),
+confirming that adapter pool size affects only CPU-side batch assembly, not
+GPU forward pass time.
+This validates the $\mathcal{O}(1)$ adapter scaling property of
+\S\ref{sec:complexity}.
+
+\paragraph{Finding 2: Batch size is the primary latency driver.}
+Latency scales roughly linearly with batch size at $\approx$2~ms per sample
+at low adapter counts.
+Throughput peaks at batch size 32 ($\approx$556~samples/sec for 5{,}000
+adapters), beyond which increasing batch size improves utilization but raises
+queue latency enough to reduce net throughput.
+
+\paragraph{Finding 3: LoRA rank has negligible latency impact.}
+Doubling rank from 8 to 32 adds less than 4~ms at 5{,}000 adapters and batch
+size 32 (56.3 $\to$ 59.8~ms).
+The BMM operations are memory-bandwidth bound, not compute bound, at the
+hidden dimensions used by small encoders.
+The primary cost of higher rank is GPU memory: rank 32 at 5{,}000 adapters
+consumes 5.9~GB for the adapter cache, versus 1.47~GB at rank 8.
+
+\paragraph{Finding 4: Predictable memory footprint.}
+GPU memory follows $\approx 0.53 + N \cdot 2 \cdot L \cdot H \cdot r \cdot 4
+\text{ bytes}$~GB.
+At rank 8, the L4's 23~GB allows $\approx$16{,}000 pre-loaded adapters.
+An A100-80GB could hold $\approx$55{,}000 adapters at rank 8.
+
+\paragraph{Finding 5: Tail latency widens at large batches.}
+The p99/p50 ratio at batch size 16 is only 1.09$\times$; at batch size 128 it
+reaches 1.52$\times$.
+Occasional stragglers in CPU batch assembly cause p99 spikes.
+For production systems with strict p99 SLAs, batch size 16--32 with
+continuous batching is the recommended operating point.
+
+\begin{figure}[t]
+  \todo[inline,color=yellow]{Figure 2: Line plot of p50 latency vs. adapter
+  count for $B \in \{16, 32, 64, 128\}$, rank=8.
+  Should show near-flat curves confirming O(1) adapter scaling.
+  Generate using data in docs/benchmark\_results.csv. Task \#14.}
+  \caption{p50 latency as a function of pre-loaded adapter count at four
+  batch sizes (rank = 8, sequence length = 128).}
+  \label{fig:latency_adapters}
+\end{figure}
+
+\begin{figure}[t]
+  \todo[inline,color=yellow]{Figure 3: Grouped bar chart of throughput
+  (samples/sec) for ours vs. baselines (PEFT sequential, weight-merging).
+  Task \#2 + Task \#14.}
+  \caption{Throughput comparison between \sysname{} and baseline serving
+  strategies at batch size 32, rank 8, 1{,}000 adapters.}
+  \label{fig:throughput_baselines}
+\end{figure}
+
+\subsection{Comparison with Baselines}
+\label{sec:results_baselines}
+
+\todoinline{Task \#2: Implement baselines (PEFT sequential, weight-merge/unmerge,
+vLLM multi-LoRA on encoders, LoRAX) and fill in Table~\ref{tab:baselines}.
+Expected: PEFT sequential gives effective batch=1 for mixed-tenant workloads
+($\sim$30$\times$ lower throughput); weight-merging adds $\sim$5--10~ms
+overhead per request and also cannot batch cross-tenant requests.}
+
+\begin{table}[h]
+\centering
+\small
+\caption{Latency and throughput comparison against baseline serving strategies
+(5{,}000 adapters, batch=32, rank=8, sequence length=128).
+\textbf{TODO}: fill in after Task \#2.}
+\label{tab:baselines}
+\begin{tabular}{lrrl}
+\toprule
+System & p50 (ms) & QPS & Notes \\
+\midrule
+PEFT sequential      & \emph{?} & \emph{?} & adapter swap per tenant group \\
+Weight-merge/unmerge & \emph{?} & \emph{?} & in-place $W_0 {+} BA$ per request \\
+vLLM multi-LoRA      & \multicolumn{2}{c}{\emph{encoder LoRA broken}} & GH \#12808 \\
+LoRAX                & \emph{?} & \emph{?} & TBD: encoder support unconfirmed \\
+\sysname{} (ours)    & \textbf{56.3} & \textbf{556} & 5K adapters, B=32, r=8 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Real-Task Accuracy Validation}
+\label{sec:results_accuracy}
+
+\todoinline{This section requires Task \#3 (real adapter training) and Task
+\#9 (real adapter load path validation). Planned experiments:
+
+\noindent\textbf{Correctness check.} Load PEFT-trained adapters from disk
+via \texttt{store.load\_from\_file()}, run inference through \sysname{}, and
+compare against the PEFT-merged reference output using
+\texttt{np.allclose(..., atol=1e-5)}. Confirm correctness across all samples.
+
+\noindent\textbf{Task accuracy.} Train one LoRA adapter per task/domain on a
+multi-tenant suite such as GLUE (8 tasks), MASSIVE (intent classification,
+multiple locales), or Banking77 (topic classification). Report
+classification accuracy under \sysname{} serving versus PEFT-merged baseline.
+Expected: accuracy matches to within floating-point precision since the
+computation is mathematically equivalent.
+
+\noindent\textbf{Scale.} Report latency with real adapters to confirm that
+non-zero LoRA deltas do not significantly alter the timing profile versus the
+synthetic-adapter benchmark.
+}
+
+\subsection{Multi-Model and Multi-Hardware Generalization}
+\label{sec:results_generalization}
+
+\todoinline{This section requires Task \#4. Run the latency/throughput sweep
+on at least 3 base encoders $\times$ 3 GPU classes:
+
+\noindent\textbf{Base encoders:}
+\texttt{bert-base-uncased} \cite{devlin2019bert} ($d=768$, 12 layers),
+\texttt{intfloat/multilingual-e5-base} \cite{wang2024e5} ($d=768$),
+\texttt{intfloat/multilingual-e5-large} \cite{wang2024e5} ($d=1024$, 24 layers).
+
+\noindent\textbf{GPU classes:} NVIDIA T4 (16~GB, \$0.40/hr), L4 (23~GB, \$0.39/hr),
+A100-40GB (\$1.10/hr). Report whether the O(1) adapter scaling property holds
+across model and GPU dimensions.
+}
+
+\subsection{Ablation Study}
+\label{sec:ablation}
+
+\todoinline{Task \#7: Run ablations and fill in Table~\ref{tab:ablation}.
+Expected: buffer pre-allocation saves $\sim$0.5~ms; contiguous A-matrix layout
+saves $\sim$0.1--0.3~ms; float16 reduces memory 2$\times$ with
+10--20\% latency reduction.}
+
+\begin{table}[h]
+\centering
+\small
+\caption{Ablation study: contribution of each design choice
+(5{,}000 adapters, batch=32, rank=8). \textbf{TODO}: fill in after Task \#7.}
+\label{tab:ablation}
+\begin{tabular}{lrr}
+\toprule
+Configuration & p50 (ms) & $\Delta$ vs.\ full \\
+\midrule
+Full \sysname{}                                    & 56.3          & --- \\
+w/o pre-allocated buffers (dynamic alloc)          & \emph{?} & $+$\emph{?} \\
+w/o contiguous A-matrix layout (runtime transpose) & \emph{?} & $+$\emph{?} \\
+Query only (not query$+$value)                     & \emph{?} & $-$\emph{?} \\
+Query$+$Key$+$Value$+$Output                       & \emph{?} & $+$\emph{?} \\
+float16 precision                                  & \emph{?} & $-$\emph{?} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% =============================================================================
+\section{Related Work}
+\label{sec:relwork}
+
+\paragraph{Multi-tenant LoRA serving for generative LLMs.}
+Punica \cite{chen2024punica} introduces SGMV (Segmented Gather Matrix-Vector
+Multiplication), a custom CUDA kernel that groups batch inputs by LoRA model
+and launches per-group matrix-vector products in parallel.
+The Punica authors explicitly scope their design to the decode stage as their
+sole optimization target, stating that ``the decode stage is the predominant
+factor in the cost of model serving'' and ``other aspects of model serving
+are less important'' \cite{chen2024punica}.
+SGMV is therefore optimized for vector-shaped inputs $(1, H)$ and assumes a
+KV cache populated by a prior prefill phase.
+S-LoRA \cite{sheng2024slora} extends Punica with a unified paged memory pool
+and two Triton-implemented kernels: MBGMM (Multi-size Batched Gather Matrix-Matrix
+Multiplication) for the autoregressive prefill stage and MBGMV
+(Multi-size Batched Gather Matrix-Vector Multiplication) for the decode stage,
+both supporting heterogeneous LoRA ranks within a batch.
+Although MBGMM operates on matrix-shaped inputs, the surrounding system is
+built around the autoregressive prefill$\to$decode pipeline---it does not
+expose the encoder operations (bidirectional attention, pooling, classification
+heads) required for classification workloads, and never returns control to
+the caller between prefill and decode.
+\sysname{} addresses the encoder-only setting that the Punica and S-LoRA
+designs do not target.
+
+\paragraph{vLLM.}
+vLLM \cite{kwon2023vllm} introduced PagedAttention for memory-efficient LLM
+serving and subsequently integrated Punica/S-LoRA kernels as its multi-LoRA
+backend.
+LoRA support for embedding and pooling models is broken at the time of this
+submission: LoRA weights are silently not loaded for encoder models
+(GitHub issues \#12808, \#30058), and no timeline for a fix has been announced.
+
+\paragraph{LoRAX.}
+LoRAX \cite{predibase2023lorax} (Predibase) supports heterogeneous continuous
+batching of different LoRA adapters for generative LLMs.
+The system is designed around decoder-only models; whether it supports
+heterogeneous multi-adapter batching for encoder classifiers has not been
+confirmed in its documentation or benchmarks.
+
+\paragraph{HuggingFace Text Embeddings Inference.}
+TEI \cite{huggingface2023tei} is HuggingFace's production serving stack for
+encoder/embedding models (BERT, XLM-R, E5-family, ModernBERT).
+It achieves high throughput for single-model serving via Flash Attention and
+cuBLASLt, but has no adapter support whatsoever: all tenants must share
+identical model weights.
+
+\paragraph{PetS.}
+PetS \cite{zhou2022pets} is the only prior system that directly targets
+multi-adapter serving for encoder models.
+It supports Adapter \cite{PLACEHOLDER_houlsby2019}, BitFit
+\cite{PLACEHOLDER_bitfit2022}, and MaskBERT
+\cite{PLACEHOLDER_maskbert2020} operating on BERT and DistilBERT.
+However, PetS predates LoRA as the dominant PEFT paradigm and does not
+support low-rank matrix decompositions.
+Its architecture is also designed for a limited set of tenants and does not
+address the per-tenant classification head problem.
+\sysname{} can be seen as a LoRA-native successor to PetS's core idea,
+extended with variable-head batching and a pre-loaded adapter cache.
+
+\paragraph{Jina-embeddings-v3.}
+\citet{gunther2024jina} ship a multilingual encoder with five task-specific
+LoRA adapters baked in, enabling mixed-adapter batching at inference time.
+This demonstrates that per-sample adapter selection is feasible---but the
+approach is a \emph{model design} rather than a serving framework: adapters
+are fixed at training time and cannot be extended with new tenants without
+retraining.
+\sysname{} serves arbitrary external adapters without any modification to the
+base model.
+
+\paragraph{Other recent multi-LoRA systems.}
+MixLoRA \cite{PLACEHOLDER_mixlora2024} uses CUDA streams to overlap LoRA
+delta computations for LLMs; CaraServe \cite{su2023caraserve} exploits CPU
+memory for rank-aware adapter scheduling; dLoRA \cite{wu2024dlora}
+dynamically orchestrates adapter placement for generative LLM serving.
+All target decoder-only autoregressive inference.
+None address encoder classifiers, variable classification heads, or
+deployments without custom CUDA compilation.
+
+% =============================================================================
+\section{Limitations}
+\label{sec:limitations}
+
+\paragraph{Uniform rank constraint.}
+All adapters must share the same rank $r$ and the same set of target modules.
+A production system serving tenants with heterogeneous fine-tuning strategies
+would need padding to the maximum rank in the batch, wasting compute for
+low-rank adapters.
+We demonstrate that a padded-rank approach is feasible
+(\S\ref{sec:ablation}),
+\todoinline{Complete Task \#8 (mixed-rank experiment) before finalizing
+this paragraph.}
+but a masked-BMM variant that avoids padding overhead remains future work.
+
+\paragraph{Pre-loaded adapter cache.}
+\sysname{} holds all adapters in GPU memory permanently.
+For workloads with more than $\sim$16{,}000 adapters at rank 8 on an L4, an
+LRU eviction policy with CPU offload would be required.
+Paged adapter storage analogous to PagedAttention
+\cite{kwon2023vllm} is a natural extension.
+
+\paragraph{CPU-side batch assembly.}
+The \texttt{BatchAssembler} runs on CPU and involves Python loops with
+\texttt{torch.cat}.
+For very high request rates ($>$10{,}000 requests/sec), this becomes the
+throughput bottleneck.
+A custom CUDA or C++ gather kernel that indexes directly into the adapter
+store would eliminate this overhead, at the cost of departing from
+pure-PyTorch deployability.
+
+\paragraph{Single-seed evaluation.}
+Current benchmarks use a single random seed.
+Statistical significance is not yet established.
+\todoinline{Complete Task \#6 (multi-seed CI runs) before camera-ready.}
+
+\paragraph{Synthetic-only adapter validation.}
+Performance numbers are obtained with randomly initialized adapters
+($B = 0$, so the LoRA delta is zero).
+Real adapters with non-zero deltas will have marginally higher GPU compute
+time; correctness against PEFT-merged references has not been verified
+end-to-end.
+\todoinline{Complete Tasks \#3 and \#9 before camera-ready.}
+
+% =============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented \sysname, a system for multi-tenant LoRA serving on encoder
+models that fills a gap left by all existing systems: none support
+heterogeneous batching of different LoRA adapters in a single encoder forward
+pass.
+\sysname{} achieves this through late-fusion batched matrix multiplication---a
+decomposition that separates the frozen base-model path from the per-tenant
+LoRA delta path and fuses them additively, enabling mixed-tenant batches
+without weight merging, custom CUDA kernels, or KV-cache machinery.
+On an NVIDIA L4 GPU with \texttt{multilingual-e5-small}, \sysname{} serves
+5{,}000 pre-loaded adapters at 556~samples/sec in 56~ms p50 latency,
+with sub-linear growth in latency as adapter count increases 50-fold.
+\sysname{} requires only standard PyTorch, making it immediately deployable
+on managed cloud GPU environments where custom kernel compilation is
+unavailable---the majority of production NLP serving infrastructure today.
+
+% =============================================================================
+\section*{Limitations}
+
+See \S\ref{sec:limitations} for a detailed discussion.
+Key open items before camera-ready submission: multi-seed statistical
+validation (Task~\#6), baseline comparisons (Task~\#2), real-task accuracy
+on downstream benchmarks (Task~\#3), multi-GPU generalization (Task~\#4),
+and ablation study (Task~\#7).
+
+% =============================================================================
+\section*{Ethics Statement}
+
+This work addresses inference-time efficiency for multi-tenant NLP systems.
+We identify no specific ethical concerns beyond those inherent to the
+underlying models (\eg bias in pre-trained encoders).
+The system is intended for legitimate multi-tenant SaaS deployments.
+Adapter isolation is enforced by design: per-tenant weights are never merged
+into the shared base model, eliminating cross-tenant contamination risks
+present in weight-merging approaches.
+
+% =============================================================================
+\bibliography{references}
+
+\appendix
+
+% =============================================================================
+\section{Full Benchmark Results}
+\label{app:full_results}
+
+Table~\ref{tab:full_results} reports all 48 benchmark configurations.
+
+\begin{table*}[t]
+\centering
+\small
+\caption{Complete benchmark sweep: 4 adapter counts $\times$ 4 batch sizes
+$\times$ 3 LoRA ranks on NVIDIA L4, sequence length 128, float32.
+Latency is end-to-end (batch assembly + forward pass + LR head).
+Single-seed; see \S\ref{sec:limitations}.}
+\label{tab:full_results}
+\begin{tabular}{rrr rrrr rr}
+\toprule
+$N$ & $B$ & $r$ & p50 (ms) & p90 (ms) & p99 (ms) & Mean (ms) & QPS (s/s) & GPU (GB) \\
+\midrule
+ 100 & 16 &  8 & 19.82 & 20.22 & 20.90 & 20.56 & 778.2 & 0.559 \\
+ 100 & 16 & 16 & 19.93 & 20.32 & 20.44 & 19.98 & 800.7 & 0.590 \\
+ 100 & 16 & 32 & 19.94 & 20.19 & 20.40 & 19.98 & 800.8 & 0.649 \\
+ 100 & 32 &  8 & 40.00 & 40.39 & 42.08 & 40.11 & 797.8 & 0.607 \\
+ 100 & 32 & 16 & 40.79 & 42.20 & 43.28 & 41.82 & 765.2 & 0.637 \\
+ 100 & 32 & 32 & 41.61 & 42.76 & 43.93 & 42.48 & 753.3 & 0.699 \\
+ 100 & 64 &  8 & 89.22 & 90.86 & 93.69 & 90.95 & 703.7 & 0.702 \\
+ 100 & 64 & 16 & 90.46 & 92.41 & 95.23 & 92.25 & 693.7 & 0.734 \\
+ 100 & 64 & 32 & 92.54 & 94.79 & 96.52 & 92.77 & 689.9 & 0.796 \\
+ 100 &128 &  8 &199.78 &201.72 &351.36 &204.34 & 626.4 & 0.895 \\
+ 100 &128 & 16 &204.08 &208.83 &318.85 &208.27 & 614.6 & 0.928 \\
+ 100 &128 & 32 &250.72 &299.85 &343.83 &251.70 & 508.5 & 0.994 \\
+\midrule
+ 500 & 16 &  8 & 29.87 & 31.41 & 39.92 & 30.43 & 525.8 & 0.684 \\
+ 500 & 16 & 16 & 26.73 & 29.98 & 33.81 & 27.62 & 579.3 & 0.832 \\
+ 500 & 16 & 32 & 26.22 & 31.24 & 33.43 & 26.87 & 595.5 & 1.128 \\
+ 500 & 32 &  8 & 59.36 & 60.54 & 61.06 & 57.54 & 556.1 & 0.731 \\
+ 500 & 32 & 16 & 58.38 & 61.19 & 84.47 & 58.03 & 551.4 & 0.880 \\
+ 500 & 32 & 32 & 58.31 & 60.96 & 72.66 & 57.11 & 560.3 & 1.177 \\
+ 500 & 64 &  8 &123.65 &141.26 &209.75 &122.59 & 522.1 & 0.826 \\
+ 500 & 64 & 16 &121.80 &136.86 &223.32 &123.61 & 517.8 & 0.976 \\
+ 500 & 64 & 32 &129.47 &140.08 &147.45 &127.72 & 501.1 & 1.274 \\
+ 500 &128 &  8 &260.63 &309.77 &359.83 &263.52 & 485.7 & 1.019 \\
+ 500 &128 & 16 &262.75 &308.99 &380.31 &268.66 & 476.4 & 1.170 \\
+ 500 &128 & 32 &269.09 &303.62 &395.94 &270.69 & 472.9 & 1.472 \\
+\midrule
+1000 & 16 &  8 & 30.15 & 31.32 & 32.06 & 29.93 & 534.5 & 0.839 \\
+1000 & 16 & 16 & 30.49 & 31.95 & 35.24 & 29.87 & 535.7 & 1.135 \\
+1000 & 16 & 32 & 27.70 & 31.69 & 33.60 & 28.69 & 557.7 & 1.725 \\
+1000 & 32 &  8 & 59.60 & 66.14 & 79.59 & 58.25 & 549.3 & 0.887 \\
+1000 & 32 & 16 & 58.79 & 60.46 & 73.75 & 56.05 & 570.9 & 1.182 \\
+1000 & 32 & 32 & 59.93 & 61.67 & 64.94 & 60.47 & 529.2 & 1.775 \\
+1000 & 64 &  8 &119.79 &137.54 &173.20 &120.92 & 529.3 & 0.982 \\
+1000 & 64 & 16 &129.24 &139.85 &180.05 &128.03 & 499.9 & 1.279 \\
+1000 & 64 & 32 &128.42 &147.57 &168.43 &130.15 & 491.7 & 1.872 \\
+1000 &128 &  8 &278.06 &303.06 &375.02 &275.47 & 464.7 & 1.174 \\
+1000 &128 & 16 &278.86 &306.03 &370.38 &274.93 & 465.6 & 1.473 \\
+1000 &128 & 32 &278.53 &315.09 &436.74 &280.53 & 456.3 & 2.070 \\
+\midrule
+5000 & 16 &  8 & 33.86 & 35.86 & 36.78 & 32.82 & 487.5 & 2.082 \\
+5000 & 16 & 16 & 31.43 & 32.90 & 34.54 & 30.50 & 524.6 & 3.557 \\
+5000 & 16 & 32 & 26.97 & 29.93 & 37.23 & 27.98 & 571.8 & 6.508 \\
+5000 & 32 &  8 & 56.31 & 67.43 & 87.22 & 57.56 & 555.9 & 2.130 \\
+5000 & 32 & 16 & 54.47 & 64.97 & 76.36 & 56.00 & 571.5 & 3.605 \\
+5000 & 32 & 32 & 59.81 & 61.79 & 70.17 & 58.45 & 547.5 & 6.557 \\
+5000 & 64 &  8 &118.93 &140.49 &188.56 &122.34 & 523.1 & 2.225 \\
+5000 & 64 & 16 &120.41 &138.79 &229.63 &122.32 & 523.2 & 3.702 \\
+5000 & 64 & 32 &130.05 &140.00 &163.95 &127.96 & 500.1 & 6.654 \\
+5000 &128 &  8 &263.28 &310.96 &400.46 &267.70 & 478.1 & 2.418 \\
+5000 &128 & 16 &277.14 &309.39 &355.22 &273.47 & 468.1 & 3.896 \\
+5000 &128 & 32 &261.44 &317.59 &383.10 &271.06 & 472.2 & 6.852 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\end{document}

@@ -1,0 +1,47 @@
+# =============================================================================
+# Makefile for paper/main.tex
+#
+# Targets:
+#   make          — full build (pdflatex → bibtex → pdflatex × 2)
+#   make quick    — single pdflatex pass (fast draft check, refs may be wrong)
+#   make clean    — remove all build artefacts except PDF
+#   make distclean — remove everything including PDF
+#   make watch    — auto-recompile on file save (requires latexmk)
+#   make open     — open the compiled PDF
+# =============================================================================
+
+MAIN    = main
+LATEX   = pdflatex
+BIBTEX  = bibtex
+LATEXMK = latexmk
+
+FLAGS   = -interaction=nonstopmode -halt-on-error
+
+.PHONY: all quick clean distclean watch open
+
+all: $(MAIN).pdf
+
+$(MAIN).pdf: $(MAIN).tex references.bib acl.sty acl_natbib.bst
+	$(LATEX) $(FLAGS) $(MAIN)
+	$(BIBTEX) $(MAIN)
+	$(LATEX) $(FLAGS) $(MAIN)
+	$(LATEX) $(FLAGS) $(MAIN)
+
+quick:
+	$(LATEX) $(FLAGS) $(MAIN)
+
+# latexmk watches for changes and recompiles automatically
+watch:
+	$(LATEXMK) -pdf -pvc $(MAIN)
+
+open: $(MAIN).pdf
+	open $(MAIN).pdf
+
+clean:
+	rm -f $(MAIN).aux $(MAIN).bbl $(MAIN).blg $(MAIN).log \
+	       $(MAIN).out $(MAIN).toc $(MAIN).lof $(MAIN).lot \
+	       $(MAIN).fls $(MAIN).fdb_latexmk $(MAIN).synctex.gz \
+	       $(MAIN).todo
+
+distclean: clean
+	rm -f $(MAIN).pdf
