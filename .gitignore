@@ -205,3 +205,41 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# --- LaTeX build artifacts ---
+*.aux
+*.bbl
+*.blg
+*.out
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.nav
+*.snm
+*.vrb
+*.bcf
+*.run.xml
+*.idx
+*.ilg
+*.ind
+*.aux.bak
+missfont.log
+# (*.log is already ignored above under the Django section)
+
+# --- Generated PDFs / binaries (paper build output) ---
+# Only ignore the compiled paper output. Add other reference PDFs explicitly
+# with `!path/to/reference.pdf` if any are checked in later.
+paper/main.pdf
+paper/*.synctex(busy)
+
+# --- OS / editor cruft ---
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*~
+*.swp
+*.swo
