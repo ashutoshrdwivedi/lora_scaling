@@ -55,13 +55,14 @@ class AttentionWithLora(nn.Module):
             "value": self.value(hidden_states),
         }
 
-        # Add LoRA delta to each target projection
+        # Here we are calculating LORA delta in the activation space, rather than param space
+        # delta = B * (A * x)
         for module in self.target_modules:
             if module not in projections:
                 continue
             a = torch.cat(lora_weights.a[module], dim=0)  # (B, H, R)
             b = torch.cat(lora_weights.b[module], dim=0)  # (B, R, H)
-            self.lora_ops.shrink(projections[module], a)
+            self.lora_ops.shrink(hidden_states, a)
             self.lora_ops.expand(b)
             projections[module] = projections[module] + self.lora_ops.output
 
