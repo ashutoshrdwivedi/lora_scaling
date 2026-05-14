@@ -68,7 +68,9 @@ class AttentionWithLora(nn.Module):
                 continue
             a = torch.cat(lora_weights.a[module], dim=0)  # (B, H, R)
             b = torch.cat(lora_weights.b[module], dim=0)  # (B, R, H)
+            # project down to lora_rank (B, S, R)
             self.lora_ops.shrink(hidden_states, a)
+            # project back up to hidden_size (B, S, H)
             self.lora_ops.expand(b)
             projections[module] = projections[module] + self.lora_ops.output
 
