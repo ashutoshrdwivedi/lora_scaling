@@ -57,6 +57,12 @@ class AttentionWithLora(nn.Module):
 
         # Here we are calculating LORA delta in the activation space, rather than param space
         # delta = B * (A * x)
+        # Note: This dynamically applies LoRA to any combination of 'query', 'key', or 'value'
+        # based on what is configured in `self.target_modules` (via LoraServingConfig).
+        # While it can apply to all three, in practice (and following the original LoRA
+        # paper by Hu et al.), only `query` and `value` are typically targeted to maximize
+        # parameter efficiency without sacrificing performance.
+        # This implementation matches PEFT's behavior of only targeting the requested modules.
         for module in self.target_modules:
             if module not in projections:
                 continue
