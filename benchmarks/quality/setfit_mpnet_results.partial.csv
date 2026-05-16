@@ -1,0 +1,11 @@
+dataset,method,lora_rank,n_per_class,seed,trainable_body_params,train_seconds,accuracy,n_eval
+SetFit/sst2,vanilla,0,8,42,109486464,3.02,0.8325,1821
+SetFit/sst2,lora,8,8,42,294912,1.97,0.7886,1821
+SetFit/sst5,vanilla,0,8,42,109486464,21.61,0.4118,2210
+SetFit/sst5,lora,8,8,42,294912,15.57,0.3452,2210
+SetFit/CR,vanilla,0,8,42,109486464,2.38,0.883,376
+SetFit/CR,lora,8,8,42,294912,1.74,0.8431,376
+SetFit/amazon_counterfactual_en,vanilla,0,8,42,109486464,3.1,0.7756,5000
+SetFit/amazon_counterfactual_en,lora,8,8,42,294912,2.3,0.6394,5000
+SetFit/emotion,vanilla,0,8,42,109486464,27.24,0.5055,2000
+SetFit/emotion,lora,8,8,42,294912,19.22,0.396,2000
