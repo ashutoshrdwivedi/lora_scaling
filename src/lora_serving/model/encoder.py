@@ -166,6 +166,10 @@ class EncoderWithLora(PreTrainedModel):
         self.pooler = nn.ModuleDict({
             "dense": nn.Linear(H, H, bias=True),
         })
+        
+        # Hardcoded to Tanh because this matches the standard activation used by
+        # BertPooler, RobertaPooler, and XLMRobertaPooler in Hugging Face.
+        # This allows us to load base pooler weights directly for BERT, RoBERTa, and BGE models.
         self.pooler_act = nn.Tanh()
         self.post_init()
 
