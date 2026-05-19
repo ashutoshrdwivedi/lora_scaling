@@ -41,22 +41,17 @@ class BatchAssembler:
         self._store = store
         self._config = config
 
-    def assemble(
+    def assemble_lora(
         self,
         adapter_ids: list[str],
-        lr_coefs: list[Tensor],
-        lr_intercepts: list[Tensor],
-    ) -> tuple[list[LayerwiseBatchedWeights], BatchedLRWeights]:
-        """Stack per-sample adapter weights into batch tensors.
+    ) -> list[LayerwiseBatchedWeights]:
+        """Stack per-sample LoRA weights into batch tensors.
 
         Args:
-            adapter_ids:   One adapter ID per sample in the batch.
-            lr_coefs:      Per-sample LR coef tensors, shape (1, num_labels, H).
-            lr_intercepts: Per-sample LR intercept tensors, shape (1, num_labels).
+            adapter_ids: One adapter ID per sample in the batch.
 
         Returns:
-            lora_weights: List of LayerwiseBatchedWeights, one per transformer layer.
-            lr_weights:   BatchedLRWeights with zero-padded coef/intercept.
+            List of LayerwiseBatchedWeights, one per transformer layer.
         """
         cfg = self._config
         lora_weights = [LayerwiseBatchedWeights() for _ in range(cfg.num_layers)]
@@ -73,7 +68,22 @@ class BatchAssembler:
                     lora_weights[layer_idx].a[module].append(weight.wa[layer_idx].unsqueeze(0))
                     lora_weights[layer_idx].b[module].append(weight.wb[layer_idx].unsqueeze(0))
 
-        # Assemble LR weights with zero-padding to max_labels
+        return lora_weights
+
+    def assemble_lr(
+        self,
+        lr_coefs: list[Tensor],
+        lr_intercepts: list[Tensor],
+    ) -> BatchedLRWeights:
+        """Stack per-sample LR head weights into a single padded batch tensor.
+
+        Args:
+            lr_coefs:      Per-sample LR coef tensors, shape (1, num_labels, H).
+            lr_intercepts: Per-sample LR intercept tensors, shape (1, num_labels).
+
+        Returns:
+            BatchedLRWeights with zero-padded coef/intercept.
+        """
         num_labels = [c.shape[1] for c in lr_coefs]
         max_labels = max(num_labels)
 
@@ -89,4 +99,26 @@ class BatchAssembler:
         lr_weights.intercept = torch.cat(padded_intercepts, dim=0)  # (B, max_labels)
         lr_weights.num_labels = num_labels
 
-        return lora_weights, lr_weights
+        return lr_weights
+
+    def assemble(
+        self,
+        adapter_ids: list[str],
+        lr_coefs: list[Tensor],
+        lr_intercepts: list[Tensor],
+    ) -> tuple[list[LayerwiseBatchedWeights], BatchedLRWeights]:
+        """Stack per-sample adapter weights into batch tensors.
+
+        Convenience method that calls :meth:`assemble_lora` and
+        :meth:`assemble_lr` together.
+
+        Args:
+            adapter_ids:   One adapter ID per sample in the batch.
+            lr_coefs:      Per-sample LR coef tensors, shape (1, num_labels, H).
+            lr_intercepts: Per-sample LR intercept tensors, shape (1, num_labels).
+
+        Returns:
+            lora_weights: List of LayerwiseBatchedWeights, one per transformer layer.
+            lr_weights:   BatchedLRWeights with zero-padded coef/intercept.
+        """
+        return self.assemble_lora(adapter_ids), self.assemble_lr(lr_coefs, lr_intercepts)
