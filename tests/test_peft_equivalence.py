@@ -22,7 +22,7 @@ from transformers import AutoModel
 
 from lora_serving.config import LoraServingConfig
 from lora_serving.model.encoder import EncoderWithLora
-from lora_serving.weights.batch import LayerwiseBatchedWeights
+from lora_serving.weights.batch import BatchAssembler
 from lora_serving.weights.store import AdapterStore, LoraWeight
 
 pytestmark = pytest.mark.skipif(
@@ -31,7 +31,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 peft = pytest.importorskip("peft", reason="peft not installed (install with `uv add --dev peft`)")
-from peft import LoraConfig, get_peft_model  # noqa: E402
+from peft import LoraConfig
 
 
 MODEL_NAME = "intfloat/multilingual-e5-small"
@@ -125,7 +125,7 @@ def _build_peft_model(base_state_dict_source: str, serving_config: LoraServingCo
         lora_dropout=0.0,
         bias="none",
     )
-    peft_model = get_peft_model(base, lora_cfg)
+    peft_model = peft.get_peft_model(base, lora_cfg)
     peft_model.to(serving_config.device)
     peft_model.eval()
     return peft_model
@@ -219,7 +219,7 @@ def test_zero_lora_matches_base_hf(serving_config, our_model, base_hf_model, bat
     store = AdapterStore(serving_config)
     store.load_synthetic("zero", seed=0)  # load_synthetic uses wb=0 by default
     ids = ["zero"] * BATCH_SIZE
-    lora_w = _assemble_lora_only(store, ids, serving_config)
+    lora_w = BatchAssembler(store, serving_config).assemble_lora(ids)
 
     with torch.no_grad():
         our_pooled = _encode_pooled(our_model, input_ids, attention_mask, lora_w)
@@ -244,7 +244,7 @@ def test_single_adapter_matches_peft(serving_config, our_model, batch_inputs):
     store = AdapterStore(serving_config)
     _install_into_our_store(store, "adapter_0", a_layers, b_layers, serving_config)
     ids = ["adapter_0"] * BATCH_SIZE
-    lora_w = _assemble_lora_only(store, ids, serving_config)
+    lora_w = BatchAssembler(store, serving_config).assemble_lora(ids)
 
     with torch.no_grad():
         our_pooled = _encode_pooled(our_model, input_ids, attention_mask, lora_w)
@@ -282,7 +282,7 @@ def test_multi_tenant_matches_peft_loop(serving_config, our_model, batch_inputs)
     for i, (a, b) in enumerate(adapter_weights):
         _install_into_our_store(store, f"adapter_{i}", a, b, serving_config)
     ids = [f"adapter_{i}" for i in range(BATCH_SIZE)]
-    lora_w = _assemble_lora_only(store, ids, serving_config)
+    lora_w = BatchAssembler(store, serving_config).assemble_lora(ids)
 
     with torch.no_grad():
         our_pooled = _encode_pooled(our_model, input_ids, attention_mask, lora_w)
