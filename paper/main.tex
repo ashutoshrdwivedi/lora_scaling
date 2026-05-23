@@ -563,6 +563,33 @@ double-buffered host-to-device transfer overlapped with the previous batch's
 forward, and a GPU-resident gather that replaces the per-batch host copy with
 an \texttt{index\_select} into a GPU-side cache.
 
+\paragraph{Finding 7: Custom LoRA kernels would not move the needle on encoders.}
+\label{sec:results_custom_kernels}
+A natural question is whether replacing our \texttt{torch.bmm} shrink/expand
+operations with custom kernels (Punica's SGMV \cite{chen2024punica} or S-LoRA's
+MBGMV \cite{sheng2024slora}) would yield further speedups. The answer is no,
+for encoders with hidden size $d=1024$: the LoRA arithmetic is already a
+small fraction of the forward cost.
+We establish this with three independent measurements at $B{=}32$, $N{=}1{,}000$,
+$r{=}8$ on the same A100-40GB.
+First, the \emph{analytic FLOP ratio} per encoder layer is
+$12 B S d^2 / (4 B S d r) = 3d/r = 384$ -- the base encoder performs
+384$\times$ more arithmetic than the LoRA path, so even an instantaneous
+LoRA kernel would shave at most 0.26\% of FLOPs.
+Second, a PyTorch profiler trace attributes \textbf{1.9\%} of total CUDA time
+to \texttt{bmm} operations (the LoRA path), versus 21.6\% for the base linear
+layers (Q/K/V/O projections and the FFN).
+Third, an end-to-end \emph{zero-LoRA ablation}---running the same kernel
+launches but with $A{=}B{=}0$, isolating the wall-clock contribution of the
+LoRA arithmetic---measures a forward-time saving of just
+\textbf{0.37~ms out of 28.7~ms} (\textbf{1.29\%}) when the LoRA path is
+neutralized.
+The decoder-LoRA literature reports large speedups from custom kernels because
+the per-token decode workload is dominated by small matrix-vector products
+where LoRA's relative weight is much higher. For a single-pass encoder forward
+at typical $d=1024$, the same engineering investment cannot meaningfully
+improve our serving throughput.
+
 \begin{figure}[t]
   \centering
   \includegraphics[width=\linewidth]{figures/latency_adapters.pdf}

@@ -1,0 +1,64 @@
+{
+  "gpu": "NVIDIA A100-PCIE-40GB",
+  "config": {
+    "model": "BAAI/bge-m3",
+    "dtype": "fp16",
+    "batch_size": 32,
+    "num_adapters": 1000,
+    "lora_rank": 8,
+    "seq_len": 128,
+    "num_labels": 10,
+    "warmup": 20,
+    "profiler_iters": 10,
+    "ablation_iters": 100,
+    "out": "benchmarks/results/forward_breakdown.txt"
+  },
+  "flop_ratio": {
+    "base_GFLOPs_per_layer": 51.539607552,
+    "lora_GFLOPs_per_layer": 0.134217728,
+    "base_to_lora_ratio": 384.0,
+    "base_total_GFLOPs": 1236.950581248,
+    "lora_total_GFLOPs": 3.221225472
+  },
+  "profiler_categories": {
+    "other": {
+      "cuda_ms_total": 1025.8229660000047,
+      "share_pct": 71.79651635773986,
+      "calls": 20154
+    },
+    "layernorm_residual": {
+      "cuda_ms_total": 38.074682999998466,
+      "share_pct": 2.66481614413879,
+      "calls": 1720
+    },
+    "base_linear": {
+      "cuda_ms_total": 308.15705500000047,
+      "share_pct": 21.56766203659002,
+      "calls": 3380
+    },
+    "lora_bmm": {
+      "cuda_ms_total": 27.155195000000642,
+      "share_pct": 1.9005700463282014,
+      "calls": 1450
+    },
+    "elementwise": {
+      "cuda_ms_total": 17.219436999999196,
+      "share_pct": 1.2051744123668877,
+      "calls": 730
+    },
+    "attention": {
+      "cuda_ms_total": 12.36278100000016,
+      "share_pct": 0.8652610028362954,
+      "calls": 240
+    }
+  },
+  "profiler_total_ms": 1428.792117000003,
+  "ablation": {
+    "normal_mean_ms": 28.691514949798584,
+    "normal_p50_ms": 28.708463668823242,
+    "zero_mean_ms": 28.320006713867187,
+    "zero_p50_ms": 28.317264556884766,
+    "lora_cost_mean_ms": 0.3715082359313975,
+    "lora_cost_share_pct": 1.294836597445007
+  }
+}

@@ -1,0 +1,75 @@
+# Forward-pass breakdown — BAAI/bge-m3
+# GPU: NVIDIA A100-PCIE-40GB
+# Config: B=32 N=1000 r=8 seq=128 dtype=fp16
+
+## 1. Analytic FLOP ratio (per encoder layer)
+  base_GFLOPs_per_layer         : 51.5396
+  lora_GFLOPs_per_layer         : 0.1342
+  base_to_lora_ratio            : 384.0000
+  base_total_GFLOPs             : 1,236.9506
+  lora_total_GFLOPs             : 3.2212
+
+Interpretation: even an infinitely fast LoRA bmm kernel would
+save at most 1 / (base/lora ratio) of total forward FLOPs.
+
+## 2. PyTorch profiler — op-level CUDA time breakdown
+
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+                                                   Name    Self CPU %      Self CPU   CPU total %     CPU total  CPU time avg     Self CUDA   Self CUDA %    CUDA total  CUDA time avg    # of Calls  
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+                                           forward_iter         0.00%       0.000us         0.00%       0.000us       0.000us     332.607ms       121.44%     332.607ms      33.261ms            10  
+                                           forward_iter        36.27%     224.168ms       100.00%     618.036ms      61.804ms       0.000us         0.00%     273.905ms      27.391ms            10  
+                                           aten::linear         1.25%       7.721ms        11.67%      72.109ms      49.730us       0.000us         0.00%     135.755ms      93.624us          1450  
+                                            aten::addmm         5.65%      34.929ms         8.67%      53.559ms      36.937us     135.755ms        49.56%     135.755ms      93.624us          1450  
+ampere_fp16_s16816gemm_fp16_128x128_ldg8_relu_f2f_st...         0.00%       0.000us         0.00%       0.000us       0.000us     133.701ms        48.81%     133.701ms      92.848us          1440  
+                                            aten::copy_         1.96%      12.091ms         4.44%      27.441ms      13.130us      38.735ms        14.14%      38.743ms      18.537us          2090  
+                                           aten::matmul         0.70%       4.344ms         6.78%      41.919ms      87.332us       0.000us         0.00%      36.648ms      76.349us           480  
+                                            aten::clone         0.66%       4.073ms         5.55%      34.279ms      21.292us       0.000us         0.00%      28.835ms      17.910us          1610  
+                                              aten::add         2.16%      13.339ms         3.36%      20.739ms      16.861us      28.379ms        10.36%      28.379ms      23.072us          1230  
+void at::native::elementwise_kernel<128, 4, at::nati...         0.00%       0.000us         0.00%       0.000us       0.000us      27.492ms        10.04%      27.492ms      28.637us           960  
+                                              aten::bmm         3.96%      24.505ms         5.52%      34.121ms      23.532us      27.155ms         9.91%      27.155ms      18.728us          1450  
+                                          aten::reshape         0.45%       2.777ms         3.45%      21.318ms      21.534us       0.000us         0.00%      22.729ms      22.959us           990  
+void at::native::elementwise_kernel<128, 4, at::nati...         0.00%       0.000us         0.00%       0.000us       0.000us      15.461ms         5.65%      15.461ms      64.423us           240  
+void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us      12.917ms         4.72%      12.917ms      13.048us           990  
+                                             aten::gelu         0.40%       2.479ms         0.65%       4.003ms      16.681us      12.756ms         4.66%      12.756ms      53.151us           240  
+void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us      12.756ms         4.66%      12.756ms      53.151us           240  
+                                          aten::softmax         0.08%     483.676us         0.63%       3.904ms      16.268us       0.000us         0.00%      12.363ms      51.512us           240  
+                                         aten::_softmax         0.33%       2.033ms         0.55%       3.421ms      14.252us      12.363ms         4.51%      12.363ms      51.512us           240  
+void (anonymous namespace)::softmax_warp_forward<flo...         0.00%       0.000us         0.00%       0.000us       0.000us      12.363ms         4.51%      12.363ms      51.512us           240  
+                                               aten::to         0.35%       2.151ms         2.13%      13.169ms      18.290us       0.000us         0.00%       9.908ms      13.761us           720  
+                                         aten::_to_copy         0.29%       1.803ms         1.78%      11.017ms      22.953us       0.000us         0.00%       9.908ms      20.642us           480  
+                                       aten::layer_norm         0.24%       1.473ms         2.86%      17.692ms      36.106us       0.000us         0.00%       9.696ms      19.787us           490  
+                                aten::native_layer_norm         0.98%       6.081ms         2.62%      16.219ms      33.100us       9.696ms         3.54%       9.696ms      19.787us           490  
+void at::native::(anonymous namespace)::vectorized_l...         0.00%       0.000us         0.00%       0.000us       0.000us       9.696ms         3.54%       9.696ms      19.787us           490  
+void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us       8.548ms         3.12%       8.548ms      35.617us           240  
+ampere_fp16_s16816gemm_fp16_128x128_ldg8_f2f_stages_...         0.00%       0.000us         0.00%       0.000us       0.000us       7.743ms         2.83%       7.743ms      32.264us           240  
+void cutlass::Kernel2<cutlass_80_wmma_tensorop_f16_s...         0.00%       0.000us         0.00%       0.000us       0.000us       7.536ms         2.75%       7.536ms      15.699us           480  
+ampere_fp16_s16816gemm_fp16_128x64_ldg8_f2f_stages_3...         0.00%       0.000us         0.00%       0.000us       0.000us       6.205ms         2.27%       6.205ms      25.856us           240  
+ampere_fp16_s16816gemm_fp16_64x64_sliced1x2_ldg8_f2f...         0.00%       0.000us         0.00%       0.000us       0.000us       5.605ms         2.05%       5.605ms      11.677us           480  
+                                       aten::contiguous         0.05%     296.024us         0.93%       5.725ms      23.853us       0.000us         0.00%       4.793ms      19.971us           240  
+-------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
+Self CPU time total: 618.052ms
+Self CUDA time total: 273.895ms
+
+
+## 3. Aggregated by category (CUDA time)
+  Total forward CUDA time (sum of profiled ops): 1428.79 ms
+
+  other                 : 1025.823 ms  ( 71.8%)  calls=20154
+  base_linear           :  308.157 ms  ( 21.6%)  calls=3380
+  layernorm_residual    :   38.075 ms  (  2.7%)  calls=1720
+  lora_bmm              :   27.155 ms  (  1.9%)  calls=1450
+  elementwise           :   17.219 ms  (  1.2%)  calls=730
+  attention             :   12.363 ms  (  0.9%)  calls=240
+
+## 4. Zero-LoRA ablation
+  normal_mean_ms                :   28.692 ms
+  normal_p50_ms                 :   28.708 ms
+  zero_mean_ms                  :   28.320 ms
+  zero_p50_ms                   :   28.317 ms
+  lora_cost_mean_ms             :    0.372 ms
+  lora_cost_share_pct           :    1.295%
+
+Interpretation: lora_cost_share_pct is the wall-clock contribution
+of the LoRA bmm path. If <2%, a faster custom bmm kernel (Punica
+MBGMV / S-LoRA SGMV) cannot move the needle for this setting.

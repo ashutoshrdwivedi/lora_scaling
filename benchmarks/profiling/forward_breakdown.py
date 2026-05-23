@@ -138,13 +138,22 @@ def run_profiler(model, store, assembler, adapter_ids, lr_coefs, lr_intercepts,
                 one_batch()
         torch.cuda.synchronize(device)
 
-    table = prof.key_averages().table(sort_by="cuda_time_total", row_limit=30)
+    # torch 2.11 renamed cuda_time_total -> device_time_total; older torch had cuda_time_total.
+    sort_key = "device_time_total" if hasattr(prof.key_averages()[0], "device_time_total") else "cuda_time_total"
+    table = prof.key_averages().table(sort_by=sort_key, row_limit=30)
+
+    def _cuda_us(evt) -> float:
+        for attr in ("device_time_total", "cuda_time_total", "self_device_time_total", "self_cuda_time_total"):
+            v = getattr(evt, attr, None)
+            if v is not None:
+                return float(v)
+        return 0.0
 
     # Aggregate by bucket
     totals = defaultdict(lambda: {"cuda_us": 0.0, "calls": 0})
     grand_cuda_us = 0.0
     for evt in prof.key_averages():
-        cuda_us = float(evt.cuda_time_total)  # microseconds
+        cuda_us = _cuda_us(evt)  # microseconds
         if cuda_us <= 0:
             continue
         bucket = categorize(evt.key)
