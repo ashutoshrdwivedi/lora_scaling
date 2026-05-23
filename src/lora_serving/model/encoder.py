@@ -184,7 +184,7 @@ class EncoderWithLora(PreTrainedModel):
             torch_dtype=serving_config.dtype,
         ).state_dict()
         model.load_state_dict(state_dict, strict=True)
-        return model.to(serving_config.device)
+        return model.to(device=serving_config.device, dtype=serving_config.dtype)
 
     def forward(
         self,

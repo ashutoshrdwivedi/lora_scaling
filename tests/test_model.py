@@ -67,8 +67,16 @@ class TestEncoderWithLora:
 
         assert out.shape == (B, 1, num_labels)
 
-    def test_zero_lora_gives_base_output(self, serving_config, model, store):
-        """When all LoRA B matrices are zero, output should match a no-LoRA forward pass."""
+    def test_forward_is_deterministic(self, serving_config, model, store):
+        """The full model pipeline (encoder + pooler + LR head) is deterministic in eval mode.
+
+        Two calls with identical inputs must produce bit-identical outputs. Catches
+        accidental state leaks across forward calls (e.g., a pre-allocated LoraOps
+        buffer being read before being written, or dropout left enabled).
+
+        The stronger claim — "zero-LoRA output equals the unwrapped base HF model" —
+        is verified in test_peft_equivalence.py::test_zero_lora_matches_base_hf.
+        """
         B = serving_config.batch_size
         num_labels = 3
         device = serving_config.device
@@ -89,5 +97,4 @@ class TestEncoderWithLora:
             out1 = model(input_ids, attention_mask, lora_w, lr_w, output_lr.clone())
             out2 = model(input_ids, attention_mask, lora_w, lr_w, output_lr.clone())
 
-        # Deterministic: same input should give same output
         assert torch.allclose(out1, out2, atol=1e-6)
