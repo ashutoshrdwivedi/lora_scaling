@@ -15,27 +15,39 @@ KeyResolverFn = Callable[[int, str], tuple[str, str]]  # returns (key_A, key_B)
 
 
 class LoraWeight:
-    """Stores the A and B low-rank matrices for one adapter across all layers.
+    """Stores the A and B low-rank matrices for one adapter, per target module per layer.
 
-    Shapes:
-        wa: (num_layers, hidden_size, lora_rank)  — A matrix (shrink)
-        wb: (num_layers, lora_rank, hidden_size)  — B matrix (expand)
+    Shapes (one entry per target module):
+        wa[module]: (num_layers, hidden_size, lora_rank)  — A matrix (shrink)
+        wb[module]: (num_layers, lora_rank, hidden_size)  — B matrix (expand)
     """
 
     def __init__(self, config: LoraServingConfig):
         H, R, L = config.hidden_size, config.lora_rank, config.num_layers
-        self.wa = torch.zeros(L, H, R, dtype=config.dtype, device=config.device)
-        self.wb = torch.zeros(L, R, H, dtype=config.dtype, device=config.device)
+        self.wa: dict[str, Tensor] = {
+            m: torch.zeros(L, H, R, dtype=config.dtype, device=config.device)
+            for m in config.target_modules
+        }
+        self.wb: dict[str, Tensor] = {
+            m: torch.zeros(L, R, H, dtype=config.dtype, device=config.device)
+            for m in config.target_modules
+        }
 
-    def copy_from_tensors(self, a: Tensor, b: Tensor) -> None:
+    def copy_from_tensors(
+        self,
+        a_by_module: dict[str, Tensor],
+        b_by_module: dict[str, Tensor],
+    ) -> None:
         """Load from column-major tensors (as stored in adapter .bin files).
 
         Args:
-            a: (num_layers, lora_rank, hidden_size)  — A matrix in column-major order
-            b: (num_layers, hidden_size, lora_rank)  — B matrix in column-major order
+            a_by_module: module → (num_layers, lora_rank, hidden_size)  — A in column-major order
+            b_by_module: module → (num_layers, hidden_size, lora_rank)  — B in column-major order
         """
-        self.wa.copy_(a.to(self.wa.device, self.wa.dtype).transpose(1, 2))
-        self.wb.copy_(b.to(self.wb.device, self.wb.dtype).transpose(1, 2))
+        for m, a in a_by_module.items():
+            self.wa[m].copy_(a.to(self.wa[m].device, self.wa[m].dtype).transpose(1, 2))
+        for m, b in b_by_module.items():
+            self.wb[m].copy_(b.to(self.wb[m].device, self.wb[m].dtype).transpose(1, 2))
 
 
 class AdapterStore:
@@ -72,19 +84,18 @@ class AdapterStore:
         state_dict = torch.load(path, map_location=cfg.device, weights_only=True)
         weight = LoraWeight(cfg)
 
-        a_tensors, b_tensors = [], []
-        for i in range(cfg.num_layers):
-            # We only load the first target_module to get A/B shapes.
-            # All target_modules share the same A/B per adapter in this implementation.
-            module = cfg.target_modules[0]
-            key_a, key_b = key_fn(i, module)
-            a_tensors.append(state_dict[key_a])
-            b_tensors.append(state_dict[key_b])
+        a_by_module: dict[str, Tensor] = {}
+        b_by_module: dict[str, Tensor] = {}
+        for module in cfg.target_modules:
+            a_tensors, b_tensors = [], []
+            for i in range(cfg.num_layers):
+                key_a, key_b = key_fn(i, module)
+                a_tensors.append(state_dict[key_a])
+                b_tensors.append(state_dict[key_b])
+            a_by_module[module] = torch.stack(a_tensors)
+            b_by_module[module] = torch.stack(b_tensors)
 
-        weight.copy_from_tensors(
-            torch.stack(a_tensors),
-            torch.stack(b_tensors),
-        )
+        weight.copy_from_tensors(a_by_module, b_by_module)
         self._store[adapter_id] = weight
 
     def load_synthetic(self, adapter_id: str, seed: int | None = None) -> None:
@@ -93,8 +104,9 @@ class AdapterStore:
         if seed is not None:
             torch.manual_seed(seed)
         weight = LoraWeight(cfg)
-        torch.nn.init.normal_(weight.wa, std=0.02)
-        torch.nn.init.zeros_(weight.wb)  # B=0 means delta=0, safe for correctness tests
+        for m in cfg.target_modules:
+            torch.nn.init.normal_(weight.wa[m], std=0.02)
+            torch.nn.init.zeros_(weight.wb[m])  # B=0 means delta=0, safe for correctness tests
         self._store[adapter_id] = weight
 
     def get(self, adapter_id: str) -> LoraWeight:
@@ -110,7 +122,8 @@ class AdapterStore:
         """Total GPU memory used by all cached adapters."""
         total = 0
         for w in self._store.values():
-            total += w.wa.nbytes + w.wb.nbytes
+            for m in w.wa:
+                total += w.wa[m].nbytes + w.wb[m].nbytes
         return total
 
     def memory_gb(self) -> float:

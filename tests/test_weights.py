@@ -15,7 +15,7 @@ def config():
         batch_size=4,
         max_seq_len=16,
         target_modules=["query", "value"],
-        device=torch.device("cpu"),
+        device=torch.device("cpu"),  # these tests don't need GPU.  
         dtype=torch.float32,
     )
 
@@ -31,8 +31,9 @@ class TestAdapterStore:
         store.load_synthetic("adapter_0")
         w = store.get("adapter_0")
         L, H, R = config.num_layers, config.hidden_size, config.lora_rank
-        assert w.wa.shape == (L, H, R)
-        assert w.wb.shape == (L, R, H)
+        for m in config.target_modules:
+            assert w.wa[m].shape == (L, H, R)
+            assert w.wb[m].shape == (L, R, H)
 
     def test_get_unknown_raises(self, config):
         store = AdapterStore(config)
@@ -43,9 +44,10 @@ class TestAdapterStore:
         store = AdapterStore(config)
         store.load_synthetic("a0")
         store.load_synthetic("a1")
-        # Each adapter: 2 tensors (wa, wb) × num_layers × hidden_size × lora_rank × 4 bytes
+        # Per adapter: M target modules × 2 matrices (wa, wb) × L × H × R × 4 bytes
         L, H, R = config.num_layers, config.hidden_size, config.lora_rank
-        expected = 2 * (L * H * R * 4) * 2  # 2 adapters, 2 matrices each
+        M = len(config.target_modules)
+        expected = M * 2 * (L * H * R * 4) * 2  # 2 adapters
         assert store.memory_bytes() == expected
 
     def test_multiple_adapters_are_independent(self, config):
@@ -55,7 +57,8 @@ class TestAdapterStore:
         w0 = store.get("a0")
         w1 = store.get("a1")
         # Different seeds should give different weights
-        assert not torch.equal(w0.wa, w1.wa)
+        m = config.target_modules[0]
+        assert not torch.equal(w0.wa[m], w1.wa[m])
 
 
 class TestBatchAssembler:
@@ -85,7 +88,13 @@ class TestBatchAssembler:
         assert lr_w.intercept.shape == (B, num_labels)
 
     def test_assemble_pads_variable_labels(self, config):
-        """Batch with different num_labels per sample should be padded to max."""
+        """Batch with different num_labels per sample should be padded to max.
+
+        Verifies that requests with different target classification label counts
+        (e.g., 3 labels vs 7 labels) are dynamically zero-padded along the class
+        dimension to the maximum label size in the batch, enabling uniform stacking,
+        while maintaining the original (unpadded) label counts as metadata.
+        """
         store = AdapterStore(config)
         for i in range(2):
             store.load_synthetic(f"adapter_{i}")

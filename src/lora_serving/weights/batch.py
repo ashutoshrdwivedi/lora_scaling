@@ -70,8 +70,8 @@ class BatchAssembler:
             weight = self._store.get(adapter_id)
             for layer_idx in range(cfg.num_layers):
                 for module in cfg.target_modules:
-                    lora_weights[layer_idx].a[module].append(weight.wa[layer_idx].unsqueeze(0))
-                    lora_weights[layer_idx].b[module].append(weight.wb[layer_idx].unsqueeze(0))
+                    lora_weights[layer_idx].a[module].append(weight.wa[module][layer_idx].unsqueeze(0))
+                    lora_weights[layer_idx].b[module].append(weight.wb[module][layer_idx].unsqueeze(0))
 
         # Assemble LR weights with zero-padding to max_labels
         num_labels = [c.shape[1] for c in lr_coefs]

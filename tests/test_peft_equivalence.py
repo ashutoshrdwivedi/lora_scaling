@@ -170,12 +170,17 @@ def _install_into_our_store(
     b_layers: Tensor,
     serving_config: LoraServingConfig,
 ) -> None:
-    """Mirror the PEFT A/B into our LoraWeight (transposed shapes)."""
+    """Mirror the PEFT A/B into our LoraWeight (transposed shapes).
+
+    The test's PEFT setup installs the same A/B into every TARGET_MODULES entry,
+    so we do the same here — copy the shared A/B into every module slot.
+    """
     weight = LoraWeight(serving_config)
-    # PEFT A is (R, H); ours is (H, R)  → transpose
-    weight.wa.copy_(a_layers.transpose(1, 2))
-    # PEFT B is (H, R); ours is (R, H)  → transpose
-    weight.wb.copy_(b_layers.transpose(1, 2))
+    for module in serving_config.target_modules:
+        # PEFT A is (R, H); ours is (H, R)  → transpose
+        weight.wa[module].copy_(a_layers.transpose(1, 2))
+        # PEFT B is (H, R); ours is (R, H)  → transpose
+        weight.wb[module].copy_(b_layers.transpose(1, 2))
     store._store[adapter_id] = weight
 
 
@@ -199,8 +204,8 @@ def _assemble_lora_only(
         weight = store.get(adapter_id)
         for layer_idx in range(cfg.num_layers):
             for module in cfg.target_modules:
-                lora_weights[layer_idx].a[module].append(weight.wa[layer_idx].unsqueeze(0))
-                lora_weights[layer_idx].b[module].append(weight.wb[layer_idx].unsqueeze(0))
+                lora_weights[layer_idx].a[module].append(weight.wa[module][layer_idx].unsqueeze(0))
+                lora_weights[layer_idx].b[module].append(weight.wb[module][layer_idx].unsqueeze(0))
     return lora_weights
 
 
@@ -284,4 +289,54 @@ def test_multi_tenant_matches_peft_loop(serving_config, our_model, batch_inputs)
 
     assert torch.allclose(our_pooled, expected, atol=ATOL, rtol=RTOL), (
         f"max abs diff = {(our_pooled - expected).abs().max().item()}"
+    )
+
+
+def test_distinct_ab_per_module_matches_peft(serving_config, our_model, batch_inputs):
+    """Distinct A/B per target module — what a real PEFT- or SetFit-trained adapter looks like.
+
+    The other equivalence tests install the *same* A/B into every TARGET_MODULES entry,
+    so they cannot distinguish per-module LoRA from a shared-across-modules
+    implementation. A real trained adapter has independent A/B for each module
+    (e.g. query and value learn different low-rank updates). This test installs
+    distinct A/B per module on both sides and verifies the outputs still match.
+    """
+    input_ids, attention_mask = batch_inputs
+
+    # One distinct (A, B) per target module
+    a_by_module: dict[str, Tensor] = {}
+    b_by_module: dict[str, Tensor] = {}
+    for i, module in enumerate(TARGET_MODULES):
+        a, b = _random_ab(serving_config, seed=300 + i)
+        a_by_module[module] = a
+        b_by_module[module] = b
+
+    # Install per-module distinct A/B into PEFT
+    peft_model = _build_peft_model(MODEL_NAME, serving_config)
+    encoder_layers = peft_model.base_model.model.encoder.layer
+    for i, layer in enumerate(encoder_layers):
+        for module_name in TARGET_MODULES:
+            target = getattr(layer.attention.self, module_name)
+            target.lora_A["default"].weight.data.copy_(a_by_module[module_name][i])
+            target.lora_B["default"].weight.data.copy_(b_by_module[module_name][i])
+
+    # Install per-module distinct A/B into our store
+    store = AdapterStore(serving_config)
+    weight = LoraWeight(serving_config)
+    for module in serving_config.target_modules:
+        # PEFT A is (L, R, H); ours is (L, H, R) → transpose
+        weight.wa[module].copy_(a_by_module[module].transpose(1, 2))
+        # PEFT B is (L, H, R); ours is (L, R, H) → transpose
+        weight.wb[module].copy_(b_by_module[module].transpose(1, 2))
+    store._store["adapter_0"] = weight
+
+    ids = ["adapter_0"] * BATCH_SIZE
+    lora_w = _assemble_lora_only(store, ids, serving_config)
+
+    with torch.no_grad():
+        our_pooled = _encode_pooled(our_model, input_ids, attention_mask, lora_w)
+        peft_out = peft_model(input_ids=input_ids, attention_mask=attention_mask)
+
+    assert torch.allclose(our_pooled, peft_out.pooler_output, atol=ATOL, rtol=RTOL), (
+        f"max abs diff = {(our_pooled - peft_out.pooler_output).abs().max().item()}"
     )

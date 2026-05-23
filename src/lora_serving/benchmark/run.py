@@ -7,8 +7,9 @@ Run on RunPod (or any GPU machine):
 
 Sweep options:
     uv run python -m lora_serving.benchmark.run \\
-        --model intfloat/multilingual-e5-small \\
-        --adapters 100 500 1000 5000 \\
+        --model BAAI/bge-m3 \\
+        --dtype fp16 \\
+        --adapters 1000 5000 10000 20000 \\
         --batch-sizes 16 32 64 128 \\
         --lora-ranks 8 16 32 \\
         --seq-len 128 \\
@@ -37,6 +38,47 @@ from lora_serving.model.encoder import EncoderWithLora
 from lora_serving.weights.batch import BatchAssembler
 from lora_serving.weights.store import AdapterStore
 
+DTYPE_MAP = {"fp16": torch.float16, "fp32": torch.float32, "bf16": torch.bfloat16}
+
+
+def per_adapter_bytes(config: LoraServingConfig) -> int:
+    """Predicted on-device bytes for one adapter: M target modules × 2 (A,B) × L × H × R × dtype_size."""
+    elem_size = torch.empty([], dtype=config.dtype).element_size()
+    return (
+        len(config.target_modules) * 2 * config.num_layers
+        * config.hidden_size * config.lora_rank * elem_size
+    )
+
+
+def memory_ceiling(
+    config: LoraServingConfig,
+    vram_budget_gb: float,
+    model_overhead_gb: float = 2.5,
+) -> tuple[int, int]:
+    """Max adapters that fit in (vram_budget - model_overhead). Returns (count, bytes_per_adapter)."""
+    bpa = per_adapter_bytes(config)
+    available_bytes = (vram_budget_gb - model_overhead_gb) * 1e9
+    return max(0, int(available_bytes / bpa)), bpa
+
+
+def print_memory_ceiling(model_name: str, dtype: torch.dtype, vram_gb: float) -> None:
+    """At startup: predict adapter ceiling for a representative config so the run is self-documenting."""
+    print(f"\n=== Memory ceiling (predicted) ===")
+    print(f"  Model: {model_name}  dtype: {dtype}  VRAM budget: {vram_gb:.1f} GB")
+    for rank in (4, 8, 16, 32):
+        cfg = LoraServingConfig(
+            model_name=model_name,
+            lora_rank=rank,
+            batch_size=1,
+            max_seq_len=128,
+            target_modules=["query", "value"],
+            device=torch.device("cuda:0"),
+            dtype=dtype,
+        )
+        max_n, bpa = memory_ceiling(cfg, vram_gb)
+        print(f"  rank={rank:<3} → {bpa/1024:>7.1f} KB/adapter  →  ~{max_n:>7,} adapters fit")
+    print()
+
 
 def run_single_config(
     model_name: str,
@@ -46,11 +88,11 @@ def run_single_config(
     seq_len: int,
     warmup: int,
     iters: int,
+    dtype: torch.dtype,
     num_labels: int = 10,
 ) -> dict:
-    """Run one benchmark configuration and return metrics."""
+    """Run one benchmark configuration and return metrics (including assembly/forward split)."""
     device = torch.device("cuda:0")
-    dtype = torch.float32
 
     config = LoraServingConfig(
         model_name=model_name,
@@ -62,18 +104,15 @@ def run_single_config(
         dtype=dtype,
     )
 
-    # Load model
-    print(f"  Loading base model ({model_name})...")
+    print(f"  Loading base model ({model_name}, {dtype})...")
     model = EncoderWithLora.from_pretrained_serving(config)
     model.eval()
 
-    # Populate adapter store with synthetic weights
     print(f"  Generating {num_adapters} synthetic adapters (rank={lora_rank})...")
     store = AdapterStore(config)
     make_synthetic_adapters(store, num_adapters)
     adapter_ids = [f"adapter_{i}" for i in range(num_adapters)]
 
-    # Generate synthetic LR weights for each adapter
     lr_coefs = {}
     lr_intercepts = {}
     for aid in adapter_ids:
@@ -88,13 +127,21 @@ def run_single_config(
     torch.cuda.reset_peak_memory_stats(device)
     torch.cuda.synchronize(device)
 
-    def run_batch() -> None:
-        # Sample a random batch of adapter IDs (mixed tenants)
+    # Reusable CUDA events for forward timing (avoids per-iter allocation cost)
+    fwd_start = torch.cuda.Event(enable_timing=True)
+    fwd_end = torch.cuda.Event(enable_timing=True)
+
+    def run_batch_timed() -> tuple[float, float]:
+        """Returns (assemble_ms, forward_ms). Assembly is CPU wall-clock; forward is CUDA-event timed."""
         batch_ids = random.choices(adapter_ids, k=batch_size)
         coefs = [lr_coefs[aid] for aid in batch_ids]
         intercepts = [lr_intercepts[aid] for aid in batch_ids]
 
+        t0 = time.perf_counter()
         lora_w, lr_w = assembler.assemble(batch_ids, coefs, intercepts)
+        assemble_ms = (time.perf_counter() - t0) * 1000
+
+        fwd_start.record()
         with torch.no_grad():
             model(
                 inputs["input_ids"],
@@ -103,36 +150,43 @@ def run_single_config(
                 lr_w,
                 output_lr,
             )
+        fwd_end.record()
         torch.cuda.synchronize(device)
+        forward_ms = fwd_start.elapsed_time(fwd_end)
+        return assemble_ms, forward_ms
 
-    # Warmup
     print(f"  Warming up ({warmup} iters)...")
     for _ in range(warmup):
-        run_batch()
+        run_batch_timed()
 
-    # Measure
     print(f"  Measuring ({iters} iters)...")
-    latencies = []
-    for _ in range(iters):
-        t0 = time.perf_counter()
-        run_batch()
-        latencies.append(time.perf_counter() - t0)
+    assemble_latencies = np.empty(iters)
+    forward_latencies = np.empty(iters)
+    for i in range(iters):
+        assemble_latencies[i], forward_latencies[i] = run_batch_timed()
 
-    latencies_ms = np.array(latencies) * 1000
+    total_latencies = assemble_latencies + forward_latencies
     peak_mem_gb = torch.cuda.max_memory_allocated(device) / 1e9
     adapter_mem_gb = store.memory_gb()
-    throughput = batch_size / np.mean(latencies)
+    throughput = batch_size / (np.mean(total_latencies) / 1000)
 
     return {
         "model": model_name,
+        "dtype": str(dtype).replace("torch.", ""),
         "num_adapters": num_adapters,
         "batch_size": batch_size,
         "lora_rank": lora_rank,
         "seq_len": seq_len,
-        "p50_ms": round(float(np.percentile(latencies_ms, 50)), 2),
-        "p90_ms": round(float(np.percentile(latencies_ms, 90)), 2),
-        "p99_ms": round(float(np.percentile(latencies_ms, 99)), 2),
-        "mean_ms": round(float(np.mean(latencies_ms)), 2),
+        "p50_ms": round(float(np.percentile(total_latencies, 50)), 2),
+        "p90_ms": round(float(np.percentile(total_latencies, 90)), 2),
+        "p95_ms": round(float(np.percentile(total_latencies, 95)), 2),
+        "p99_ms": round(float(np.percentile(total_latencies, 99)), 2),
+        "mean_ms": round(float(np.mean(total_latencies)), 2),
+        "assemble_p50_ms": round(float(np.percentile(assemble_latencies, 50)), 3),
+        "assemble_mean_ms": round(float(np.mean(assemble_latencies)), 3),
+        "forward_p50_ms": round(float(np.percentile(forward_latencies, 50)), 3),
+        "forward_mean_ms": round(float(np.mean(forward_latencies)), 3),
+        "assemble_share_pct": round(100 * np.mean(assemble_latencies) / np.mean(total_latencies), 1),
         "throughput_samples_sec": round(throughput, 1),
         "peak_gpu_mem_gb": round(peak_mem_gb, 3),
         "adapter_cache_gb": round(adapter_mem_gb, 3),
@@ -152,10 +206,14 @@ def print_table(rows: list[dict]) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Multi-tenant LoRA serving benchmark")
-    parser.add_argument("--model", default="intfloat/multilingual-e5-small")
-    parser.add_argument("--adapters", nargs="+", type=int, default=[100, 500, 1000, 5000])
-    parser.add_argument("--batch-sizes", nargs="+", type=int, default=[16, 32, 64, 128])
-    parser.add_argument("--lora-ranks", nargs="+", type=int, default=[8, 16, 32])
+    parser.add_argument("--model", default="BAAI/bge-m3")
+    parser.add_argument("--dtype", choices=list(DTYPE_MAP.keys()), default="fp16")
+    parser.add_argument(
+        "--adapters", nargs="+", type=int,
+        default=[100, 1000, 5000, 10000, 20000, 50000],
+    )
+    parser.add_argument("--batch-sizes", nargs="+", type=int, default=[8, 16, 32, 64, 128])
+    parser.add_argument("--lora-ranks", nargs="+", type=int, default=[8])
     parser.add_argument("--seq-len", type=int, default=128)
     parser.add_argument("--warmup", type=int, default=50)
     parser.add_argument("--iters", type=int, default=200)
@@ -167,8 +225,14 @@ def main():
         print("WARNING: No CUDA GPU detected. Benchmark requires a GPU.")
         return
 
-    print(f"GPU: {torch.cuda.get_device_name(0)}")
-    print(f"Sweep: {len(args.adapters)} adapter counts × {len(args.batch_sizes)} batch sizes × {len(args.lora_ranks)} lora ranks\n")
+    dtype = DTYPE_MAP[args.dtype]
+    gpu_name = torch.cuda.get_device_name(0)
+    vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+    print(f"GPU: {gpu_name}  ({vram_gb:.1f} GB VRAM)")
+    print_memory_ceiling(args.model, dtype, vram_gb)
+
+    print(f"Sweep: {len(args.adapters)} adapter counts × {len(args.batch_sizes)} batch sizes "
+          f"× {len(args.lora_ranks)} lora ranks\n")
 
     results = []
     total = len(args.adapters) * len(args.batch_sizes) * len(args.lora_ranks)
@@ -179,20 +243,32 @@ def main():
             for lora_rank in args.lora_ranks:
                 done += 1
                 print(f"[{done}/{total}] adapters={num_adapters} batch={batch_size} rank={lora_rank}")
-                row = run_single_config(
-                    model_name=args.model,
-                    num_adapters=num_adapters,
-                    batch_size=batch_size,
-                    lora_rank=lora_rank,
-                    seq_len=args.seq_len,
-                    warmup=args.warmup,
-                    iters=args.iters,
-                    num_labels=args.num_labels,
-                )
+                try:
+                    row = run_single_config(
+                        model_name=args.model,
+                        num_adapters=num_adapters,
+                        batch_size=batch_size,
+                        lora_rank=lora_rank,
+                        seq_len=args.seq_len,
+                        warmup=args.warmup,
+                        iters=args.iters,
+                        dtype=dtype,
+                        num_labels=args.num_labels,
+                    )
+                except torch.cuda.OutOfMemoryError as e:
+                    print(f"  OOM at adapters={num_adapters} batch={batch_size} rank={lora_rank}: {e}")
+                    torch.cuda.empty_cache()
+                    continue
                 results.append(row)
-                print(f"  p50={row['p50_ms']}ms  p90={row['p90_ms']}ms  p99={row['p99_ms']}ms  "
-                      f"throughput={row['throughput_samples_sec']} samples/s  "
+                print(f"  p50={row['p50_ms']}ms  p95={row['p95_ms']}ms  p99={row['p99_ms']}ms  "
+                      f"asm={row['assemble_mean_ms']}ms ({row['assemble_share_pct']}%)  "
+                      f"fwd={row['forward_mean_ms']}ms  "
+                      f"tput={row['throughput_samples_sec']} samples/s  "
                       f"peak_gpu={row['peak_gpu_mem_gb']}GB\n")
+
+    if not results:
+        print("No results collected (all configs OOM'd?)")
+        return
 
     print("\n=== Results ===")
     print_table(results)
