@@ -55,13 +55,20 @@ class AttentionWithLora(nn.Module):
             "value": self.value(hidden_states),
         }
 
-        # Add LoRA delta to each target projection
+        # Here we are calculating LORA delta in the activation space, rather than param space
+        # delta = B * (A * x)
+        # Note: This dynamically applies LoRA to any combination of 'query', 'key', or 'value'
+        # based on what is configured in `self.target_modules` (via LoraServingConfig).
+        # While it can apply to all three, in practice (and following the original LoRA
+        # paper by Hu et al.), only `query` and `value` are typically targeted to maximize
+        # parameter efficiency without sacrificing performance.
+        # This implementation matches PEFT's behavior of only targeting the requested modules.
         for module in self.target_modules:
             if module not in projections:
                 continue
             a = torch.cat(lora_weights.a[module], dim=0)  # (B, H, R)
             b = torch.cat(lora_weights.b[module], dim=0)  # (B, R, H)
-            self.lora_ops.shrink(projections[module], a)
+            self.lora_ops.shrink(hidden_states, a)
             self.lora_ops.expand(b)
             projections[module] = projections[module] + self.lora_ops.output
 
@@ -159,6 +166,10 @@ class EncoderWithLora(PreTrainedModel):
         self.pooler = nn.ModuleDict({
             "dense": nn.Linear(H, H, bias=True),
         })
+        
+        # Hardcoded to Tanh because this matches the standard activation used by
+        # BertPooler, RobertaPooler, and XLMRobertaPooler in Hugging Face.
+        # This allows us to load base pooler weights directly for BERT, RoBERTa, and BGE models.
         self.pooler_act = nn.Tanh()
         self.post_init()
 

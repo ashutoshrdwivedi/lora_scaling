@@ -1,0 +1,5 @@
+dataset,method,lora_rank,n_per_class,seed,trainable_body_params,train_seconds,accuracy,n_eval
+SetFit/sst2,vanilla,0,8,42,117653760,1.71,0.8166,1821
+SetFit/sst2,lora,8,8,42,147456,1.19,0.8007,1821
+SetFit/emotion,vanilla,0,8,42,117653760,12.57,0.361,2000
+SetFit/emotion,lora,8,8,42,147456,8.48,0.31,2000
