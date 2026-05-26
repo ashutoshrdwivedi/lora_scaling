@@ -115,17 +115,18 @@ supports thousands of concurrent adapters.
 Both systems are architected around autoregressive generation---KV-cache
 paging, token-by-token decode loops, and causal attention masks---and the
 Punica authors explicitly state that the decode stage is their sole
+% * <Ashutosh Dwivedi> 17:40:44 26 May 2026 UTC+0530:
+% verify punica claim
 optimization target.
 Neither supports bidirectional encoder attention, pooling layers, or
+% * <Ashutosh Dwivedi> 17:41:57 26 May 2026 UTC+0530:
+% Neither are specifically designed specifically for bidirectional encoder models? (but what's sepecial about that anyway?). Pooling layer - why specically mention that?
 per-tenant classification heads---leaving a critical production use case
 unaddressed.
 
-The only published system targeting encoder multi-adapter serving, PetS
-\cite{zhou2022pets}, was released before LoRA became the dominant
-parameter-efficient fine-tuning (PEFT) method.
-PetS supports adapters, BitFit, and MaskBERT but not LoRA-style low-rank
-matrix decompositions.
 Commercial serving stacks such as HuggingFace Text Embeddings Inference
+% * <Ashutosh Dwivedi> 17:42:54 26 May 2026 UTC+0530:
+% Re-word with proper research
 \cite{huggingface2023tei} offer no adapter support at all.
 vLLM \cite{kwon2023vllm} added basic single-adapter encoder-LoRA loading in
 v0.8.3 (PR~\#14935, closing GitHub issue~\#12808); multi-adapter LoRA serving
@@ -141,6 +142,8 @@ tenant's LoRA weights into the base model (which serializes batching),
 $W_0 x$ and a per-sample LoRA delta $B_i A_i x$, computing both
 independently and summing the results.
 This decomposition enables an entire mixed-tenant batch to be processed in
+% * <Ashutosh Dwivedi> 17:43:39 26 May 2026 UTC+0530:
+% Add the parameters space vs the activation space wording
 one forward pass---the base path runs once over all $B$ samples, and the LoRA
 paths run in parallel via a single \texttt{torch.bmm} call per attention
 layer.
@@ -155,11 +158,15 @@ batched analogously via zero-padded BMM.
 
   \item We present late-fusion BMM serving, an architecture that batches
   arbitrary mixed-tenant encoder requests without weight merging,
-  without custom CUDA kernels, and without modification to the base model
+% * <Ashutosh Dwivedi> 17:46:12 26 May 2026 UTC+0530:
+% UN-necessary line. Is model modification ever required?
+  without the need of custom CUDA kernels, and without modification to the base model
   (\S\ref{sec:system}).
 
   \item We empirically demonstrate that adapter count does not drive inference
   latency: scaling from 100 to 20{,}000 adapters leaves p50 latency
+% * <Ashutosh Dwivedi> 17:46:50 26 May 2026 UTC+0530:
+% Should report p99 instead? Check other papers and confirm.
   statistically unchanged at batch size 32 on a single A100-40GB, with serving
   throughput saturating at $\approx$800~samples/sec by batch size 64
   (\S\ref{sec:experiments}).
@@ -169,6 +176,8 @@ batched analogously via zero-padded BMM.
   of \textbf{33--571$\times$} and cold-start deployment improvements of
   \textbf{$>$600$\times$}; the gap widens with both batch size and adapter
   pool size, identifying $\mathcal{O}(N)$ per-swap overhead in the
+% * <Ashutosh Dwivedi> 17:47:34 26 May 2026 UTC+0530:
+% How can we confirm that it's O(N)?
   state-of-the-practice baseline (\S\ref{sec:results_baselines}).
 
   \item \sysname{} runs on standard PyTorch with no custom CUDA compilation,
