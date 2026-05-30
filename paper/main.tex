@@ -95,12 +95,12 @@ Against the HuggingFace PEFT per-request swap baseline on the same hardware,
 Deploying a personalized NLP feature---such as text classification---to
 thousands of customers is a storage and compute challenge.
 Maintaining a fully fine-tuned model per customer is infeasible:
-at $\approx$130~MB per copy, serving 10{,}000 customers would require
-over a terabyte of model weights.
+at $\approx$1.1~GB per copy in float16, serving 20{,}000 customers would require
+over 22~TB of model weights.
 LoRA \cite{hu2022lora} resolves the \emph{storage} problem: by expressing
 each customer's adaptation as a low-rank update to a single shared base
-encoder, the per-customer footprint shrinks to $\approx$300~KB (rank~8,
-12 layers)---a 400$\times$ reduction.
+encoder, the per-customer footprint shrinks to $\approx$1.6~MB (rank~8,
+24 layers)---a $\approx$700$\times$ reduction.
 The remaining challenge is \textbf{inference}: how to serve thousands of
 different LoRA adapters simultaneously on one GPU, at low latency, in batched
 mixed-tenant requests.
@@ -112,21 +112,17 @@ Multiplication), a custom CUDA kernel that batches per-adapter LoRA computations
 in a single launch; S-LoRA \cite{sheng2024slora} extends this with MBGMV
 (Multi-size Batched Gather Matrix-Vector) and a paged memory pool that
 supports thousands of concurrent adapters.
-Both systems are architected around autoregressive generation---KV-cache
-paging, token-by-token decode loops, and causal attention masks---and the
-Punica authors explicitly state that the decode stage is their sole
-% * <Ashutosh Dwivedi> 17:40:44 26 May 2026 UTC+0530:
-% verify punica claim
-optimization target.
-Neither supports bidirectional encoder attention, pooling layers, or
-% * <Ashutosh Dwivedi> 17:41:57 26 May 2026 UTC+0530:
-% Neither are specifically designed specifically for bidirectional encoder models? (but what's sepecial about that anyway?). Pooling layer - why specically mention that?
-per-tenant classification heads---leaving a critical production use case
-unaddressed.
+Both systems are architected around the stringent constraints of autoregressive decoder serving---namely, token-by-token generation loops, causal attention masks, and dynamic KV-cache paging.
+To achieve efficiency under these constraints, they must rely on complex, custom CUDA kernels like SGMV and dynamic paged memory allocations.
+In contrast, encoder serving is entirely free of these decoder-specific constraints.
+Because bidirectional sequence-wide attention processes the entire sequence ($S \gg 1$) non-autoregressively in a single forward pass, the LoRA updates naturally formulate as highly parallelizable, compute-bound matrix-matrix multiplications.
+Consequently, we do not need custom CUDA kernels or complex dynamic paging; instead, we can achieve high GPU utilization out-of-the-box using standard PyTorch batched matrix multiplication (\texttt{torch.bmm}) and simple pre-allocated static buffers.
+Decoder and encoder serving operate under different constraints and surface different bottlenecks: the autoregressive decode loop is memory-bound at sequence length 1 and benefits from custom gather kernels and paged KV storage, whereas the encoder forward at $S \gg 1$ is compute-bound and dominated by the base-model projections.
+A system designed for the former is structurally mismatched to the latter, leaving a critical production use case unaddressed.
 
 Commercial serving stacks such as HuggingFace Text Embeddings Inference
 % * <Ashutosh Dwivedi> 17:42:54 26 May 2026 UTC+0530:
-% Re-word with proper research
+% Re-word with proper research or remove if not enough space 
 \cite{huggingface2023tei} offer no adapter support at all.
 vLLM \cite{kwon2023vllm} added basic single-adapter encoder-LoRA loading in
 v0.8.3 (PR~\#14935, closing GitHub issue~\#12808); multi-adapter LoRA serving
@@ -147,6 +143,8 @@ This decomposition enables an entire mixed-tenant batch to be processed in
 one forward pass---the base path runs once over all $B$ samples, and the LoRA
 paths run in parallel via a single \texttt{torch.bmm} call per attention
 layer.
+% * <Ashutosh Dwivedi> 17:42:54 26 May 2026 UTC+0530:
+% remove the classification specific framing. The same logic applies to other downstream tasks as well.
 Per-tenant classification heads with variable numbers of output classes are
 batched analogously via zero-padded BMM.
 
@@ -166,13 +164,16 @@ batched analogously via zero-padded BMM.
   \item We empirically demonstrate that adapter count does not drive inference
   latency: scaling from 100 to 20{,}000 adapters leaves p50 latency
 % * <Ashutosh Dwivedi> 17:46:50 26 May 2026 UTC+0530:
-% Should report p99 instead? Check other papers and confirm.
+% P50 latency is good for showing stable statistic for this, but we also need to show 
+% that P99 stays bound (P99 itself may be noisy so we need the stable P50 metric as well.)
   statistically unchanged at batch size 32 on a single A100-40GB, with serving
   throughput saturating at $\approx$800~samples/sec by batch size 64
   (\S\ref{sec:experiments}).
 
   \item We benchmark \sysname{} against a HuggingFace PEFT per-request swap
   baseline on identical hardware and show end-to-end throughput improvements
+  % * <Ashutosh Dwivedi> 17:47:34 26 May 2026 UTC+0530:
+  %  This is a very easy baseline, we need to change it grouped one.
   of \textbf{33--571$\times$} and cold-start deployment improvements of
   \textbf{$>$600$\times$}; the gap widens with both batch size and adapter
   pool size, identifying $\mathcal{O}(N)$ per-swap overhead in the
@@ -183,6 +184,8 @@ batched analogously via zero-padded BMM.
   \item \sysname{} runs on standard PyTorch with no custom CUDA compilation,
   making it deployable on managed GPU environments (Databricks, SageMaker,
   Modal) where custom kernel builds are impractical.
+  % * <Ashutosh Dwivedi> 17:47:34 26 May 2026 UTC+0530:
+% Rephrase this
 \end{itemize}
 
 % =============================================================================
@@ -210,6 +213,8 @@ $2 L \cdot (d r + r d) = 147{,}456$ trainable parameters per adapter---a
 $24\times$ reduction over full fine-tuning of those layers.
 
 The theoretical justification for this compression comes from \citet{aghajanyan2021intrinsic},
+  % * <Ashutosh Dwivedi> 17:47:34 26 May 2026 UTC+0530:
+% verify citation remove if space crunch
 who showed that fine-tuning updates lie in a surprisingly low-dimensional
 subspace: even a random projection down to $\sim$200 dimensions retains 90\%
 of task performance on GLUE benchmarks.
@@ -222,14 +227,14 @@ of training, leaving the pre-trained representations intact.
 \label{sec:background_serving}
 
 Consider a service that exposes a single classification feature to $N$
-customers, where each customer has fine-tuned
-\texttt{intfloat/multilingual-e5-small} \cite{wang2024e5} on their own labeled
+customers, where each customer gets a fine-tuned
+\texttt{BAAI/bge-m3} \cite{chen2024bge} on their own labeled
 data to specialize the feature to their domain.
 Without LoRA, three naive serving strategies all fail at scale:
 
 \paragraph{One model per tenant.}
-Storing $N$ full model copies requires $N \times 130$~MB for float32.
-At $N = 5{,}000$ that is 650~GB---the equivalent of more than eight
+Storing $N$ full model copies requires $N \times 1.1$~GB in float16.
+At $N = 20{,}000$ that is $\approx$22~TB---the equivalent of over 275
 NVIDIA A100-80GB GPUs dedicated to weight storage alone.
 Moreover, cross-tenant batching is impossible: different model instances
 cannot share a forward pass.
