@@ -140,7 +140,7 @@ independently and summing the results.
 This decomposition enables an entire mixed-tenant batch to be processed in
 % * <Ashutosh Dwivedi> 17:43:39 26 May 2026 UTC+0530:
 % Add the parameters space vs the activation space wording
-one forward pass---the base path runs once over all $B$ samples, and the LoRA
+one forward pass---the base path runs once over all $\mathcal{B}$ samples, and the LoRA
 paths run in parallel via a single \texttt{torch.bmm} call per attention
 layer.
 % * <Ashutosh Dwivedi> 17:42:54 26 May 2026 UTC+0530:
@@ -271,10 +271,10 @@ applied per sample without serialization.
   path BAx running in parallel; (right) element-wise fusion and LR head BMM.
   Task \#14.}
   \caption{Overview of late-fusion BMM serving in \sysname.
-    For a mixed-tenant batch of size $B$, the base attention projection
+    For a mixed-tenant batch of size $\mathcal{B}$, the base attention projection
     $W_0 x$ runs once (shared weights), while per-sample LoRA deltas
     $B_i A_i x$ are computed in two \texttt{torch.bmm} calls.
-    All $B$ samples are fused in a single forward pass regardless of how many
+    All $\mathcal{B}$ samples are fused in a single forward pass regardless of how many
     distinct adapters are present.}
   \label{fig:overview}
 \end{figure}
@@ -298,19 +298,19 @@ sample $i$, which requires batched matrix multiplication rather than a
 broadcast multiply.
 Equation~\ref{eq:fuse} is a zero-allocation element-wise addition.
 
-For a batch of $B$ samples with hidden size $H$ and sequence length $S$:
+For a batch of $\mathcal{B}$ samples with hidden size $H$ and sequence length $S$:
 \begin{align}
-  h_{\text{shrink}} &= \texttt{bmm}(x,\; [A_0,\ldots,A_{B-1}])
-    \in \mathbb{R}^{B \times S \times r} \label{eq:shrink} \\
-  h_{\text{delta}} &= \texttt{bmm}(h_{\text{shrink}},\; [B_0,\ldots,B_{B-1}])
-    \in \mathbb{R}^{B \times S \times H} \label{eq:expand}
+  h_{\text{shrink}} &= \texttt{bmm}(x,\; [A_0,\ldots,A_{\mathcal{B}-1}])
+    \in \mathbb{R}^{\mathcal{B} \times S \times r} \label{eq:shrink} \\
+  h_{\text{delta}} &= \texttt{bmm}(h_{\text{shrink}},\; [B_0,\ldots,B_{\mathcal{B}-1}])
+    \in \mathbb{R}^{\mathcal{B} \times S \times H} \label{eq:expand}
 \end{align}
 
 \noindent
-where $[A_0, \ldots, A_{B-1}] \in \mathbb{R}^{B \times H \times r}$ is the
+where $[A_0, \ldots, A_{\mathcal{B}-1}] \in \mathbb{R}^{\mathcal{B} \times H \times r}$ is the
 stack of per-sample shrink matrices, assembled from the adapter store at
 request time.
-Both \texttt{bmm} calls are a single GPU kernel launch, processing all $B$
+Both \texttt{bmm} calls are a single GPU kernel launch, processing all $\mathcal{B}$
 samples simultaneously regardless of how many distinct adapters they reference.
 
 This decomposition contrasts with the SGMV kernel used in Punica
@@ -342,17 +342,17 @@ classes where $c_i$ varies from 2 to over 100.
 
 \sysname{} serves all heads in a single BMM call.
 Given a batch of pooled representations
-$p \in \mathbb{R}^{B \times 1 \times H}$
+$p \in \mathbb{R}^{\mathcal{B} \times 1 \times H}$
 and per-tenant weight matrices
 $W^{\text{cls}}_i \in \mathbb{R}^{c_i \times H}$ and bias vectors
 $b^{\text{cls}}_i \in \mathbb{R}^{c_i}$,
 we zero-pad all weight matrices to the maximum label count
 $c_{\max} = \max_i c_i$ in the batch and form a stacked tensor
-$W^{\text{cls}} \in \mathbb{R}^{B \times c_{\max} \times H}$.
+$W^{\text{cls}} \in \mathbb{R}^{\mathcal{B} \times c_{\max} \times H}$.
 The logit computation is:
 \begin{equation}
   \text{logits} = \texttt{bmm}(p,\; {W^{\text{cls}}}^\top) + b^{\text{cls}}
-  \;\in\; \mathbb{R}^{B \times 1 \times c_{\max}}
+  \;\in\; \mathbb{R}^{\mathcal{B} \times 1 \times c_{\max}}
 \end{equation}
 
 Callers slice $[:, :, :c_i]$ per sample before applying softmax.
@@ -364,19 +364,19 @@ probability distribution of any tenant.
 
 Without explicit buffer management, \texttt{torch.bmm} allocates a new output
 tensor on every call.
-For a 12-layer encoder with target modules $\{\text{query}, \text{value}\}$,
-this produces $2 \times 2 \times 12 = 48$ CUDA allocations per forward pass.
+For a 24-layer encoder with target modules $\{\text{query}, \text{value}\}$,
+this produces $2 \times 2 \times 24 = 96$ CUDA allocations per forward pass.
 Each allocation invokes the CUDA memory allocator, which searches for a free
-contiguous block at a cost of $\sim$10~$\mu$s per call---totaling
-$\sim$0.5~ms of pure allocator overhead per batch.
+contiguous block at a cost on the order of microseconds per call---totaling
+$\sim$1~ms of pure allocator overhead per batch.
 
 \sysname{} pre-allocates two fixed-size buffers at initialization:
 \begin{align}
-  \mathtt{out\_A} &\in \mathbb{R}^{B_{\max} \times S_{\max} \times r} \\
-  \mathtt{out\_B} &\in \mathbb{R}^{B_{\max} \times S_{\max} \times H}
+  \mathtt{out\_A} &\in \mathbb{R}^{\mathcal{B}_{\max} \times S_{\max} \times r} \\
+  \mathtt{out\_B} &\in \mathbb{R}^{\mathcal{B}_{\max} \times S_{\max} \times H}
 \end{align}
 and passes them via the \texttt{out=} argument of every \texttt{bmm} call.
-This eliminates all 48 allocations per forward pass, replacing dynamic memory
+This eliminates all 96 allocations per forward pass, replacing dynamic memory
 management with zero-overhead in-place writes.
 The buffers are shared across all layers because each \texttt{expand} call
 immediately consumes \texttt{out\_A} before the next \texttt{shrink} call
@@ -398,7 +398,7 @@ For a batch of adapter IDs, the \texttt{BatchAssembler} iterates over the
 batch, slices each adapter's per-layer tensor, and \texttt{unsqueeze(0)}-es
 it to add a batch dimension.
 After all samples are processed, \texttt{torch.cat} concatenates the per-layer
-lists into $(B, H, r)$ tensors ready for \texttt{bmm}.
+lists into $(\mathcal{B}, H, r)$ tensors ready for \texttt{bmm}.
 This CPU-side assembly is the only per-request overhead before the GPU forward
 pass (\S\ref{sec:results_latency}).
 
@@ -410,20 +410,20 @@ The base model requires $\mathcal{O}(d^2 L)$ memory regardless of tenant
 count.
 Each adapter requires $\mathcal{O}(r d L)$ memory.
 For $N$ tenants: total GPU memory $= \mathcal{O}(d^2 L + N r d L)$.
-At $d=384$, $L=12$, $r=8$: 100 adapters occupy 29~MB; 5{,}000 adapters
-occupy 1.47~GB.
-An NVIDIA L4 (23~GB) can hold $\approx$16{,}000 adapters at rank 8 before
+At $d=1024$, $L=24$, $r=8$: 100 adapters occupy 157~MB; 5{,}000 adapters
+occupy 7.86~GB.
+An NVIDIA A100-40GB can hold $\approx$25{,}000 adapters at rank 8 before
 exhausting memory.
 
 \paragraph{Inference time.}
 The latency of a single forward pass is independent of $N$ (adapter count):
-it depends only on batch size $B$, sequence length $S$, and model depth $L$.
+it depends only on batch size $\mathcal{B}$, sequence length $S$, and model depth $L$.
 The adapter count affects only CPU-side batch assembly time, which is
-$\mathcal{O}(B \cdot L \cdot |\mathcal{M}|)$ where $|\mathcal{M}|$ is the
+$\mathcal{O}(\mathcal{B} \cdot L \cdot |\mathcal{M}|)$ where $|\mathcal{M}|$ is the
 number of target modules.
-Empirically, increasing $N$ from 100 to 5{,}000 adds $<$16~ms at batch size
-32---less than 2$\times$ the baseline latency and entirely attributable to
-batch assembly, not GPU compute (\S\ref{sec:results_latency}).
+Empirically, increasing $N$ from 100 to 20{,}000 at batch size 32 leaves p50
+latency effectively unchanged (40.4 vs.\ 40.2~ms;
+\S\ref{sec:results_latency}).
 
 % =============================================================================
 \section{Experiments}
@@ -459,7 +459,7 @@ GPU-side work is timed with reusable \texttt{torch.cuda.Event} pairs and
 synchronized once per iteration; CPU-side assembly is timed with
 \texttt{time.perf\_counter} between identical synchronization points.
 We sweep adapter count $N \in \{100,\,1{,}000,\,5{,}000,\,10{,}000,\,20{,}000,\,
-50{,}000\}$, batch size $B \in \{8,\,16,\,32,\,64,\,128\}$, and rank
+50{,}000\}$, batch size $\mathcal{B} \in \{8,\,16,\,32,\,64,\,128\}$, and rank
 $r \in \{4,\,8,\,16,\,32\}$.
 Each configuration samples mixed-tenant batches uniformly at random from the
 adapter pool.
@@ -498,7 +498,7 @@ and the bottom block LoRA rank.}
 \label{tab:main_results}
 \begin{tabular}{rrr rrr r r}
 \toprule
-$N$ & $B$ & $r$ & p50 & p90 & p99 & QPS & GPU \\
+$N$ & $\mathcal{B}$ & $r$ & p50 & p90 & p99 & QPS & GPU \\
     &     &     & (ms)& (ms)& (ms)& (s/s) & (GB) \\
 \midrule
     100 & 32 & 8  & 40.4 & 40.6 & 41.7 & 791 & 1.43 \\
@@ -520,7 +520,7 @@ $N$ & $B$ & $r$ & p50 & p90 & p99 & QPS & GPU \\
 \end{table}
 
 \paragraph{Finding 1: Adapter count does not drive latency.}
-Scaling from 100 to 20{,}000 adapters at $B{=}32$, $r{=}8$ leaves p50 latency
+Scaling from 100 to 20{,}000 adapters at $\mathcal{B}{=}32$, $r{=}8$ leaves p50 latency
 statistically unchanged (40.4 vs.\ 40.2~ms, a 0.5\% difference)---a
 200$\times$ increase in the number of served customers at zero latency cost.
 The GPU-side forward pass time is constant at $\approx$26.8~ms across the
@@ -529,16 +529,16 @@ assembler whose share remains below 35\% of total latency.
 This empirically validates the $\mathcal{O}(1)$-in-$N$ scaling property of
 \S\ref{sec:complexity}.
 
-\paragraph{Finding 2: Batch size drives throughput up to saturation at $B{=}64$.}
-Throughput scales from 384~samples/sec at $B{=}8$ to 801~samples/sec at
-$B{=}64$, then plateaus---$B{=}128$ delivers no further gain (800~samples/sec).
-The shared-base encoder forward becomes GPU-bound at $B{=}64$, after which
+\paragraph{Finding 2: Batch size drives throughput up to saturation at $\mathcal{B}{=}64$.}
+Throughput scales from 384~samples/sec at $\mathcal{B}{=}8$ to 801~samples/sec at
+$\mathcal{B}{=}64$, then plateaus---$\mathcal{B}{=}128$ delivers no further gain (800~samples/sec).
+The shared-base encoder forward becomes GPU-bound at $\mathcal{B}{=}64$, after which
 larger batches only widen tail latency without lifting throughput.
-For deployments under strict p99 SLAs, $B \in \{32, 64\}$ is the recommended
+For deployments under strict p99 SLAs, $\mathcal{B} \in \{32, 64\}$ is the recommended
 operating range.
 
 \paragraph{Finding 3: LoRA rank is a free latency knob.}
-At $N{=}1{,}000$, $B{=}32$, p50 latency is flat across $r \in \{4, 8, 16, 32\}$
+At $N{=}1{,}000$, $\mathcal{B}{=}32$, p50 latency is flat across $r \in \{4, 8, 16, 32\}$
 (40.4, 40.1, 40.2, 40.3~ms respectively); the BMM cost is dwarfed by the base
 encoder's H$\times$H projections at $H{=}1024$.
 Practitioners can therefore select rank purely on a quality--memory basis: the
@@ -556,8 +556,8 @@ $r{=}16$, and $\approx$\textbf{6{,}000} at $r{=}32$.
 Our $N{=}50{,}000$ runs OOM'd cleanly at all batch sizes, confirming the limit.
 
 \paragraph{Finding 5: Tail latency widens at large batches.}
-The p99/p50 ratio at $B{=}32$ is $1.04\times$; at $B{=}64$ it reaches
-$2.27\times$ and at $B{=}128$ remains elevated at $1.69\times$.
+The p99/p50 ratio at $\mathcal{B}{=}32$ is $1.04\times$; at $\mathcal{B}{=}64$ it reaches
+$2.27\times$ and at $\mathcal{B}{=}128$ remains elevated at $1.69\times$.
 Profiling localizes the spike to occasional CPU-side stalls in the
 batch-assembly path (\S\ref{sec:results_assembly}); the GPU forward exhibits
 no such variance.
@@ -568,9 +568,9 @@ loop is left as a near-term engineering improvement.
 \label{sec:results_assembly}
 Decomposing each iteration into CPU-side assembly (gather LoRA tensors,
 \texttt{stack}, host-to-device copy) versus GPU-side forward, the assembly
-share is 16\% at $B{=}8$ and rises to \textbf{39\%} at $B{=}128$: the encoder
-forward saturates at $B{=}64$ while assembly continues to scale linearly with
-$B$.
+share is 16\% at $\mathcal{B}{=}8$ and rises to \textbf{39\%} at $\mathcal{B}{=}128$: the encoder
+forward saturates at $\mathcal{B}{=}64$ while assembly continues to scale linearly with
+$\mathcal{B}$.
 This identifies the per-batch assembler---not the GPU---as the dominant
 target for further engineering work; promising directions include
 double-buffered host-to-device transfer overlapped with the previous batch's
@@ -584,10 +584,10 @@ operations with custom kernels (Punica's SGMV \cite{chen2024punica} or S-LoRA's
 MBGMV \cite{sheng2024slora}) would yield further speedups. The answer is no,
 for encoders with hidden size $d=1024$: the LoRA arithmetic is already a
 small fraction of the forward cost.
-We establish this with three independent measurements at $B{=}32$, $N{=}1{,}000$,
+We establish this with three independent measurements at $\mathcal{B}{=}32$, $N{=}1{,}000$,
 $r{=}8$ on the same A100-40GB.
 First, the \emph{analytic FLOP ratio} per encoder layer is
-$12 B S d^2 / (4 B S d r) = 3d/r = 384$ -- the base encoder performs
+$12 \mathcal{B} S d^2 / (4 \mathcal{B} S d r) = 3d/r = 384$ -- the base encoder performs
 384$\times$ more arithmetic than the LoRA path, so even an instantaneous
 LoRA kernel would shave at most 0.26\% of FLOPs.
 Second, a PyTorch profiler trace attributes \textbf{1.9\%} of total CUDA time
@@ -646,7 +646,7 @@ dictionary insert into the \texttt{AdapterStore}.
 \caption{Latency and throughput on a NVIDIA A100-40GB against PEFT per-request
 swap baseline (\texttt{BAAI/bge-m3}, rank=8, fp16, sequence length=128,
 mixed-tenant batches sampled uniformly).
-\sysname{} numbers correspond to the $B=32$ row of
+\sysname{} numbers correspond to the $\mathcal{B}=32$ row of
 Table~\ref{tab:main_results} at the matching $N$.}
 \label{tab:baselines}
 \begin{tabular}{lrrrr}
@@ -655,17 +655,17 @@ Table~\ref{tab:main_results} at the matching $N$.}
 \cmidrule(lr){2-3} \cmidrule(lr){4-5}
 System & p50 (ms) & QPS & p50 (ms) & QPS \\
 \midrule
-PEFT sequential ($B{=}8$)   & 681  & 11.7 & 5{,}906 & 1.4 \\
-PEFT sequential ($B{=}32$)  & 2{,}750 & 11.6 & 23{,}652 & 1.4 \\
-PEFT sequential ($B{=}128$) & 10{,}927 & 11.7 & 94{,}596 & 1.4 \\
+PEFT sequential ($\mathcal{B}{=}8$)   & 681  & 11.7 & 5{,}906 & 1.4 \\
+PEFT sequential ($\mathcal{B}{=}32$)  & 2{,}750 & 11.6 & 23{,}652 & 1.4 \\
+PEFT sequential ($\mathcal{B}{=}128$) & 10{,}927 & 11.7 & 94{,}596 & 1.4 \\
 \midrule
-\sysname{} ($B{=}8$)        & 20.4 & \textbf{384} & 20.7 & \textbf{384} \\
-\sysname{} ($B{=}32$)       & 40.4 & \textbf{791} & 40.1 & \textbf{797} \\
-\sysname{} ($B{=}128$)      & 150.7 & \textbf{802} & 150.9 & \textbf{800} \\
+\sysname{} ($\mathcal{B}{=}8$)        & 20.4 & \textbf{384} & 20.7 & \textbf{384} \\
+\sysname{} ($\mathcal{B}{=}32$)       & 40.4 & \textbf{791} & 40.1 & \textbf{797} \\
+\sysname{} ($\mathcal{B}{=}128$)      & 150.7 & \textbf{802} & 150.9 & \textbf{800} \\
 \midrule
-\textbf{Speedup} ($B{=}32$) & \multicolumn{2}{c}{\textbf{68$\times$}}
+\textbf{Speedup} ($\mathcal{B}{=}32$) & \multicolumn{2}{c}{\textbf{68$\times$}}
                             & \multicolumn{2}{c}{\textbf{561$\times$}} \\
-\textbf{Speedup} ($B{=}128$)& \multicolumn{2}{c}{\textbf{68$\times$}}
+\textbf{Speedup} ($\mathcal{B}{=}128$)& \multicolumn{2}{c}{\textbf{68$\times$}}
                             & \multicolumn{2}{c}{\textbf{571$\times$}} \\
 \bottomrule
 \end{tabular}
@@ -673,10 +673,10 @@ PEFT sequential ($B{=}128$) & 10{,}927 & 11.7 & 94{,}596 & 1.4 \\
 
 \paragraph{PEFT throughput is invariant in batch size.}
 Because the sequential path executes one \texttt{set\_adapter} call and one
-$B{=}1$ forward per sample, wall-clock time scales linearly with $B$ and
+$\mathcal{B}{=}1$ forward per sample, wall-clock time scales linearly with $\mathcal{B}$ and
 throughput remains pinned at $\approx$11.7~samples/sec at $N{=}100$ and
 $\approx$1.4~samples/sec at $N{=}1{,}000$.
-\sysname{}, in contrast, reaches 800~samples/sec at $B{=}64$ and saturates
+\sysname{}, in contrast, reaches 800~samples/sec at $\mathcal{B}{=}64$ and saturates
 thereafter.
 
 \paragraph{PEFT throughput collapses with adapter count.}
@@ -1006,7 +1006,7 @@ Single-seed; see \S\ref{sec:limitations}.}
 \label{tab:full_results}
 \begin{tabular}{rrr rrrr rr}
 \toprule
-$N$ & $B$ & $r$ & p50 (ms) & p90 (ms) & p99 (ms) & Mean (ms) & QPS (s/s) & GPU (GB) \\
+$N$ & $\mathcal{B}$ & $r$ & p50 (ms) & p90 (ms) & p99 (ms) & Mean (ms) & QPS (s/s) & GPU (GB) \\
 \midrule
  100 & 16 &  8 & 19.82 & 20.22 & 20.90 & 20.56 & 778.2 & 0.559 \\
  100 & 16 & 16 & 19.93 & 20.32 & 20.44 & 19.98 & 800.7 & 0.590 \\
