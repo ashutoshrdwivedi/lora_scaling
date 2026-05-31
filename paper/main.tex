@@ -367,9 +367,10 @@ Without explicit buffer management, \texttt{torch.bmm} allocates a new output
 tensor on every call.
 For a 24-layer encoder with target modules $\{\text{query}, \text{value}\}$,
 this produces $2 \times 2 \times 24 = 96$ CUDA allocations per forward pass.
-Each allocation invokes the CUDA memory allocator, which searches for a free
-contiguous block at a cost on the order of microseconds per call---totaling
-$\sim$1~ms of pure allocator overhead per batch.
+Each allocation invokes the CUDA caching allocator, which searches for a free
+contiguous block at a cost on the order of microseconds per call---adding up to
+several hundred microseconds of pure allocator overhead per batch
+(\S\ref{sec:ablation}).
 
 \sysname{} pre-allocates two fixed-size buffers at initialization:
 \begin{align}
