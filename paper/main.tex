@@ -209,7 +209,7 @@ of training, leaving the pre-trained representations intact.
 
 At rank 8, LoRA retains $\approx$97\% of vanilla fine-tuning's mean
 accuracy across seven public text-classification benchmarks
-(Table~\ref{tab:accuracy}), at $1/800$ the trainable-parameter
+(Table~\ref{tab:accuracy}), at $1/370$ the trainable-parameter
 cost.\footnote{Accuracy reported on
 \texttt{paraphrase-mpnet-base-v2} to match the SetFit literature
 \cite{tunstall2022efficient}; serving experiments
@@ -223,7 +223,7 @@ these adapters in a single forward pass.
 \caption{Per-task accuracy of LoRA adapters versus full encoder
 fine-tuning at $N{=}8$ examples per class, rank=8, single seed on
 \texttt{paraphrase-mpnet-base-v2}. LoRA retains $97\%$ of vanilla mean
-accuracy at $1/800$ of the trainable parameter count. See
+accuracy at $1/370$ of the trainable parameter count. See
 Appendix~\ref{app:accuracy} for per-task details.}
 \label{tab:accuracy}
 \begin{tabular}{lrrr}
@@ -239,7 +239,7 @@ EnronSpam      & 0.890 & 0.884 & $-$0.006 \\
 AG News        & 0.804 & 0.770 & $-$0.034 \\
 \midrule
 \textbf{Mean}  & \textbf{0.655} & \textbf{0.633} & $-$0.022 \\
-Trainable params & 117M & 147K & 800$\times$ smaller \\
+Trainable params & 109M & 295K & 370$\times$ smaller \\
 \bottomrule
 \end{tabular}
 \end{table}
