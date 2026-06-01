@@ -214,31 +214,16 @@ Consider a service that exposes a single classification feature to $N$
 customers, where each customer gets a fine-tuned
 \texttt{BAAI/bge-m3} \cite{chen2024bge} on their own labeled
 data to specialize the feature to their domain.
-Without LoRA, three naive serving strategies all fail at scale:
-
-\paragraph{One model per tenant.}
-Storing $N$ full model copies requires $N \times 1.1$~GB in float16.
-At $N = 20{,}000$ that is $\approx$22~TB---the equivalent of over 275
-NVIDIA A100-80GB GPUs dedicated to weight storage alone.
-Moreover, cross-tenant batching is impossible: different model instances
-cannot share a forward pass.
-
-\paragraph{Weight merging per request.}
-Load one base model; before each request, compute $W' = W_0 + B_i A_i$
-in-place, run inference, then restore $W_0$.
-This approach has several fatal flaws: (i) the merge-restore cycle is
-\emph{serial}, blocking all other requests during weight mutation;
-(ii) in-place CUDA tensor modifications cause memory fragmentation and
-out-of-memory crashes under load; (iii) a crash between merge and restore
-contaminates subsequent tenants' requests with the wrong adapter---a
-correctness and security failure.
-
-\paragraph{Sequential single-tenant batching.}
-Serve all requests for tenant $i$ as a batch, then switch adapters for
-tenant $i+1$.
-Cross-tenant requests cannot be batched, so average GPU utilization
-approaches $1/N$---near zero for large $N$.
-
+Three naive serving strategies all fail at scale.
+\emph{One model per tenant} requires $N \times 1.1$~GB in float16
+($\approx$22~TB at $N{=}20{,}000$, or $>$275 A100-80GBs of weight storage) and
+admits no cross-tenant batching.
+\emph{Weight merging per request}---compute $W' = W_0 + B_i A_i$ in-place,
+run inference, then restore $W_0$---serializes requests behind the
+merge--restore cycle, fragments GPU memory under in-place mutation, and
+risks cross-tenant contamination if a crash interleaves with restore.
+\emph{Sequential single-tenant batching} (one tenant per batch) drives
+average GPU utilization toward $1/N$.
 The right solution batches \emph{heterogeneous} adapters in a single forward
 pass, which requires a decomposition where different linear operations can be
 applied per sample without serialization.
@@ -618,17 +603,18 @@ improve our serving throughput.
   \label{fig:latency_adapters}
 \end{figure}
 
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=\linewidth]{figures/throughput_baselines.pdf}
-  \caption{Throughput of \sysname{} versus the PEFT per-request swap baseline
-  at three batch sizes for $N \in \{100, 1{,}000\}$ adapters (rank = 8, fp16,
-  A100-40GB).
-  PEFT's throughput is invariant in $B$ (each sample requires its own
-  \texttt{set\_adapter}+forward) and collapses 8.4$\times$ as $N$ grows from
-  100 to 1{,}000.}
-  \label{fig:throughput_baselines}
-\end{figure}
+% Throughput-vs-baselines figure dropped: redundant with Table tab:baselines.
+% \begin{figure}[t]
+%   \centering
+%   \includegraphics[width=\linewidth]{figures/throughput_baselines.pdf}
+%   \caption{Throughput of \sysname{} versus the PEFT per-request swap baseline
+%   at three batch sizes for $N \in \{100, 1{,}000\}$ adapters (rank = 8, fp16,
+%   A100-40GB).
+%   PEFT's throughput is invariant in $B$ (each sample requires its own
+%   \texttt{set\_adapter}+forward) and collapses 8.4$\times$ as $N$ grows from
+%   100 to 1{,}000.}
+%   \label{fig:throughput_baselines}
+% \end{figure}
 
 \subsection{Comparison with Baselines}
 \label{sec:results_baselines}
