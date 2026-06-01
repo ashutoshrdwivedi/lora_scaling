@@ -182,6 +182,8 @@ batched analogously via zero-padded BMM.
 
   \item \sysname{} runs on standard PyTorch with no custom CUDA compilation,
   making it deployable on managed GPU environments (Databricks, SageMaker,
+% * <Ashutosh Dwivedi> 17:54:47 26 May 2026 UTC+0530:
+% Removing the friction (custom cuda kernel installation) of deployment
   Modal) where custom kernel builds are impractical.
 \end{itemize}
 
@@ -205,11 +207,17 @@ $h = W_0 x + \frac{\alpha}{r} B A x$,
 where $W_0$ is the frozen pre-trained weight and $\alpha$ is a scaling
 hyperparameter typically set equal to $r$.
 For an encoder of hidden size $d = 384$ with $L = 12$ layers, applying LoRA
+% * <Ashutosh Dwivedi> 17:56:16 26 May 2026 UTC+0530:
+% Use the numbers for BGE M3 model
 at rank $r = 8$ to the query and value projections yields
 $2 L \cdot (d r + r d) = 147{,}456$ trainable parameters per adapter---a
 $24\times$ reduction over full fine-tuning of those layers.
+% * <Ashutosh Dwivedi> 17:55:45 26 May 2026 UTC+0530:
+% verify the multiplier
 
 The theoretical justification for this compression comes from \citet{aghajanyan2021intrinsic},
+% * <Ashutosh Dwivedi> 17:57:41 26 May 2026 UTC+0530:
+% verify citation
 who showed that fine-tuning updates lie in a surprisingly low-dimensional
 subspace: even a random projection down to $\sim$200 dimensions retains 90\%
 of task performance on GLUE benchmarks.
@@ -228,8 +236,12 @@ data to specialize the feature to their domain.
 Without LoRA, three naive serving strategies all fail at scale:
 
 \paragraph{One model per tenant.}
+% * <Ashutosh Dwivedi> 18:02:33 26 May 2026 UTC+0530:
+% verify claim
 Storing $N$ full model copies requires $N \times 130$~MB for float32.
 At $N = 5{,}000$ that is 650~GB---the equivalent of more than eight
+% * <Ashutosh Dwivedi> 18:03:17 26 May 2026 UTC+0530:
+% change the claim to the number we benchmark
 NVIDIA A100-80GB GPUs dedicated to weight storage alone.
 Moreover, cross-tenant batching is impossible: different model instances
 cannot share a forward pass.
@@ -256,6 +268,8 @@ applied per sample without serialization.
 
 % =============================================================================
 \section{\sysname: System Design}
+% * <Ashutosh Dwivedi> 18:25:09 26 May 2026 UTC+0530:
+% Keshav : Section 5: Related work should be section 3. Section 3 : System Design should be section 5.
 \label{sec:system}
 
 \begin{figure}[t]
@@ -317,19 +331,29 @@ applies a different $(A_i, B_i)$ to every batch item with no grouping.
 Second, \emph{operand shape}: SGMV operates on vector inputs $(1, H)$
 optimized for the autoregressive decode shape;
 \texttt{bmm} operates on the matrix shape $(S, H)$ native to encoder prefill.
+% * <Ashutosh Dwivedi> 18:10:54 26 May 2026 UTC+0530:
+% self: explain
 Third, \emph{deployability}: SGMV is a custom CUDA kernel that must be
 compiled against a specific CUDA version; \texttt{bmm} ships with PyTorch
 and runs anywhere PyTorch runs.
 S-LoRA \cite{sheng2024slora} extends Punica with prefill-shaped variants
+% * <Ashutosh Dwivedi> 18:17:28 26 May 2026 UTC+0530:
+% benchmark: contiguous memory layout for our own implementation
+% * <Ashutosh Dwivedi> 18:12:31 26 May 2026 UTC+0530:
+% Does it really extend they are the papers submitted at the same time
 (MBGMM/MBGMV) that handle non-contiguous adapter memory, but the kernels
 still target autoregressive LLM serving with a KV cache and do not expose
 the encoder operations (pooling, classification heads) needed for
+% * <Ashutosh Dwivedi> 18:18:39 26 May 2026 UTC+0530:
+% They are not even concerned with classification head so no need to mention it here.
 classification workloads.
 
 \subsection{Batched Classification Heads}
 \label{sec:lr_head}
 
 In the multi-tenant classification setting, each tenant trains a
+% * <Ashutosh Dwivedi> 18:21:21 26 May 2026 UTC+0530:
+% Kehsav : 1.⁠ ⁠Should we talk about Logistic Regression head or avoid it ?
 logistic-regression (LR) head on top of the encoder's pooled
 \texttt{[CLS]} representation.
 Tenants differ in the number of output classes: tenant $i$ may have $c_i$
@@ -338,6 +362,8 @@ classes where $c_i$ varies from 2 to over 100.
 \sysname{} serves all heads in a single BMM call.
 Given a batch of pooled representations
 $p \in \mathbb{R}^{B \times 1 \times H}$
+% * <Ashutosh Dwivedi> 18:22:29 26 May 2026 UTC+0530:
+% Keshav: 3.⁠ ⁠There is some conflict in variables that we are using, B for batch and B for lora b matrix
 and per-tenant weight matrices
 $W^{\text{cls}}_i \in \mathbb{R}^{c_i \times H}$ and bias vectors
 $b^{\text{cls}}_i \in \mathbb{R}^{c_i}$,
