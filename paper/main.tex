@@ -195,14 +195,10 @@ The full forward pass for a single sample becomes
 $h = W_0 x + \frac{\alpha}{r} B A x$,
 where $W_0$ is the frozen pre-trained weight and $\alpha$ is a scaling
 hyperparameter typically set equal to $r$.
-For an encoder of hidden size $d = 384$ with $L = 12$ layers, applying LoRA
-% * <Ashutosh Dwivedi> 17:56:16 26 May 2026 UTC+0530:
-% Use the numbers for BGE M3 model
+For an encoder of hidden size $d = 1024$ with $L = 24$ layers, applying LoRA
 at rank $r = 8$ to the query and value projections yields
-$2 L \cdot (d r + r d) = 147{,}456$ trainable parameters per adapter---a
-$24\times$ reduction over full fine-tuning of those layers.
-% * <Ashutosh Dwivedi> 17:55:45 26 May 2026 UTC+0530:
-% verify the multiplier
+$2 L \cdot (d r + r d) = 786{,}432$ trainable parameters per adapter---a
+$64\times$ reduction over full fine-tuning of those layers.
 
 In this work, $B$ is initialized to zero so that $\Delta W = 0$ at the start
 of training, leaving the pre-trained representations intact.
@@ -546,7 +542,8 @@ $r{=}32$; Finding~4)---but it does not affect serving latency below that ceiling
 \paragraph{Finding 4: Predictable memory footprint and per-GPU ceiling.}
 Per-adapter cache memory measures 1.573~MB at $r{=}8$ in fp16 (24 layers,
 hidden size 1024, two target modules), matching the analytic formula
-$2 \cdot L \cdot d \cdot r \cdot \text{dtype}$ within 5\%.
+$2 \cdot M \cdot L \cdot d \cdot r \cdot \text{dtype}$ (with $M{=}2$
+target modules) within 5\%.
 On a 40~GB A100, after reserving $\approx$2~GB for base-model parameters and
 activation buffers, this yields a clean empirical ceiling of
 $\approx$\textbf{25{,}000} adapters at $r{=}8$, $\approx$\textbf{12{,}000} at
@@ -837,12 +834,12 @@ used by the SetFit literature \cite{tunstall2022efficient}: SST-2,
 SST-5, CR, Amazon-Counterfactual, Emotion, EnronSpam, and AG News. For
 each dataset we train two variants of \texttt{paraphrase-mpnet-base-v2}
 \cite{reimers2019sentencebert} at $N{=}8$ labeled examples per class: a
-\emph{vanilla} full-encoder fine-tune (117M trainable parameters) and a
-\emph{LoRA} variant at rank~8 (147{,}456 trainable parameters---an
-$800\times$ reduction).
+\emph{vanilla} full-encoder fine-tune (109M trainable parameters) and a
+\emph{LoRA} variant at rank~8 (294{,}912 trainable parameters---a
+$370\times$ reduction).
 
 LoRA loses 2.2~percentage points of average accuracy in exchange for
-the $800\times$ reduction in trainable parameters per tenant, which
+the $370\times$ reduction in trainable parameters per tenant, which
 translates directly into the per-adapter storage and GPU-cache footprint
 reported in \S\ref{sec:results_latency}. The gap is smallest on tasks
 dominated by the pretrained representation (EnronSpam: $-$0.6pp;
