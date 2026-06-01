@@ -264,21 +264,20 @@ applied per sample without serialization.
 \section{\sysname: System Design}
 \label{sec:system}
 
-\begin{figure}[t]
-  \centering
-  \todo[inline,color=yellow]{Figure 1: Architecture diagram showing the
-  late-fusion forward pass. Should depict: (left) per-sample adapter
-  stacking into batched B/A tensors; (center) split base path W0x and delta
-  path BAx running in parallel; (right) element-wise fusion and LR head BMM.
-  Task \#14.}
-  \caption{Overview of late-fusion BMM serving in \sysname.
-    For a mixed-tenant batch of size $\mathcal{B}$, the base attention projection
-    $W_0 x$ runs once (shared weights), while per-sample LoRA deltas
-    $B_i A_i x$ are computed in two \texttt{torch.bmm} calls.
-    All $\mathcal{B}$ samples are fused in a single forward pass regardless of how many
-    distinct adapters are present.}
-  \label{fig:overview}
-\end{figure}
+% TODO (Task #14): Figure 1 — architecture diagram of the late-fusion
+% forward pass. Should depict: (left) per-sample adapter stacking into
+% batched B/A tensors; (center) split base path W0x and delta path BAx
+% running in parallel; (right) element-wise fusion and LR head BMM.
+% \begin{figure}[t]
+%   \centering
+%   \caption{Overview of late-fusion BMM serving in \sysname.
+%     For a mixed-tenant batch of size $\mathcal{B}$, the base attention projection
+%     $W_0 x$ runs once (shared weights), while per-sample LoRA deltas
+%     $B_i A_i x$ are computed in two \texttt{torch.bmm} calls.
+%     All $\mathcal{B}$ samples are fused in a single forward pass regardless of how many
+%     distinct adapters are present.}
+%   \label{fig:overview}
+% \end{figure}
 
 \subsection{Late-Fusion Decomposition}
 \label{sec:lf_decomp}
@@ -369,8 +368,8 @@ For a 24-layer encoder with target modules $\{\text{query}, \text{value}\}$,
 this produces $2 \times 2 \times 24 = 96$ CUDA allocations per forward pass.
 Each allocation invokes the CUDA caching allocator, which searches for a free
 contiguous block at a cost on the order of microseconds per call---adding up to
-several hundred microseconds of pure allocator overhead per batch
-(\S\ref{sec:ablation}).
+several hundred microseconds of pure allocator overhead per batch.
+% TODO: restore (\S\ref{sec:ablation}) cross-ref once §4.6 is restored.
 
 \sysname{} pre-allocates two fixed-size buffers at initialization:
 \begin{align}
@@ -452,7 +451,7 @@ the configuration used by our PEFT-equivalence numerical tests.
 Primary experiments run on a single NVIDIA A100-SXM4-40GB GPU on a
 cloud-managed node (29 vCPUs, $\approx$230~GB host RAM) with PyTorch 2.11.0+cu128 in
 float16 precision.
-Multi-hardware portability is addressed in \S\ref{sec:results_generalization}.
+% TODO: re-add multi-hardware portability cross-ref once §4.5 is restored.
 
 \paragraph{Benchmark protocol.}
 We measure end-to-end latency (batch assembly + encoder forward pass + LR head)
@@ -776,49 +775,44 @@ most from deep encoder updates (Emotion: $-$5.1pp).
 For deployments where this gap is unacceptable, rank can be increased at zero
 latency cost (Finding~3); the only price is GPU memory.
 
-\subsection{Multi-Model and Multi-Hardware Generalization}
-\label{sec:results_generalization}
+% TODO (Task #4): §4.5 Multi-Model and Multi-Hardware Generalization.
+% Run the latency/throughput sweep on at least 3 base encoders × 3 GPU classes:
+%   Base encoders: bert-base-uncased (d=768, 12 layers),
+%                  intfloat/multilingual-e5-base (d=768),
+%                  intfloat/multilingual-e5-large (d=1024, 24 layers).
+%   GPU classes:  NVIDIA T4 (16 GB, $0.40/hr), L4 (23 GB, $0.39/hr),
+%                 A100-40GB ($1.10/hr).
+% Report whether the O(1) adapter scaling property holds across model and
+% GPU dimensions.
+% \subsection{Multi-Model and Multi-Hardware Generalization}
+% \label{sec:results_generalization}
 
-\todoinline{This section requires Task \#4. Run the latency/throughput sweep
-on at least 3 base encoders $\times$ 3 GPU classes:
-
-\noindent\textbf{Base encoders:}
-\texttt{bert-base-uncased} \cite{devlin2019bert} ($d=768$, 12 layers),
-\texttt{intfloat/multilingual-e5-base} \cite{wang2024e5} ($d=768$),
-\texttt{intfloat/multilingual-e5-large} \cite{wang2024e5} ($d=1024$, 24 layers).
-
-\noindent\textbf{GPU classes:} NVIDIA T4 (16~GB, \$0.40/hr), L4 (23~GB, \$0.39/hr),
-A100-40GB (\$1.10/hr). Report whether the O(1) adapter scaling property holds
-across model and GPU dimensions.
-}
-
-\subsection{Ablation Study}
-\label{sec:ablation}
-
-\todoinline{Task \#7: Run ablations and fill in Table~\ref{tab:ablation}.
-Expected: buffer pre-allocation saves $\sim$0.5~ms; contiguous A-matrix layout
-saves $\sim$0.1--0.3~ms; float16 reduces memory 2$\times$ with
-10--20\% latency reduction.}
-
-\begin{table}[h]
-\centering
-\small
-\caption{Ablation study: contribution of each design choice
-(20{,}000 adapters, batch=32, rank=8). \textbf{TODO}: fill in after Task \#7.}
-\label{tab:ablation}
-\begin{tabular}{lrr}
-\toprule
-Configuration & p50 (ms) & $\Delta$ vs.\ full \\
-\midrule
-Full \sysname{}                                    & 56.3          & --- \\
-w/o pre-allocated buffers (dynamic alloc)          & \emph{?} & $+$\emph{?} \\
-w/o contiguous A-matrix layout (runtime transpose) & \emph{?} & $+$\emph{?} \\
-Query only (not query$+$value)                     & \emph{?} & $-$\emph{?} \\
-Query$+$Key$+$Value$+$Output                       & \emph{?} & $+$\emph{?} \\
-float16 precision                                  & \emph{?} & $-$\emph{?} \\
-\bottomrule
-\end{tabular}
-\end{table}
+% TODO (Task #7): §4.6 Ablation Study.
+% Run ablations and fill in Table tab:ablation.
+% Expected: buffer pre-allocation saves ~0.5 ms; contiguous A-matrix layout
+% saves ~0.1–0.3 ms; float16 reduces memory 2× with 10–20% latency reduction.
+% \subsection{Ablation Study}
+% \label{sec:ablation}
+%
+% \begin{table}[h]
+% \centering
+% \small
+% \caption{Ablation study: contribution of each design choice
+% (20{,}000 adapters, batch=32, rank=8). TODO: fill in after Task #7.}
+% \label{tab:ablation}
+% \begin{tabular}{lrr}
+% \toprule
+% Configuration & p50 (ms) & $\Delta$ vs.\ full \\
+% \midrule
+% Full \sysname{}                                    & 56.3          & --- \\
+% w/o pre-allocated buffers (dynamic alloc)          & \emph{?} & $+$\emph{?} \\
+% w/o contiguous A-matrix layout (runtime transpose) & \emph{?} & $+$\emph{?} \\
+% Query only (not query$+$value)                     & \emph{?} & $-$\emph{?} \\
+% Query$+$Key$+$Value$+$Output                       & \emph{?} & $+$\emph{?} \\
+% float16 precision                                  & \emph{?} & $-$\emph{?} \\
+% \bottomrule
+% \end{tabular}
+% \end{table}
 
 % =============================================================================
 \section{Related Work}
@@ -890,8 +884,7 @@ Serving tenants with heterogeneous fine-tuning strategies requires padding
 every adapter to the maximum rank present in the batch, wasting compute on
 low-rank adapters; a masked-BMM variant that avoids this padding overhead
 remains future work.
-\todoinline{Complete Task \#8 (mixed-rank experiment) before finalizing
-this paragraph.}
+% TODO (Task #8): mixed-rank experiment, finalize this paragraph after.
 
 \paragraph{Pre-loaded adapter cache.}
 \sysname{} holds all adapters in GPU memory permanently.
@@ -912,7 +905,7 @@ pure-PyTorch deployability.
 \paragraph{Single-seed evaluation.}
 Current benchmarks use a single random seed, so statistical significance is
 not yet established.
-\todoinline{Complete Task \#6 (multi-seed CI runs) before camera-ready.}
+% TODO (Task #6): multi-seed CI runs before camera-ready.
 
 \paragraph{Synthetic-only adapter validation.}
 Latency and throughput numbers are obtained with randomly initialized adapters
@@ -921,7 +914,7 @@ Real adapters with non-zero deltas will have marginally higher GPU compute
 time; end-to-end correctness against PEFT-merged references is verified
 numerically (\S\ref{sec:results_accuracy}) but not yet across the full
 serving pipeline.
-\todoinline{Complete Tasks \#3 and \#9 before camera-ready.}
+% TODO (Tasks #3 and #9): complete before camera-ready.
 
 % =============================================================================
 \section*{Ethics Statement}
