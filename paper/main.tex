@@ -321,30 +321,14 @@ Both \texttt{bmm} calls are a single GPU kernel launch, processing all $\mathcal
 samples simultaneously regardless of how many distinct adapters they reference.
 
 This decomposition contrasts with the SGMV kernel used in Punica
-\cite{chen2024punica} along three axes.
-First, \emph{segmentation}: SGMV groups inputs by LoRA model ID
-(``We group inputs to the same LoRA model consecutively'' \cite{chen2024punica})
-and dispatches one thread-block per adapter group; \texttt{torch.bmm}
-applies a different $(A_i, B_i)$ to every batch item with no grouping.
-Second, \emph{operand shape}: SGMV operates on vector inputs $(1, H)$
-optimized for the autoregressive decode shape;
-\texttt{bmm} operates on the matrix shape $(S, H)$ native to encoder prefill.
-% * <Ashutosh Dwivedi> 18:10:54 26 May 2026 UTC+0530:
-% self: explain
-Third, \emph{deployability}: SGMV is a custom CUDA kernel that must be
-compiled against a specific CUDA version; \texttt{bmm} ships with PyTorch
-and runs anywhere PyTorch runs.
-S-LoRA \cite{sheng2024slora} extends Punica with prefill-shaped variants
-% * <Ashutosh Dwivedi> 18:17:28 26 May 2026 UTC+0530:
-% benchmark: contiguous memory layout for our own implementation
-% * <Ashutosh Dwivedi> 18:12:31 26 May 2026 UTC+0530:
-% Does it really extend they are the papers submitted at the same time
-(MBGMM/MBGMV) that handle non-contiguous adapter memory, but the kernels
-still target autoregressive LLM serving with a KV cache and do not expose
-the encoder operations (pooling, classification heads) needed for
-% * <Ashutosh Dwivedi> 18:18:39 26 May 2026 UTC+0530:
-% They are not even concerned with classification head so no need to mention it here.
-classification workloads.
+\cite{chen2024punica}: SGMV groups inputs by LoRA model ID and dispatches
+per-group thread-blocks, whereas \texttt{torch.bmm} applies a distinct
+$(A_i, B_i)$ to every batch item with no grouping; and SGMV operates on
+vector inputs $(1, H)$ optimized for autoregressive decode, whereas
+\texttt{bmm} operates on the $(S, H)$ matrix shape native to encoder
+prefill. The concurrent S-LoRA \cite{sheng2024slora} introduces
+prefill-shaped variants (MBGMM/MBGMV) over a paged adapter pool, but
+still targets autoregressive LLM serving with a KV cache.
 
 \subsection{Batched Classification Heads}
 \label{sec:lr_head}
