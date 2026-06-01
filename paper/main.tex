@@ -106,31 +106,16 @@ The remaining challenge is \textbf{inference}: how to serve thousands of
 different LoRA adapters simultaneously on one GPU, at low latency, in batched
 mixed-tenant requests.
 
-Existing multi-tenant LoRA serving systems address this challenge only for
-\emph{generative decoder models}.
-Punica \cite{chen2024punica} introduces SGMV (Segmented Gather Matrix-Vector
-Multiplication), a custom CUDA kernel that batches per-adapter LoRA computations
-in a single launch; S-LoRA \cite{sheng2024slora} extends this with MBGMV
-(Multi-size Batched Gather Matrix-Vector) and a paged memory pool that
-supports thousands of concurrent adapters.
-Both systems are architected around the stringent constraints of autoregressive decoder serving---namely, token-by-token generation loops, causal attention masks, and dynamic KV-cache paging.
-To achieve efficiency under these constraints, they must rely on complex, custom CUDA kernels like SGMV and dynamic paged memory allocations.
-In contrast, encoder serving is entirely free of these decoder-specific constraints.
-Because bidirectional sequence-wide attention processes the entire sequence ($S \gg 1$) non-autoregressively in a single forward pass, the LoRA updates naturally formulate as highly parallelizable, compute-bound matrix-matrix multiplications.
-Consequently, we do not need custom CUDA kernels or complex dynamic paging; instead, we can achieve high GPU utilization out-of-the-box using standard PyTorch batched matrix multiplication (\texttt{torch.bmm}) and simple pre-allocated static buffers.
-Decoder and encoder serving operate under different constraints and surface different bottlenecks: the autoregressive decode loop is memory-bound at sequence length 1 and benefits from custom gather kernels and paged KV storage, whereas the encoder forward at $S \gg 1$ is compute-bound and dominated by the base-model projections.
-A system designed for the former is structurally mismatched to the latter, leaving a critical production use case unaddressed.
-
-Commercial serving stacks such as HuggingFace Text Embeddings Inference
-% * <Ashutosh Dwivedi> 17:42:54 26 May 2026 UTC+0530:
-% Re-word with proper research or remove if not enough space 
-\cite{huggingface2023tei} offer no adapter support at all.
-vLLM \cite{kwon2023vllm} added basic single-adapter encoder-LoRA loading in
-v0.8.3 (PR~\#14935, closing GitHub issue~\#12808); multi-adapter LoRA serving
-for classification models is in active development (PR~\#24596, open at the
-time of this submission), confirming that the gap our system targets is
-recognized by the dominant LLM-serving runtime but not yet addressed in any
-released version.
+Existing multi-tenant LoRA serving systems---Punica \cite{chen2024punica},
+S-LoRA \cite{sheng2024slora}, vLLM \cite{kwon2023vllm}, and LoRAX
+\cite{predibase2023lorax}---target autoregressive decoder workloads, where
+custom CUDA kernels and paged-memory pools are needed for token-by-token
+generation over a KV cache. Encoders are structurally different: the
+bidirectional forward pass at sequence length $S \gg 1$ is compute-bound
+and dominated by base-model projections, so the LoRA path lends itself to
+standard batched matrix multiplication rather than custom kernels.
+Heterogeneous-adapter batching for encoder models is, to our knowledge,
+not yet supported by released runtimes (\S\ref{sec:relwork}).
 
 We present \sysname, a serving system that fills this gap.
 The core design principle is \textbf{late fusion}: rather than merging a
