@@ -204,14 +204,6 @@ $24\times$ reduction over full fine-tuning of those layers.
 % * <Ashutosh Dwivedi> 17:55:45 26 May 2026 UTC+0530:
 % verify the multiplier
 
-The theoretical justification for this compression comes from \citet{aghajanyan2021intrinsic},
-  % * <Ashutosh Dwivedi> 17:47:34 26 May 2026 UTC+0530:
-% verify citation remove if space crunch
-who showed that fine-tuning updates lie in a surprisingly low-dimensional
-subspace: even a random projection down to $\sim$200 dimensions retains 90\%
-of task performance on GLUE benchmarks.
-This intrinsic low dimensionality is precisely what LoRA exploits.
-
 In this work, $B$ is initialized to zero so that $\Delta W = 0$ at the start
 of training, leaving the pre-trained representations intact.
 
