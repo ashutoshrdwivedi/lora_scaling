@@ -379,10 +379,15 @@ memory as an \texttt{AdapterStore}: a dictionary mapping adapter IDs to
 $W_A \in \mathbb{R}^{L \times H \times r}$ and
 $W_B \in \mathbb{R}^{L \times r \times H}$, stored in inference-transposed
 layout so \texttt{bmm} requires no runtime transpose.
-For a batch of adapter IDs, the \texttt{BatchAssembler} slices each
-adapter's per-layer tensor and \texttt{torch.cat}s the per-layer lists into
-$(\mathcal{B}, H, r)$ tensors ready for \texttt{bmm}---the only per-request
-overhead before the GPU forward pass (\S\ref{sec:results_latency}).
+For a batch of adapter IDs, the \texttt{BatchAssembler} gathers each
+adapter's per-layer $W_A$/$W_B$ slices into per-layer Python lists. This
+CPU-side gather---a loop over samples, layers, and target modules---is the
+dominant per-request overhead before the GPU forward pass
+(\S\ref{sec:results_latency}). The per-layer lists are concatenated into
+$(\mathcal{B}, H, r)$ and $(\mathcal{B}, r, H)$ tensors lazily inside the
+forward, one \texttt{torch.cat} per layer immediately before its
+\texttt{bmm}, so this concatenation is attributed to forward rather than
+assembly time.
 
 \subsection{Complexity Analysis}
 \label{sec:complexity}
@@ -552,8 +557,8 @@ Our $N{=}50{,}000$ runs OOM'd cleanly at all batch sizes, confirming the limit.
 
 \paragraph{Finding 5: Batch assembly is the residual bottleneck and drives tail latency.}
 \label{sec:results_assembly}
-The CPU-side batch-assembly path (gather LoRA tensors, \texttt{stack},
-host-to-device copy) consumes 16\% of iteration time at $\mathcal{B}{=}8$
+The CPU-side batch-assembly path (gather per-sample LoRA slices into
+per-layer lists, pad the LR head, host-to-device copy) consumes 16\% of iteration time at $\mathcal{B}{=}8$
 and \textbf{39\%} at $\mathcal{B}{=}128$, scaling linearly with $\mathcal{B}$
 while the encoder forward saturates at $\mathcal{B}{=}64$.
 This same path drives tail latency: the p99/p50 ratio is $1.04\times$ at
@@ -786,8 +791,8 @@ Paged adapter storage analogous to PagedAttention
 \cite{kwon2023vllm} is a natural extension.
 
 \paragraph{CPU-side batch assembly.}
-The \texttt{BatchAssembler} runs on CPU and involves Python loops with
-\texttt{torch.cat}.
+The \texttt{BatchAssembler} runs on CPU and gathers per-sample adapter
+slices into per-layer lists via Python loops.
 For very high request rates ($>$10{,}000 requests/sec), this becomes the
 throughput bottleneck.
 A custom CUDA or C++ gather kernel that indexes directly into the adapter
