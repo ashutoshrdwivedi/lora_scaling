@@ -1,15 +1,22 @@
-"""Empirically establish that LoRA bmm is a tiny fraction of forward time.
+"""Empirically establish that the LoRA path is a small fraction of forward time.
 
 Produces evidence for the paper claim "custom kernels (Punica MBGMV / S-LoRA SGMV)
 would not move the needle for this serving setting" by:
 
   1. PROFILER DUMP — PyTorch profiler over N representative forward iterations,
-     sorted by CUDA time, with bmm vs addmm contributions explicitly broken out.
+     sorted by SELF CUDA time (children excluded, so totals are not
+     double-counted across the parent/child op hierarchy).
 
-  2. ZERO-LORA ABLATION — same model, same shapes, same kernel launches, but
-     with all A/B set to zero. Difference in forward time isolates the
-     wall-clock cost of the LoRA bmm path. If the difference is <2%, the
-     bmm cost is negligible.
+     NOTE: aten::bmm is emitted by the LoRA shrink/expand, by attention
+     (matmul over 4-D tensors dispatches to bmm), and by the LR head, so the
+     raw bmm row is NOT LoRA-only. We isolate the LoRA contribution by diffing
+     two profiler runs (apply_lora=True vs False) op-by-op.
+
+  2. NO-LORA ABLATION — identical model and inputs, but the forward is run with
+     apply_lora=False, which skips the entire LoRA delta path (cat/shrink/
+     expand/add) rather than zeroing operands. The wall-clock difference is the
+     true cost of the LoRA path. (Zeroing operands measures nothing: bmm cost is
+     independent of operand values, and synthetic adapters already have B=0.)
 
   3. ANALYTIC FLOP RATIO — printed for reference: base encoder FLOPs vs
      LoRA shrink/expand FLOPs per layer per batch.
@@ -50,7 +57,7 @@ DTYPE_MAP = {"fp16": torch.float16, "fp32": torch.float32, "bf16": torch.bfloat1
 BUCKETS = {
     "base_linear": ("aten::addmm", "aten::linear", "aten::matmul"),
     "lora_bmm": ("aten::bmm", "aten::baddbmm"),
-    "attention": ("aten::softmax", "aten::scaled_dot_product_attention", "aten::masked_fill"),
+    "attention": ("aten::softmax", "aten::_softmax", "aten::scaled_dot_product_attention", "aten::masked_fill"),
     "layernorm_residual": ("aten::layer_norm", "aten::add", "aten::add_"),
     "elementwise": ("aten::gelu", "aten::relu", "aten::tanh", "aten::mul", "aten::div"),
 }
@@ -115,47 +122,70 @@ def analytic_flop_ratio(config: LoraServingConfig, batch_size: int, seq_len: int
     }
 
 
+def _self_cuda_us(evt) -> float:
+    """Self (not total) CUDA microseconds for a profiler event.
+
+    Self-time excludes child ops, so summing it across key_averages() gives the
+    true total device time with no double-counting. torch 2.11 renamed
+    self_cuda_time_total -> self_device_time_total.
+    """
+    for attr in ("self_device_time_total", "self_cuda_time_total"):
+        v = getattr(evt, attr, None)
+        if v is not None:
+            return float(v)
+    return 0.0
+
+
 def run_profiler(model, store, assembler, adapter_ids, lr_coefs, lr_intercepts,
-                 inputs, output_lr, config, device, batch_size, warmup, iters):
-    """Profile `iters` forward passes, categorize ops, return summary dict."""
+                 inputs, output_lr, config, device, batch_size, warmup, iters,
+                 apply_lora=True):
+    """Profile `iters` forward passes, aggregate by SELF CUDA time.
+
+    Returns (table, summary, total_self_ms, self_us_by_op) where self_us_by_op
+    maps op key -> self CUDA microseconds (used to isolate LoRA-only bmm by
+    diffing the apply_lora=True and apply_lora=False runs)."""
     def one_batch():
         ids = random.choices(adapter_ids, k=batch_size)
         coefs = [lr_coefs[a] for a in ids]
         intercepts = [lr_intercepts[a] for a in ids]
         lora_w, lr_w = assembler.assemble(ids, coefs, intercepts)
         with torch.no_grad():
-            model(inputs["input_ids"], inputs["attention_mask"], lora_w, lr_w, output_lr)
+            model(inputs["input_ids"], inputs["attention_mask"], lora_w, lr_w,
+                  output_lr, apply_lora=apply_lora)
 
-    print(f"Warmup ({warmup} iters)...")
+    print(f"Warmup ({warmup} iters, apply_lora={apply_lora})...")
     for _ in range(warmup):
         one_batch()
     torch.cuda.synchronize(device)
 
-    print(f"Profiling ({iters} iters)...")
+    print(f"Profiling ({iters} iters, apply_lora={apply_lora})...")
     with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
         for _ in range(iters):
             with record_function("forward_iter"):
                 one_batch()
         torch.cuda.synchronize(device)
 
-    # torch 2.11 renamed cuda_time_total -> device_time_total; older torch had cuda_time_total.
-    sort_key = "device_time_total" if hasattr(prof.key_averages()[0], "device_time_total") else "cuda_time_total"
+    sort_key = "self_device_time_total" if hasattr(prof.key_averages()[0], "self_device_time_total") else "self_cuda_time_total"
     table = prof.key_averages().table(sort_by=sort_key, row_limit=30)
 
-    def _cuda_us(evt) -> float:
-        for attr in ("device_time_total", "cuda_time_total", "self_device_time_total", "self_cuda_time_total"):
-            v = getattr(evt, attr, None)
-            if v is not None:
-                return float(v)
-        return 0.0
-
-    # Aggregate by bucket
+    # Aggregate self-time by bucket and by op key.
+    #
+    # IMPORTANT: only count `aten::` operator rows. key_averages() also contains
+    # the underlying CUDA kernel rows (e.g. ampere_*_gemm) AND user annotations
+    # (forward_iter), each carrying their own self-device time. Summing all rows
+    # double-counts (the aten op and its launched kernel are the same GPU work)
+    # and inflates the total ~3x. The aten:: rows' self-times alone sum to the
+    # profiler's reported "Self CUDA time total", so they are the correct basis.
     totals = defaultdict(lambda: {"cuda_us": 0.0, "calls": 0})
+    self_us_by_op = defaultdict(float)
     grand_cuda_us = 0.0
     for evt in prof.key_averages():
-        cuda_us = _cuda_us(evt)  # microseconds
+        if not str(evt.key).startswith("aten::"):
+            continue
+        cuda_us = _self_cuda_us(evt)  # microseconds, self only
         if cuda_us <= 0:
             continue
+        self_us_by_op[evt.key] += cuda_us
         bucket = categorize(evt.key)
         totals[bucket]["cuda_us"] += cuda_us
         totals[bucket]["calls"] += int(evt.count)
@@ -168,18 +198,25 @@ def run_profiler(model, store, assembler, adapter_ids, lr_coefs, lr_intercepts,
             "share_pct": 100.0 * vals["cuda_us"] / grand_cuda_us if grand_cuda_us else 0.0,
             "calls": vals["calls"],
         }
-    return table, summary, grand_cuda_us / 1000.0
+    return table, summary, grand_cuda_us / 1000.0, dict(self_us_by_op)
 
 
 def run_ablation(model, store, assembler, adapter_ids, lr_coefs, lr_intercepts,
                  inputs, output_lr, device, batch_size, warmup, iters) -> dict:
-    """Compare forward time with normal-LoRA vs zero-LoRA (A,B set to 0).
+    """Compare forward time with the LoRA path on vs off.
 
-    Zero-LoRA keeps the kernel launches identical but reduces the bmm output
-    contribution to zero; the wall-clock difference isolates the cost of
-    nonzero LoRA arithmetic.
+    `apply_lora=False` skips the entire LoRA delta path (per-layer cat of A/B,
+    the shrink/expand bmms, and the additive merge) while keeping every base
+    op identical. The wall-clock difference is the true cost of the LoRA path.
+
+    This replaces an earlier "zero the operands" ablation, which measured
+    nothing: bmm cost is independent of operand values, and the synthetic
+    adapters already have B=0, so the LoRA delta was already zero in both arms.
+    The same per-batch assembled weights are reused for both arms so the only
+    difference is whether the delta path executes; assembly is done outside the
+    timed region.
     """
-    def measure(zero_lora: bool, n: int) -> np.ndarray:
+    def measure(apply_lora: bool, n: int) -> np.ndarray:
         times = np.empty(n)
         ev_start = torch.cuda.Event(enable_timing=True)
         ev_end = torch.cuda.Event(enable_timing=True)
@@ -188,31 +225,27 @@ def run_ablation(model, store, assembler, adapter_ids, lr_coefs, lr_intercepts,
             coefs = [lr_coefs[a] for a in ids]
             intercepts = [lr_intercepts[a] for a in ids]
             lora_w, lr_w = assembler.assemble(ids, coefs, intercepts)
-            if zero_lora:
-                for layer_w in lora_w:
-                    for mod in list(layer_w.a.keys()):
-                        layer_w.a[mod] = [t.zero_() for t in layer_w.a[mod]]
-                        layer_w.b[mod] = [t.zero_() for t in layer_w.b[mod]]
             ev_start.record()
             with torch.no_grad():
-                model(inputs["input_ids"], inputs["attention_mask"], lora_w, lr_w, output_lr)
+                model(inputs["input_ids"], inputs["attention_mask"], lora_w, lr_w,
+                      output_lr, apply_lora=apply_lora)
             ev_end.record()
             torch.cuda.synchronize(device)
             times[i] = ev_start.elapsed_time(ev_end)
         return times
 
-    print(f"Ablation warmup ({warmup} iters, normal LoRA)...")
-    measure(zero_lora=False, n=warmup)
-    print(f"Ablation: measuring normal LoRA ({iters} iters)...")
-    normal = measure(zero_lora=False, n=iters)
-    print(f"Ablation: measuring zero LoRA ({iters} iters)...")
-    zero = measure(zero_lora=True, n=iters)
+    print(f"Ablation warmup ({warmup} iters, LoRA on)...")
+    measure(apply_lora=True, n=warmup)
+    print(f"Ablation: measuring LoRA on ({iters} iters)...")
+    normal = measure(apply_lora=True, n=iters)
+    print(f"Ablation: measuring LoRA off ({iters} iters)...")
+    zero = measure(apply_lora=False, n=iters)
 
     return {
-        "normal_mean_ms": float(np.mean(normal)),
-        "normal_p50_ms": float(np.percentile(normal, 50)),
-        "zero_mean_ms": float(np.mean(zero)),
-        "zero_p50_ms": float(np.percentile(zero, 50)),
+        "lora_on_mean_ms": float(np.mean(normal)),
+        "lora_on_p50_ms": float(np.percentile(normal, 50)),
+        "lora_off_mean_ms": float(np.mean(zero)),
+        "lora_off_p50_ms": float(np.percentile(zero, 50)),
         "lora_cost_mean_ms": float(np.mean(normal) - np.mean(zero)),
         "lora_cost_share_pct": 100.0 * (np.mean(normal) - np.mean(zero)) / np.mean(normal),
     }
@@ -243,11 +276,35 @@ def main():
 
     flops = analytic_flop_ratio(config, args.batch_size, args.seq_len)
 
-    table, profiler_summary, total_forward_ms = run_profiler(
+    table, profiler_summary, total_forward_ms, self_us_on = run_profiler(
         model, store, assembler, adapter_ids, lr_coefs, lr_intercepts,
         inputs, output_lr, config, device,
         batch_size=args.batch_size, warmup=args.warmup, iters=args.profiler_iters,
+        apply_lora=True,
     )
+
+    # Second profiler pass with the LoRA path disabled, so we can isolate the
+    # LoRA-only bmm self-time (the raw bmm row also contains attention + LR-head
+    # bmms) by diffing op-level self-time between the two runs.
+    _, _, total_forward_off_ms, self_us_off = run_profiler(
+        model, store, assembler, adapter_ids, lr_coefs, lr_intercepts,
+        inputs, output_lr, config, device,
+        batch_size=args.batch_size, warmup=args.warmup, iters=args.profiler_iters,
+        apply_lora=False,
+    )
+
+    bmm_self_on_ms = self_us_on.get("aten::bmm", 0.0) / 1000.0
+    bmm_self_off_ms = self_us_off.get("aten::bmm", 0.0) / 1000.0
+    lora_bmm_self_ms = bmm_self_on_ms - bmm_self_off_ms
+    lora_bmm_self_share = 100.0 * lora_bmm_self_ms / total_forward_ms if total_forward_ms else 0.0
+    bmm_isolation = {
+        "bmm_self_ms_lora_on": bmm_self_on_ms,
+        "bmm_self_ms_lora_off": bmm_self_off_ms,
+        "lora_bmm_self_ms": lora_bmm_self_ms,
+        "lora_bmm_self_share_pct": lora_bmm_self_share,
+        "total_self_ms_lora_on": total_forward_ms,
+        "total_self_ms_lora_off": total_forward_off_ms,
+    }
 
     ablation = run_ablation(
         model, store, assembler, adapter_ids, lr_coefs, lr_intercepts,
@@ -271,24 +328,35 @@ def main():
         f.write("Interpretation: even an infinitely fast LoRA bmm kernel would\n"
                 "save at most 1 / (base/lora ratio) of total forward FLOPs.\n\n")
 
-        f.write("## 2. PyTorch profiler — op-level CUDA time breakdown\n\n")
+        f.write("## 2. PyTorch profiler — op-level SELF CUDA time breakdown\n\n")
         f.write(table)
-        f.write("\n\n## 3. Aggregated by category (CUDA time)\n")
-        f.write(f"  Total forward CUDA time (sum of profiled ops): {total_forward_ms:.2f} ms\n\n")
+        f.write("\n\n## 3. Aggregated by category (SELF CUDA time, no double-counting)\n")
+        f.write(f"  Total forward self CUDA time (sum of op self-times): {total_forward_ms:.2f} ms\n\n")
         for cat in sorted(profiler_summary, key=lambda c: -profiler_summary[c]["cuda_ms_total"]):
             d = profiler_summary[cat]
             f.write(f"  {cat:22s}: {d['cuda_ms_total']:8.3f} ms  "
                     f"({d['share_pct']:5.1f}%)  calls={d['calls']}\n")
         f.write("\n")
+        f.write("NOTE: the 'lora_bmm' category counts ALL aten::bmm, which includes\n"
+                "attention (matmul over 4-D tensors) and the LR head, not just LoRA.\n"
+                "See section 3b for the LoRA-only bmm isolation.\n\n")
 
-        f.write("## 4. Zero-LoRA ablation\n")
+        f.write("## 3b. LoRA-only bmm isolation (apply_lora on vs off)\n")
+        for k, v in bmm_isolation.items():
+            unit = "%" if k.endswith("_pct") else " ms"
+            f.write(f"  {k:30s}: {v:8.3f}{unit}\n")
+        f.write("\n")
+        f.write("Interpretation: lora_bmm_self_share_pct is the LoRA shrink/expand\n"
+                "share of total forward self CUDA time, with attention/head bmm removed.\n\n")
+
+        f.write("## 4. No-LoRA ablation (wall-clock, apply_lora on vs off)\n")
         for k, v in ablation.items():
             unit = "%" if k.endswith("_pct") else " ms"
             f.write(f"  {k:30s}: {v:8.3f}{unit}\n")
         f.write("\n")
         f.write("Interpretation: lora_cost_share_pct is the wall-clock contribution\n"
-                "of the LoRA bmm path. If <2%, a faster custom bmm kernel (Punica\n"
-                "MBGMV / S-LoRA SGMV) cannot move the needle for this setting.\n")
+                "of the entire LoRA path (cat/shrink/expand/add). If small, a faster\n"
+                "custom bmm kernel (Punica MBGMV / S-LoRA SGMV) cannot move the needle.\n")
 
     # Also write a JSON sidecar for downstream tooling
     json_path = out.with_suffix(".json")
@@ -299,16 +367,17 @@ def main():
             "flop_ratio": flops,
             "profiler_categories": profiler_summary,
             "profiler_total_ms": total_forward_ms,
+            "bmm_isolation": bmm_isolation,
             "ablation": ablation,
         }, f, indent=2)
 
     print(f"\nWrote {out} and {json_path}")
     print(f"\n=== Headline numbers ===")
-    print(f"  LoRA bmm category share (profiler):  "
-          f"{profiler_summary.get('lora_bmm', {}).get('share_pct', 0):.2f}%")
-    print(f"  LoRA wall-clock share (ablation):    "
+    print(f"  LoRA-only bmm self share (profiler diff):  "
+          f"{bmm_isolation['lora_bmm_self_share_pct']:.2f}%")
+    print(f"  LoRA path wall-clock share (ablation):     "
           f"{ablation['lora_cost_share_pct']:.2f}%")
-    print(f"  Analytic FLOP ratio (base/lora):     "
+    print(f"  Analytic FLOP ratio (base/lora):           "
           f"{flops['base_to_lora_ratio']:.0f}x")
 
 

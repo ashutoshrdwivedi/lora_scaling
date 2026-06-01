@@ -22,43 +22,51 @@
   },
   "profiler_categories": {
     "other": {
-      "cuda_ms_total": 1025.8229660000047,
-      "share_pct": 71.79651635773986,
-      "calls": 20154
+      "cuda_ms_total": 53.18753099999818,
+      "share_pct": 19.377380631642584,
+      "calls": 3860
     },
     "layernorm_residual": {
-      "cuda_ms_total": 38.074682999998466,
-      "share_pct": 2.66481614413879,
-      "calls": 1720
+      "cuda_ms_total": 28.45009400000034,
+      "share_pct": 10.364991381984554,
+      "calls": 1230
     },
     "base_linear": {
-      "cuda_ms_total": 308.15705500000047,
-      "share_pct": 21.56766203659002,
-      "calls": 3380
+      "cuda_ms_total": 136.0234630000002,
+      "share_pct": 49.55632208957482,
+      "calls": 1450
     },
     "lora_bmm": {
-      "cuda_ms_total": 27.155195000000642,
-      "share_pct": 1.9005700463282014,
+      "cuda_ms_total": 27.227966000001864,
+      "share_pct": 9.919743426471083,
       "calls": 1450
     },
     "elementwise": {
-      "cuda_ms_total": 17.219436999999196,
-      "share_pct": 1.2051744123668877,
+      "cuda_ms_total": 17.242908999999663,
+      "share_pct": 6.281968811257295,
       "calls": 730
     },
     "attention": {
-      "cuda_ms_total": 12.36278100000016,
-      "share_pct": 0.8652610028362954,
+      "cuda_ms_total": 12.35059999999994,
+      "share_pct": 4.499593659069678,
       "calls": 240
     }
   },
-  "profiler_total_ms": 1428.792117000003,
+  "profiler_total_ms": 274.48256300000014,
+  "bmm_isolation": {
+    "bmm_self_ms_lora_on": 27.227966000001864,
+    "bmm_self_ms_lora_off": 14.142499999999497,
+    "lora_bmm_self_ms": 13.085466000002366,
+    "lora_bmm_self_share_pct": 4.767321412691108,
+    "total_self_ms_lora_on": 274.48256300000014,
+    "total_self_ms_lora_off": 253.26497999999836
+  },
   "ablation": {
-    "normal_mean_ms": 28.691514949798584,
-    "normal_p50_ms": 28.708463668823242,
-    "zero_mean_ms": 28.320006713867187,
-    "zero_p50_ms": 28.317264556884766,
-    "lora_cost_mean_ms": 0.3715082359313975,
-    "lora_cost_share_pct": 1.294836597445007
+    "lora_on_mean_ms": 28.719777297973632,
+    "lora_on_p50_ms": 28.713184356689453,
+    "lora_off_mean_ms": 26.328909492492677,
+    "lora_off_p50_ms": 26.350751876831055,
+    "lora_cost_mean_ms": 2.390867805480955,
+    "lora_cost_share_pct": 8.324813178999289
   }
 }

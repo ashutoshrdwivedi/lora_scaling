@@ -46,6 +46,7 @@ class AttentionWithLora(nn.Module):
         hidden_states: Tensor,
         attention_mask: Tensor | None,
         lora_weights: LayerwiseBatchedWeights,
+        apply_lora: bool = True,
     ) -> Tensor:
         B, S, H = hidden_states.shape
 
@@ -63,16 +64,19 @@ class AttentionWithLora(nn.Module):
         # paper by Hu et al.), only `query` and `value` are typically targeted to maximize
         # parameter efficiency without sacrificing performance.
         # This implementation matches PEFT's behavior of only targeting the requested modules.
-        for module in self.target_modules:
-            if module not in projections:
-                continue
-            a = torch.cat(lora_weights.a[module], dim=0)  # (B, H, R)
-            b = torch.cat(lora_weights.b[module], dim=0)  # (B, R, H)
-            # project down to lora_rank (B, S, R)
-            self.lora_ops.shrink(hidden_states, a)
-            # project back up to hidden_size (B, S, H)
-            self.lora_ops.expand(b)
-            projections[module] = projections[module] + self.lora_ops.output
+        # `apply_lora=False` skips the entire delta path (cat/shrink/expand/add); used by the
+        # forward-breakdown benchmark to isolate the wall-clock cost of the LoRA path.
+        if apply_lora:
+            for module in self.target_modules:
+                if module not in projections:
+                    continue
+                a = torch.cat(lora_weights.a[module], dim=0)  # (B, H, R)
+                b = torch.cat(lora_weights.b[module], dim=0)  # (B, R, H)
+                # project down to lora_rank (B, S, R)
+                self.lora_ops.shrink(hidden_states, a)
+                # project back up to hidden_size (B, S, H)
+                self.lora_ops.expand(b)
+                projections[module] = projections[module] + self.lora_ops.output
 
         # Reshape for multi-head attention: (B, num_heads, S, head_dim)
         def reshape(t: Tensor) -> Tensor:
@@ -121,8 +125,9 @@ class EncoderLayerWithLora(nn.Module):
         hidden_states: Tensor,
         attention_mask: Tensor | None,
         lora_weights: LayerwiseBatchedWeights,
+        apply_lora: bool = True,
     ) -> Tensor:
-        attn_out = self.attention["self"](hidden_states, attention_mask, lora_weights)
+        attn_out = self.attention["self"](hidden_states, attention_mask, lora_weights, apply_lora)
         attn_out = self.attention["output"]["dense"](attn_out)
         attn_out = self.attention["output"]["LayerNorm"](attn_out + hidden_states)
 
@@ -196,6 +201,7 @@ class EncoderWithLora(PreTrainedModel):
         lr_weights: BatchedLRWeights,
         output_lr: Tensor,
         token_type_ids: Tensor | None = None,
+        apply_lora: bool = True,
     ) -> Tensor:
         """Run a full forward pass for a mixed-tenant batch.
 
@@ -206,6 +212,8 @@ class EncoderWithLora(PreTrainedModel):
             lr_weights:     BatchedLRWeights with coef (B, max_labels, H) and intercept (B, max_labels)
             output_lr:      Pre-allocated output tensor (B, 1, max_labels)
             token_type_ids: (B, S) or None
+            apply_lora:     If False, skip the LoRA delta path entirely (base-only
+                            forward). Used by benchmarks to isolate LoRA wall-clock cost.
 
         Returns:
             output_lr: filled with per-sample logit scores (B, 1, max_labels)
@@ -225,7 +233,7 @@ class EncoderWithLora(PreTrainedModel):
         x = self.embeddings["LayerNorm"](x)
 
         for layer, layer_lora in zip(self.encoder["layer"], lora_weights):
-            x = layer(x, attention_mask, layer_lora)
+            x = layer(x, attention_mask, layer_lora, apply_lora)
 
         pooled = self.pooler_act(self.pooler["dense"](x[:, 0]))  # CLS token
 

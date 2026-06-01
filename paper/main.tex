@@ -565,29 +565,35 @@ Double-buffered host-to-device transfer and a GPU-resident
 \texttt{index\_select} gather would amortize this cost; we leave both to
 future work.
 
-\paragraph{Finding 6: Custom LoRA kernels would not move the needle on
+\paragraph{Finding 6: Custom LoRA kernels offer only single-digit upside on
 encoders.}
 \label{sec:results_custom_kernels}
 A natural question is whether replacing our \texttt{torch.bmm}
 shrink/expand with custom kernels (Punica's SGMV \cite{chen2024punica},
 S-LoRA's MBGMV \cite{sheng2024slora}) would yield further speedups. For
 encoders at $d{=}1024$, three independent measurements at $\mathcal{B}{=}32$,
-$N{=}1{,}000$, $r{=}8$ on the same A100-40GB say no.
+$N{=}1{,}000$, $r{=}8$ on an A100-40GB bound the ceiling to single digits.
 The \emph{analytic FLOP ratio} per encoder layer is $3d/r = 384$: even an
 instantaneous LoRA kernel would shave at most $0.26\%$ of FLOPs.
-A \emph{PyTorch profiler trace} attributes \textbf{1.9\%} of total CUDA time
-to \texttt{bmm} (the LoRA path), versus 21.6\% for the base Q/K/V/O and
-FFN projections.
-A \emph{zero-LoRA ablation}---running the same kernel launches with
-$A{=}B{=}0$---saves just \textbf{0.37~ms of 28.7~ms} (\textbf{1.29\%}).
-The decoder-LoRA literature reports large speedups from custom kernels
-because per-token decode is dominated by small matrix-vector products
-where LoRA's relative weight is much higher; the single-pass encoder
-forward at $d{=}1024$ does not benefit.
+A \emph{PyTorch profiler trace}---measuring self CUDA time and isolating the
+LoRA shrink/expand from the attention and head \texttt{bmm}s via an
+apply-LoRA on/off difference---attributes \textbf{4.8\%} of forward GPU time
+to the LoRA \texttt{bmm}, versus \textbf{49.6\%} for the base Q/K/V/O and FFN
+projections.
+A \emph{no-LoRA ablation}, skipping the entire LoRA path (gather,
+shrink/expand, additive merge) rather than only its \texttt{bmm}s, saves
+\textbf{2.4~ms of 28.7~ms} (\textbf{8.3\%}) of wall-clock time; the gather and
+merge---not the \texttt{bmm}---account for most of the gap above the $4.8\%$
+kernel cost. Custom fused kernels target exactly this path, so its $8.3\%$
+wall-clock weight is the hard ceiling on any speedup here. The decoder-LoRA
+literature reports far larger, multiplicative gains because per-token decode
+is dominated by small, memory-bound matrix-vector products where LoRA's
+relative weight is much higher; the compute-bound single-pass encoder forward
+at $d{=}1024$ does not benefit comparably.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=\linewidth]{figures/latency_adapters.pdf}
+  \includegraphics[width=\linewidth]{figures/latency_adapters.png}
   \caption{p50 latency as a function of pre-loaded adapter count at five
   batch sizes (rank = 8, sequence length = 128, A100-40GB,
   \texttt{BAAI/bge-m3}).
@@ -599,7 +605,7 @@ forward at $d{=}1024$ does not benefit.
 % Throughput-vs-baselines figure dropped: redundant with Table tab:baselines.
 % \begin{figure}[t]
 %   \centering
-%   \includegraphics[width=\linewidth]{figures/throughput_baselines.pdf}
+%   \includegraphics[width=\linewidth]{figures/throughput_baselines.png}
 %   \caption{Throughput of \sysname{} versus the PEFT per-request swap baseline
 %   at three batch sizes for $N \in \{100, 1{,}000\}$ adapters (rank = 8, fp16,
 %   A100-40GB).
@@ -799,7 +805,7 @@ Latency and throughput numbers are obtained with randomly initialized adapters
 ($B = 0$, so the LoRA delta is zero).
 Real adapters with non-zero deltas will have marginally higher GPU compute
 time; end-to-end correctness against PEFT-merged references is verified
-numerically (\S\ref{sec:results_accuracy}) but not yet across the full
+numerically (\S\ref{sec:setup}) but not yet across the full
 serving pipeline.
 % TODO (Tasks #3 and #9): complete before camera-ready.
 
