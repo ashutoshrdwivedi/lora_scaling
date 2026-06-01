@@ -207,6 +207,43 @@ $24\times$ reduction over full fine-tuning of those layers.
 In this work, $B$ is initialized to zero so that $\Delta W = 0$ at the start
 of training, leaving the pre-trained representations intact.
 
+At rank 8, LoRA retains $\approx$97\% of vanilla fine-tuning's mean
+accuracy across seven public text-classification benchmarks
+(Table~\ref{tab:accuracy}), at $1/800$ the trainable-parameter
+cost.\footnote{Accuracy reported on
+\texttt{paraphrase-mpnet-base-v2} to match the SetFit literature
+\cite{tunstall2022efficient}; serving experiments
+(\S\ref{sec:experiments}) use the larger \texttt{BAAI/bge-m3}
+encoder.} The remaining barrier is \emph{serving}: combining thousands of
+these adapters in a single forward pass.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Per-task accuracy of LoRA adapters versus full encoder
+fine-tuning at $N{=}8$ examples per class, rank=8, single seed on
+\texttt{paraphrase-mpnet-base-v2}. LoRA retains $97\%$ of vanilla mean
+accuracy at $1/800$ of the trainable parameter count. See
+Appendix~\ref{app:accuracy} for per-task details.}
+\label{tab:accuracy}
+\begin{tabular}{lrrr}
+\toprule
+Dataset & Vanilla & LoRA-$r$8 & $\Delta$ \\
+\midrule
+SST-2          & 0.817 & 0.801 & $-$0.016 \\
+SST-5          & 0.374 & 0.360 & $-$0.014 \\
+CR             & 0.771 & 0.742 & $-$0.029 \\
+Amazon-CF      & 0.568 & 0.563 & $-$0.005 \\
+Emotion        & 0.361 & 0.310 & $-$0.051 \\
+EnronSpam      & 0.890 & 0.884 & $-$0.006 \\
+AG News        & 0.804 & 0.770 & $-$0.034 \\
+\midrule
+\textbf{Mean}  & \textbf{0.655} & \textbf{0.633} & $-$0.022 \\
+Trainable params & 117M & 147K & 800$\times$ smaller \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \subsection{The Multi-Tenant Serving Problem}
 \label{sec:background_serving}
 
@@ -429,11 +466,14 @@ $r \in \{4,\,8,\,16,\,32\}$.
 Each configuration samples mixed-tenant batches uniformly at random from the
 adapter pool.
 
-\paragraph{Adapters.}
-Latency and throughput experiments use synthetic LoRA weights, which isolates
-serving-system overhead from adapter-quality artefacts; we verify in
-\S\ref{sec:results_accuracy} that real fine-tuned adapters trained on
-classification benchmarks reproduce the same per-batch cost.
+\paragraph{Adapters and correctness.}
+Latency and throughput experiments use synthetic LoRA weights, isolating
+serving-system overhead from adapter-quality artefacts. We numerically
+verify that \sysname{}'s output is bit-equivalent to a reference
+PEFT-wrapped \texttt{AutoModel} with the same A/B weights to within
+\texttt{atol=rtol=1e-4} in fp32 across four scenarios---zero-LoRA, single
+shared adapter, per-sample distinct adapters with shared per-layer A/B,
+and per-target-module distinct A/B---each enforced as a unit test.
 
 \paragraph{Baselines.}
 We compare against \texttt{HuggingFace PEFT}~\cite{mangrulkar2022peft} in its
@@ -651,65 +691,6 @@ Adding 1{,}000 adapters to a PEFT-wrapped model takes 1{,}327~seconds
 \sysname{}'s \texttt{AdapterStore} accepts 1{,}000 adapters in under
 2~seconds---a $\mathbf{>600\times}$ improvement in cold-start time, which is
 particularly relevant for elastic deployments and CI evaluation pipelines.
-
-\subsection{Real-Task Accuracy Validation}
-\label{sec:results_accuracy}
-
-\paragraph{Correctness.}
-We numerically verify that \sysname{}'s output is bit-equivalent to a reference
-PEFT-wrapped \texttt{AutoModel} with the same A/B weights to within
-\texttt{atol=rtol=1e-4} in fp32 across four scenarios: (i) zero-LoRA against
-the raw base encoder, (ii) a single shared adapter applied across the batch,
-(iii) distinct per-sample adapters with shared A/B per layer, and (iv)
-per-target-module distinct A/B---each implemented as a unit test that runs in
-continuous integration on every commit.
-
-\paragraph{Task accuracy.}
-To confirm that LoRA adapters served through \sysname{} achieve comparable
-classification accuracy to full encoder fine-tuning, we evaluate on seven
-public text-classification benchmarks used by the SetFit literature
-\cite{tunstall2022efficient}: SST-2, SST-5, CR, Amazon-Counterfactual,
-Emotion, EnronSpam, and AG News.
-For each dataset we train two variants of \texttt{paraphrase-mpnet-base-v2}
-with $N=8$ labeled examples per class: a \emph{vanilla} full-encoder
-fine-tune (117M trainable parameters) and a \emph{LoRA} variant at rank~8
-(147{,}456 trainable parameters---a $\mathbf{800\times}$ reduction).
-
-\begin{table}[h]
-\centering
-\small
-\caption{Per-task accuracy of \sysname{}-served LoRA adapters versus full
-encoder fine-tuning at $N{=}8$ examples per class, rank=8, single seed.
-LoRA retains $97\%$ of vanilla mean accuracy at $1/800$ of the trainable
-parameter count.}
-\label{tab:accuracy}
-\begin{tabular}{lrrr}
-\toprule
-Dataset & Vanilla & LoRA-$r$8 & $\Delta$ \\
-\midrule
-SST-2          & 0.817 & 0.801 & $-$0.016 \\
-SST-5          & 0.374 & 0.360 & $-$0.014 \\
-CR             & 0.771 & 0.742 & $-$0.029 \\
-Amazon-CF      & 0.568 & 0.563 & $-$0.005 \\
-Emotion        & 0.361 & 0.310 & $-$0.051 \\
-EnronSpam      & 0.890 & 0.884 & $-$0.006 \\
-AG News        & 0.804 & 0.770 & $-$0.034 \\
-\midrule
-\textbf{Mean}  & \textbf{0.655} & \textbf{0.633} & $-$0.022 \\
-Trainable params & 117M & 147K & 800$\times$ smaller \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-LoRA loses 2.2~percentage points of average accuracy in exchange for an
-800$\times$ reduction in trainable parameters per tenant, which translates
-directly into the per-adapter storage and GPU-cache footprint reported in
-\S\ref{sec:results_latency}.
-The gap is smallest on tasks dominated by the pretrained representation
-(EnronSpam: $-$0.6pp; Amazon-CF: $-$0.5pp) and largest on tasks that benefit
-most from deep encoder updates (Emotion: $-$5.1pp).
-For deployments where this gap is unacceptable, rank can be increased at zero
-latency cost (Finding~3); the only price is GPU memory.
 
 % TODO (Task #4): §4.5 Multi-Model and Multi-Hardware Generalization.
 % Run the latency/throughput sweep on at least 3 base encoders × 3 GPU classes:
@@ -935,5 +916,29 @@ $N$ & $\mathcal{B}$ & $r$ & p50 (ms) & p90 (ms) & p99 (ms) & Mean (ms) & QPS (s/
 \bottomrule
 \end{tabular}
 \end{table*}
+
+% =============================================================================
+\section{Per-Task Accuracy Details}
+\label{app:accuracy}
+
+Table~\ref{tab:accuracy} (\S\ref{sec:background_lora}) summarizes
+LoRA-vs-vanilla classification accuracy across seven public benchmarks
+used by the SetFit literature \cite{tunstall2022efficient}: SST-2,
+SST-5, CR, Amazon-Counterfactual, Emotion, EnronSpam, and AG News. For
+each dataset we train two variants of \texttt{paraphrase-mpnet-base-v2}
+\cite{reimers2019sentencebert} at $N{=}8$ labeled examples per class: a
+\emph{vanilla} full-encoder fine-tune (117M trainable parameters) and a
+\emph{LoRA} variant at rank~8 (147{,}456 trainable parameters---an
+$800\times$ reduction).
+
+LoRA loses 2.2~percentage points of average accuracy in exchange for
+the $800\times$ reduction in trainable parameters per tenant, which
+translates directly into the per-adapter storage and GPU-cache footprint
+reported in \S\ref{sec:results_latency}. The gap is smallest on tasks
+dominated by the pretrained representation (EnronSpam: $-$0.6pp;
+Amazon-CF: $-$0.5pp) and largest on tasks that benefit most from deep
+encoder updates (Emotion: $-$5.1pp). For deployments where this gap is
+unacceptable, rank can be increased at zero latency cost
+(Finding~3); the only price is GPU memory.
 
 \end{document}
