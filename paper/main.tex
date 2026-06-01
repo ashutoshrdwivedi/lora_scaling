@@ -339,49 +339,33 @@ Callers slice $[:, :, :c_i]$ per sample before applying softmax.
 The zero-padded columns contribute zero gradient and do not affect the
 probability distribution of any tenant.
 
-\subsection{Pre-Allocated GPU Buffers}
-\label{sec:buffers}
+\subsection{Implementation}
+\label{sec:impl}
 
-Without explicit buffer management, \texttt{torch.bmm} allocates a new output
-tensor on every call.
-For a 24-layer encoder with target modules $\{\text{query}, \text{value}\}$,
-this produces $2 \times 2 \times 24 = 96$ CUDA allocations per forward pass.
-Each allocation invokes the CUDA caching allocator, which searches for a free
-contiguous block at a cost on the order of microseconds per call---adding up to
-several hundred microseconds of pure allocator overhead per batch.
-% TODO: restore (\S\ref{sec:ablation}) cross-ref once §4.6 is restored.
-
-\sysname{} pre-allocates two fixed-size buffers at initialization:
-\begin{align}
-  \mathtt{out\_A} &\in \mathbb{R}^{\mathcal{B}_{\max} \times S_{\max} \times r} \\
-  \mathtt{out\_B} &\in \mathbb{R}^{\mathcal{B}_{\max} \times S_{\max} \times H}
-\end{align}
+\paragraph{Pre-allocated buffers.}
+A naive implementation lets \texttt{torch.bmm} allocate a fresh output
+tensor on every call, producing $2 \times |\mathcal{M}| \times L$
+allocations per forward pass (96 for $L{=}24$, $|\mathcal{M}|{=}2$). Each
+invokes the CUDA caching allocator at microsecond cost, adding several
+hundred microseconds of pure allocator overhead per batch.
+\sysname{} instead pre-allocates two fixed-size buffers at initialization,
+$\mathtt{out\_A} \in \mathbb{R}^{\mathcal{B}_{\max} \times S_{\max} \times r}$
+and $\mathtt{out\_B} \in \mathbb{R}^{\mathcal{B}_{\max} \times S_{\max} \times H}$,
 and passes them via the \texttt{out=} argument of every \texttt{bmm} call.
-This eliminates all 96 allocations per forward pass, replacing dynamic memory
-management with zero-overhead in-place writes.
-The buffers are shared across all layers because each \texttt{expand} call
-immediately consumes \texttt{out\_A} before the next \texttt{shrink} call
-overwrites it.
+Both are shared across layers because each \texttt{expand} consumes
+\texttt{out\_A} before the next \texttt{shrink} overwrites it.
 
-\subsection{Adapter Store}
-\label{sec:adapter_store}
-
+\paragraph{Adapter store and batch assembly.}
 At service startup, \sysname{} pre-loads all tenant LoRA adapters into GPU
 memory as an \texttt{AdapterStore}: a dictionary mapping adapter IDs to
-\texttt{LoraWeight} objects, each holding tensors
+\texttt{LoraWeight} objects holding
 $W_A \in \mathbb{R}^{L \times H \times r}$ and
-$W_B \in \mathbb{R}^{L \times r \times H}$
-where $L$ is the number of transformer layers.
-Matrices are stored in inference-transposed layout ($H \times r$ rather than
-$r \times H$ for $A$) so that \texttt{bmm} requires no runtime transpose.
-
-For a batch of adapter IDs, the \texttt227753{BatchAssembler} iterates over the
-batch, slices each adapter's per-layer tensor, and \texttt{unsqueeze(0)}-es
-it to add a batch dimension.
-After all samples are processed, \texttt{torch.cat} concatenates the per-layer
-lists into $(\mathcal{B}, H, r)$ tensors ready for \texttt{bmm}.
-This CPU-side assembly is the only per-request overhead before the GPU forward
-pass (\S\ref{sec:results_latency}).
+$W_B \in \mathbb{R}^{L \times r \times H}$, stored in inference-transposed
+layout so \texttt{bmm} requires no runtime transpose.
+For a batch of adapter IDs, the \texttt{BatchAssembler} slices each
+adapter's per-layer tensor and \texttt{torch.cat}s the per-layer lists into
+$(\mathcal{B}, H, r)$ tensors ready for \texttt{bmm}---the only per-request
+overhead before the GPU forward pass (\S\ref{sec:results_latency}).
 
 \subsection{Complexity Analysis}
 \label{sec:complexity}
@@ -668,20 +652,6 @@ Adding 1{,}000 adapters to a PEFT-wrapped model takes 1{,}327~seconds
 2~seconds---a $\mathbf{>600\times}$ improvement in cold-start time, which is
 particularly relevant for elastic deployments and CI evaluation pipelines.
 
-\paragraph{Other systems.}
-vLLM \cite{kwon2023vllm} can load single-adapter encoder LoRA weights as of
-v0.8.3 (closing GitHub issue \#12808); multi-adapter classification serving is
-in-progress (PR \#24596, unmerged as of this submission).
-Even when shipped, vLLM's serving runtime is architected around autoregressive
-decoding---continuous batching, paged KV-cache, and per-token
-scheduling---none of which apply to single-pass encoder classification.
-A direct quantitative comparison would therefore conflate LoRA-serving
-efficiency with the overhead of vLLM's decoder-oriented scheduler on a
-non-native workload; we defer such a comparison to future work and to the
-moment PR~\#24596 lands.
-LoRAX \cite{predibase2023lorax} is decoder-oriented and does not document
-encoder support.
-
 \subsection{Real-Task Accuracy Validation}
 \label{sec:results_accuracy}
 
@@ -814,9 +784,6 @@ encoder serving for Adapter \cite{PLACEHOLDER_houlsby2019}, BitFit
 \cite{PLACEHOLDER_bitfit2022}, and MaskBERT \cite{PLACEHOLDER_maskbert2020} on
 BERT/DistilBERT; it predates LoRA, does not support low-rank decompositions,
 and does not handle per-tenant classification heads.
-Jina-embeddings-v3 \cite{gunther2024jina} bakes five task-specific LoRA
-adapters into a single encoder for mixed-adapter batching, but as a fixed
-\emph{model design} it cannot admit new tenants without retraining.
 \sysname{} is a LoRA-native serving framework that batches arbitrary external
 adapters---with variable classification heads and a pre-loaded cache---without
 modifying the base model.
@@ -825,20 +792,18 @@ modifying the base model.
 \section{Conclusion}
 \label{sec:conclusion}
 
-We presented \sysname, a system for multi-tenant LoRA serving on encoder
-models that fills a gap left by all existing systems: none support
-heterogeneous batching of different LoRA adapters in a single encoder forward
-pass.
-\sysname{} achieves this through late-fusion batched matrix multiplication---a
-decomposition that separates the frozen base-model path from the per-tenant
-LoRA delta path and fuses them additively, enabling mixed-tenant batches
-without weight merging, custom CUDA kernels, or KV-cache machinery.
-On an NVIDIA L4 GPU with \texttt{multilingual-e5-small}, \sysname{} serves
-5{,}000 pre-loaded adapters at 556~samples/sec in 56~ms p50 latency,
-with sub-linear growth in latency as adapter count increases 50-fold.
-\sysname{} requires only standard PyTorch, making it immediately deployable
-on managed cloud GPU environments where custom kernel compilation is
-unavailable---the majority of production NLP serving infrastructure today.
+We presented \sysname, a serving system for multi-tenant LoRA on encoder
+models. Late-fusion batched matrix multiplication separates the frozen
+base-model path from per-tenant LoRA deltas and fuses them additively,
+enabling mixed-tenant batches without weight merging, custom CUDA kernels,
+or KV-cache machinery.
+On an A100-40GB with \texttt{BAAI/bge-m3}, \sysname{} serves
+20{,}000 pre-loaded adapters at $\approx$800~samples/sec with statistically
+unchanged latency from 100 to 20{,}000 adapters, and delivers
+$33$--$571\times$ throughput over a HuggingFace PEFT swap baseline.
+Because the entire system uses only standard PyTorch, it deploys without
+modification on managed cloud environments where custom kernel compilation
+is impractical.
 
 % =============================================================================
 \section*{Limitations}
