@@ -653,28 +653,19 @@ PEFT sequential ($\mathcal{B}{=}128$) & 10{,}927 & 11.7 & 94{,}596 & 1.4 \\
 \end{tabular}
 \end{table}
 
-\paragraph{PEFT throughput is invariant in batch size.}
-Because the sequential path executes one \texttt{set\_adapter} call and one
-$\mathcal{B}{=}1$ forward per sample, wall-clock time scales linearly with $\mathcal{B}$ and
-throughput remains pinned at $\approx$11.7~samples/sec at $N{=}100$ and
-$\approx$1.4~samples/sec at $N{=}1{,}000$.
-\sysname{}, in contrast, reaches 800~samples/sec at $\mathcal{B}{=}64$ and saturates
-thereafter.
-
-\paragraph{PEFT throughput collapses with adapter count.}
-Moving from 100 to 1{,}000 attached adapters degrades PEFT throughput
-8.4$\times$ (11.7 $\to$ 1.4~samples/sec)---an $\mathcal{O}(N)$ overhead in the
-per-swap path.
-\sysname{}'s throughput is statistically identical between $N{=}100$ and
-$N{=}20{,}000$ (Table~\ref{tab:main_results}), confirming that the base-encoder
-forward path is decoupled from the adapter pool.
-
-\paragraph{Deployment cost.}
-Adding 1{,}000 adapters to a PEFT-wrapped model takes 1{,}327~seconds
-($\approx$22~minutes) of CPU-bound module construction.
-\sysname{}'s \texttt{AdapterStore} accepts 1{,}000 adapters in under
-2~seconds---a $\mathbf{>600\times}$ improvement in cold-start time, which is
-particularly relevant for elastic deployments and CI evaluation pipelines.
+\paragraph{PEFT scales with neither batch size nor adapter count.}
+Because the sequential path runs one \texttt{set\_adapter} call plus a
+$\mathcal{B}{=}1$ forward per sample, PEFT throughput is invariant in
+$\mathcal{B}$ and pinned at $\approx$11.7~samples/sec at $N{=}100$, falling
+$8.4\times$ to $\approx$1.4~samples/sec at $N{=}1{,}000$ as the per-swap
+path incurs $\mathcal{O}(N)$ overhead. \sysname{}, in contrast, reaches
+$\approx$800~samples/sec at $\mathcal{B}{=}64$ with statistically identical
+throughput between $N{=}100$ and $N{=}20{,}000$
+(Table~\ref{tab:main_results}). Cold start tells the same story: PEFT
+takes 1{,}327~s ($\approx$22~minutes) to register 1{,}000 adapters into
+its model graph, while \sysname{}'s \texttt{AdapterStore} accepts the same
+1{,}000 adapters in under 2~seconds---a $\mathbf{>600\times}$ improvement
+in deployment time.
 
 % TODO (Task #4): §4.5 Multi-Model and Multi-Hardware Generalization.
 % Run the latency/throughput sweep on at least 3 base encoders × 3 GPU classes:
