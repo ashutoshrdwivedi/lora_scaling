@@ -598,7 +598,7 @@ at $d{=}1024$ does not benefit comparably.
 
 \begin{figure}[t]
   \centering
-  \includegraphics[width=\linewidth]{figures/latency_adapters.png}
+  \includegraphics[width=0.72\linewidth]{figures/latency_adapters.png}
   \caption{p50 latency as a function of pre-loaded adapter count at five
   batch sizes (rank = 8, sequence length = 128, A100-40GB,
   \texttt{BAAI/bge-m3}).
@@ -628,12 +628,11 @@ configurations, both attaching $N$ adapters to one base model via
 \texttt{add\_adapter}. \emph{Grouped} buckets each batch by
 adapter id and runs one batched forward per bucket (the group-by-adapter strategy
 of decoder kernels like Punica's SGMV \cite{chen2024punica}), amortizing the swap
-when samples share an adapter and otherwise degenerating to one
-\texttt{set\_adapter(id)} plus a single-sample forward---the default per-request
-pattern. It thus issues no more swaps than naive per-request serving, dominating
-it by construction. \emph{Base}, the single-tenant ceiling, is the
-bare model batched once with no adapters---the upper bound for any per-request
-scheme. We also report PEFT's deployment cost---the time to register $N$ adapters
+when samples share an adapter and otherwise reducing to one
+\texttt{set\_adapter(id)} plus a single-sample forward---so it issues no more
+swaps than naive per-request serving. \emph{Base}, the single-tenant ceiling, is
+the bare model batched once with no adapters---an upper bound for any per-request
+scheme. We also report PEFT's deployment cost: the time to register $N$ adapters
 into the model graph, which we replace with a constant-time \texttt{AdapterStore}
 insert.
 
@@ -676,21 +675,6 @@ Base ceiling ($\mathcal{B}{=}128$) & 61.1 & 2{,}094 & 61.1 & 2{,}094 \\
 \bottomrule
 \end{tabular}
 \end{table}
-
-\paragraph{Even grouped PEFT collapses under adapter diversity.}
-Grouping by adapter does not survive mixed-tenant
-load: a batch drawn uniformly from $N \gg \mathcal{B}$ adapters is nearly
-all-distinct ($N(1-(1-1/N)^{\mathcal{B}}) \approx \mathcal{B}$), so each bucket
-holds $\approx$1 sample and grouping degenerates to per-sample swapping. Its
-throughput is therefore $\approx$13--22~samples/sec at $N{=}100$ and collapses
-$\approx$10$\times$ to $\approx$1.5 at $N{=}1{,}000$ (Table~\ref{tab:baselines})
-as each $\mathcal{O}(N)$ swap dominates---and even the no-adapter base ceiling
-caps any per-request scheme at 2{,}094~samples/sec. \sysname{} instead reaches
-$\approx$820~samples/sec at $\mathcal{B}{=}128$ with throughput flat from
-$N{=}100$ to $20{,}000$ (Table~\ref{tab:main_results})---a $40$--$562\times$
-speedup over grouped, plus a $\mathbf{>600\times}$ cold-start gain
-($\approx$1{,}200~s to register 1{,}000 adapters vs.\ under 2~s for the
-\texttt{AdapterStore}).
 
 % TODO (Task #4): §4.5 Multi-Model and Multi-Hardware Generalization.
 % Run the latency/throughput sweep on at least 3 base encoders × 3 GPU classes:
@@ -777,14 +761,11 @@ We presented \sysname, a serving system for multi-tenant LoRA on encoder
 models. Late-fusion batched matrix multiplication separates the frozen
 base-model path from per-tenant LoRA deltas and fuses them additively,
 enabling mixed-tenant batches without weight merging, custom CUDA kernels,
-or KV-cache machinery.
-On an A100-40GB with \texttt{BAAI/bge-m3}, \sysname{} serves
-20{,}000 pre-loaded adapters at $\approx$800~samples/sec with statistically
-unchanged latency from 100 to 20{,}000 adapters, and delivers
-$40$--$562\times$ throughput over PEFT's adapter-grouped swap baseline.
-Because the entire system uses only standard PyTorch, it deploys without
-modification on managed cloud environments where custom kernel compilation
-is impractical.
+or KV-cache machinery. On an A100-40GB with \texttt{BAAI/bge-m3}, \sysname{}
+serves 20{,}000 pre-loaded adapters at constant latency---a
+$40$--$562\times$ throughput gain over the PEFT swap baseline---using only
+standard PyTorch, so it deploys on managed cloud environments without
+custom kernel compilation.
 
 % =============================================================================
 \section*{Limitations}
