@@ -3,14 +3,17 @@
 Measures latency / throughput for a mixed-tenant batch served via HuggingFace PEFT.
 This is the worst-case-but-realistic baseline that our multi-tenant impl is compared against.
 
-Two modes:
+Three modes:
   - sequential: each sample uses set_adapter() + forward(B=1). Worst case (no batching).
   - grouped:    bucket batch by adapter_id, one batched forward per bucket. Best case PEFT.
+  - base:       no adapters; one batched forward of the bare base model. Single-tenant
+                throughput ceiling (N-independent), the upper bound any multi-tenant
+                serving system can aspire to. Run once per batch size (use --adapters 1).
 
 Output CSV is schema-compatible with `lora_serving.benchmark.run` so the two can be
 merged for plotting. Extra columns: `harness=peft_<mode>`.
 
-Run on TIR:
+Run :
     uv run python -m benchmarks.baselines.peft_swap \\
         --adapters 100 1000 5000 --batch-sizes 8 32 128 --mode sequential
 """
@@ -30,6 +33,14 @@ from peft import LoraConfig, get_peft_model
 from transformers import AutoModel
 
 DTYPE_MAP = {"fp16": torch.float16, "fp32": torch.float32, "bf16": torch.bfloat16}
+
+
+def build_base_model(model_name: str, dtype: torch.dtype, device: torch.device):
+    """Load the bare base model (no PEFT, no adapters) for the single-tenant ceiling."""
+    base = AutoModel.from_pretrained(model_name, torch_dtype=dtype)
+    base.to(device=device, dtype=dtype)
+    base.eval()
+    return base
 
 
 def build_peft_model(model_name: str, lora_rank: int, dtype: torch.dtype, device: torch.device):
@@ -74,6 +85,19 @@ def run_sequential(model, adapter_ids: list[str], inputs: tuple[torch.Tensor, to
     return start.elapsed_time(end)
 
 
+def run_base(model, adapter_ids: list[str], inputs: tuple[torch.Tensor, torch.Tensor], device: torch.device) -> float:
+    """One batched forward of the bare base model (adapter_ids ignored). Returns total ms."""
+    input_ids, attention_mask = inputs
+    start = torch.cuda.Event(enable_timing=True)
+    end = torch.cuda.Event(enable_timing=True)
+    start.record()
+    with torch.no_grad():
+        model(input_ids, attention_mask=attention_mask)
+    end.record()
+    torch.cuda.synchronize(device)
+    return start.elapsed_time(end)
+
+
 def run_grouped(model, adapter_ids: list[str], inputs: tuple[torch.Tensor, torch.Tensor], device: torch.device) -> float:
     """Bucket samples by adapter_id, one batched forward per bucket. Returns total ms."""
     input_ids, attention_mask = inputs
@@ -94,8 +118,40 @@ def run_grouped(model, adapter_ids: list[str], inputs: tuple[torch.Tensor, torch
     return start.elapsed_time(end)
 
 
-def run_single_config(
+def build_for_config(
     model_name: str,
+    num_adapters: int,
+    lora_rank: int,
+    dtype: torch.dtype,
+    device: torch.device,
+    mode: str,
+):
+    """Build the model + adapters once. Returns (model, adapter_ids, runner, add_time_s).
+
+    For grouped/sequential this pays the O(N) PEFT add_adapter() registration cost; callers
+    reuse the returned model across all batch sizes so it is paid once per (N, rank), not per batch.
+    """
+    if mode == "base":
+        print(f"  Building bare base model (no adapters)...", flush=True)
+        model = build_base_model(model_name, dtype, device)
+        return model, ["adapter_0"], run_base, 0.0
+
+    print(f"  Building PEFT model + adding {num_adapters} adapters...", flush=True)
+    model, lora_cfg = build_peft_model(model_name, lora_rank, dtype, device)
+    t0 = time.perf_counter()
+    add_n_adapters(model, lora_cfg, num_adapters, device, dtype)
+    add_time_s = time.perf_counter() - t0
+    print(f"  add_adapter() x{num_adapters - 1} took {add_time_s:.1f}s", flush=True)
+    adapter_ids = [f"adapter_{i}" for i in range(num_adapters)]
+    runner = run_sequential if mode == "sequential" else run_grouped
+    return model, adapter_ids, runner, add_time_s
+
+
+def measure_config(
+    model,
+    model_name: str,
+    runner,
+    adapter_ids: list[str],
     num_adapters: int,
     batch_size: int,
     lora_rank: int,
@@ -104,28 +160,21 @@ def run_single_config(
     iters: int,
     dtype: torch.dtype,
     mode: str,
+    add_time_s: float,
+    device: torch.device,
 ) -> dict:
-    device = torch.device("cuda:0")
-    print(f"  Building PEFT model + adding {num_adapters} adapters...")
-    model, lora_cfg = build_peft_model(model_name, lora_rank, dtype, device)
-    t0 = time.perf_counter()
-    add_n_adapters(model, lora_cfg, num_adapters, device, dtype)
-    add_time_s = time.perf_counter() - t0
-    print(f"  add_adapter() x{num_adapters - 1} took {add_time_s:.1f}s")
-
-    adapter_ids = [f"adapter_{i}" for i in range(num_adapters)]
+    """Warm up + measure one (already-built) model at a given batch size."""
     inputs = make_inputs(batch_size, seq_len, device)
-    runner = run_sequential if mode == "sequential" else run_grouped
 
     torch.cuda.reset_peak_memory_stats(device)
     torch.cuda.synchronize(device)
 
-    print(f"  Warming up ({warmup} iters)...")
+    print(f"  Warming up ({warmup} iters)...", flush=True)
     for _ in range(warmup):
         batch_ids = random.choices(adapter_ids, k=batch_size)
         runner(model, batch_ids, inputs, device)
 
-    print(f"  Measuring ({iters} iters)...")
+    print(f"  Measuring ({iters} iters)...", flush=True)
     latencies = np.empty(iters)
     for i in range(iters):
         batch_ids = random.choices(adapter_ids, k=batch_size)
@@ -163,7 +212,7 @@ def main():
     parser.add_argument("--seq-len", type=int, default=128)
     parser.add_argument("--warmup", type=int, default=20)
     parser.add_argument("--iters", type=int, default=100)
-    parser.add_argument("--mode", choices=["sequential", "grouped"], default="sequential")
+    parser.add_argument("--mode", choices=["sequential", "grouped", "base"], default="sequential")
     parser.add_argument("--out", default="peft_baseline.csv")
     args = parser.parse_args()
 
@@ -172,20 +221,36 @@ def main():
         return
 
     dtype = DTYPE_MAP[args.dtype]
-    print(f"GPU: {torch.cuda.get_device_name(0)}")
-    print(f"Mode: {args.mode}\n")
+    device = torch.device("cuda:0")
+    print(f"GPU: {torch.cuda.get_device_name(0)}", flush=True)
+    print(f"Mode: {args.mode}\n", flush=True)
 
     total = len(args.adapters) * len(args.batch_sizes) * len(args.lora_ranks)
     done = 0
     results = []
+    # Build the model ONCE per (num_adapters, lora_rank) and reuse across all batch sizes.
+    # PEFT add_adapter() is O(N) single-threaded registration; building per-batch wasted ~22 min/config.
     for num_adapters in args.adapters:
-        for batch_size in args.batch_sizes:
-            for lora_rank in args.lora_ranks:
+        for lora_rank in args.lora_ranks:
+            try:
+                model, adapter_ids, runner, add_time_s = build_for_config(
+                    args.model, num_adapters, lora_rank, dtype, device, args.mode
+                )
+            except Exception as e:
+                print(f"  BUILD ERROR ({type(e).__name__}) at adapters={num_adapters} rank={lora_rank}: {e}", flush=True)
+                torch.cuda.empty_cache()
+                gc.collect()
+                continue
+
+            for batch_size in args.batch_sizes:
                 done += 1
-                print(f"[{done}/{total}] adapters={num_adapters} batch={batch_size} rank={lora_rank}")
+                print(f"[{done}/{total}] adapters={num_adapters} batch={batch_size} rank={lora_rank}", flush=True)
                 try:
-                    row = run_single_config(
+                    row = measure_config(
+                        model=model,
                         model_name=args.model,
+                        runner=runner,
+                        adapter_ids=adapter_ids,
                         num_adapters=num_adapters,
                         batch_size=batch_size,
                         lora_rank=lora_rank,
@@ -194,24 +259,28 @@ def main():
                         iters=args.iters,
                         dtype=dtype,
                         mode=args.mode,
+                        add_time_s=add_time_s,
+                        device=device,
                     )
                     results.append(row)
                     print(f"  p50={row['p50_ms']}ms  p99={row['p99_ms']}ms  "
                           f"tput={row['throughput_samples_sec']} samples/s  "
-                          f"peak={row['peak_gpu_mem_gb']}GB\n")
+                          f"peak={row['peak_gpu_mem_gb']}GB\n", flush=True)
                 except torch.cuda.OutOfMemoryError as e:
-                    print(f"  OOM: {e}")
+                    print(f"  OOM: {e}", flush=True)
                     torch.cuda.empty_cache()
                     gc.collect()
                     continue
                 except Exception as e:
-                    print(f"  ERROR ({type(e).__name__}): {e}")
+                    print(f"  ERROR ({type(e).__name__}): {e}", flush=True)
                     torch.cuda.empty_cache()
                     gc.collect()
                     continue
-                finally:
-                    torch.cuda.empty_cache()
-                    gc.collect()
+
+            # Free the model before building the next (num_adapters, rank) variant.
+            del model
+            torch.cuda.empty_cache()
+            gc.collect()
 
     if not results:
         print("No results collected.")

@@ -1,0 +1,2 @@
+N,pattern,batch_size,max_gpu,p50_ms,p90_ms,p99_ms,mean_ms,assemble_mean_ms,forward_mean_ms,throughput_samples_sec,hits,misses,evictions,hit_rate,avg_page_in_us,peak_gpu_mem_gb,gpu_cache_gb,cpu_store_gb
+50000,uniform,32,10000,52.89,53.51,56.98,53.01,24.365,28.64,603.7,39,1561,0,0.0244,303.3,4.231,2.959,78.643
