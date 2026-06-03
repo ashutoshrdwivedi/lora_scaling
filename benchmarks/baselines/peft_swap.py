@@ -3,12 +3,18 @@
 Measures latency / throughput for a mixed-tenant batch served via HuggingFace PEFT.
 This is the worst-case-but-realistic baseline that our multi-tenant impl is compared against.
 
-Three modes:
-  - sequential: each sample uses set_adapter() + forward(B=1). Worst case (no batching).
-  - grouped:    bucket batch by adapter_id, one batched forward per bucket. Best case PEFT.
-  - base:       no adapters; one batched forward of the bare base model. Single-tenant
-                throughput ceiling (N-independent), the upper bound any multi-tenant
-                serving system can aspire to. Run once per batch size (use --adapters 1).
+Four modes:
+  - sequential:  each sample uses set_adapter() + forward(B=1). Worst case (no batching).
+  - grouped:     bucket a mixed (uniformly sampled) batch by adapter_id, one batched
+                 forward per bucket. With N >> B a batch is nearly all-distinct, so this
+                 degrades to per-sample swapping.
+  - homogeneous: every sample in the batch shares one (randomly drawn) adapter, so PEFT
+                 pays exactly one set_adapter() + one batched forward per batch. This is
+                 PEFT's friendliest batching (single-tenant batches); the swap cost is
+                 O(N) in attached adapters, so it still bites at large N.
+  - base:        no adapters; one batched forward of the bare base model. Single-tenant
+                 throughput ceiling (N-independent), the upper bound any multi-tenant
+                 serving system can aspire to. Run once per batch size (use --adapters 1).
 
 Output CSV is schema-compatible with `lora_serving.benchmark.run` so the two can be
 merged for plotting. Extra columns: `harness=peft_<mode>`.
@@ -62,6 +68,17 @@ def add_n_adapters(model, lora_cfg: LoraConfig, n: int, device: torch.device, dt
     for i in range(1, n):
         model.add_adapter(f"adapter_{i}", lora_cfg)
     model.to(device=device, dtype=dtype)
+
+
+def sample_batch(adapter_ids: list[str], batch_size: int, mode: str) -> list[str]:
+    """Per-iteration adapter assignment for a batch.
+
+    homogeneous -> one random adapter replicated across the batch (single-tenant batch).
+    everything else -> uniform draw with replacement (mixed-tenant batch).
+    """
+    if mode == "homogeneous":
+        return [random.choice(adapter_ids)] * batch_size
+    return random.choices(adapter_ids, k=batch_size)
 
 
 def make_inputs(batch_size: int, seq_len: int, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
@@ -143,6 +160,8 @@ def build_for_config(
     add_time_s = time.perf_counter() - t0
     print(f"  add_adapter() x{num_adapters - 1} took {add_time_s:.1f}s", flush=True)
     adapter_ids = [f"adapter_{i}" for i in range(num_adapters)]
+    # homogeneous reuses run_grouped: a single-adapter batch forms one bucket, so it
+    # naturally becomes one set_adapter() + one batched forward.
     runner = run_sequential if mode == "sequential" else run_grouped
     return model, adapter_ids, runner, add_time_s
 
@@ -171,13 +190,13 @@ def measure_config(
 
     print(f"  Warming up ({warmup} iters)...", flush=True)
     for _ in range(warmup):
-        batch_ids = random.choices(adapter_ids, k=batch_size)
+        batch_ids = sample_batch(adapter_ids, batch_size, mode)
         runner(model, batch_ids, inputs, device)
 
     print(f"  Measuring ({iters} iters)...", flush=True)
     latencies = np.empty(iters)
     for i in range(iters):
-        batch_ids = random.choices(adapter_ids, k=batch_size)
+        batch_ids = sample_batch(adapter_ids, batch_size, mode)
         latencies[i] = runner(model, batch_ids, inputs, device)
 
     peak_mem_gb = torch.cuda.max_memory_allocated(device) / 1e9
@@ -212,7 +231,7 @@ def main():
     parser.add_argument("--seq-len", type=int, default=128)
     parser.add_argument("--warmup", type=int, default=20)
     parser.add_argument("--iters", type=int, default=100)
-    parser.add_argument("--mode", choices=["sequential", "grouped", "base"], default="sequential")
+    parser.add_argument("--mode", choices=["sequential", "grouped", "homogeneous", "base"], default="sequential")
     parser.add_argument("--out", default="peft_baseline.csv")
     args = parser.parse_args()
 

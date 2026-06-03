@@ -1,5 +1,5 @@
 # Forward-pass breakdown — BAAI/bge-m3
-# GPU: NVIDIA A100-PCIE-40GB
+# GPU: NVIDIA A100-SXM4-80GB
 # Config: B=32 N=1000 r=8 seq=128 dtype=fp16
 
 ## 1. Analytic FLOP ratio (per encoder layer)
@@ -17,73 +17,73 @@ save at most 1 / (base/lora ratio) of total forward FLOPs.
 -------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
                                                    Name    Self CPU %      Self CPU   CPU total %     CPU total  CPU time avg     Self CUDA   Self CUDA %    CUDA total  CUDA time avg    # of Calls  
 -------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
-                                           forward_iter         0.00%       0.000us         0.00%       0.000us       0.000us     325.548ms       118.60%     325.548ms      32.555ms            10  
-                                            aten::addmm         5.58%      33.819ms         8.57%      51.945ms      35.824us     136.023ms        49.56%     136.080ms      93.848us          1450  
-ampere_fp16_s16816gemm_fp16_128x128_ldg8_relu_f2f_st...         0.00%       0.000us         0.00%       0.000us       0.000us     133.898ms        48.78%     133.898ms      92.985us          1440  
-                                            aten::copy_         1.99%      12.059ms         4.48%      27.174ms      13.002us      38.853ms        14.15%      38.861ms      18.594us          2090  
-                                              aten::add         2.19%      13.252ms         3.39%      20.563ms      16.718us      28.450ms        10.36%      28.450ms      23.130us          1230  
-void at::native::elementwise_kernel<128, 4, at::nati...         0.00%       0.000us         0.00%       0.000us       0.000us      27.606ms        10.06%      27.606ms      28.756us           960  
-                                              aten::bmm         3.95%      23.954ms         5.48%      33.191ms      22.890us      27.228ms         9.92%      27.228ms      18.778us          1450  
-void at::native::elementwise_kernel<128, 4, at::nati...         0.00%       0.000us         0.00%       0.000us       0.000us      15.505ms         5.65%      15.505ms      64.603us           240  
-void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us      12.945ms         4.72%      12.945ms      13.076us           990  
-                                             aten::gelu         0.40%       2.451ms         0.65%       3.960ms      16.499us      12.766ms         4.65%      12.766ms      53.193us           240  
-void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us      12.766ms         4.65%      12.766ms      53.193us           240  
-                                         aten::_softmax         0.33%       2.009ms         0.56%       3.372ms      14.048us      12.351ms         4.50%      12.351ms      51.461us           240  
-void (anonymous namespace)::softmax_warp_forward<flo...         0.00%       0.000us         0.00%       0.000us       0.000us      12.351ms         4.50%      12.351ms      51.461us           240  
-                                aten::native_layer_norm         0.99%       5.990ms         2.60%      15.744ms      32.131us       9.728ms         3.54%       9.728ms      19.854us           490  
-void at::native::(anonymous namespace)::vectorized_l...         0.00%       0.000us         0.00%       0.000us       0.000us       9.728ms         3.54%       9.728ms      19.854us           490  
-void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us       8.537ms         3.11%       8.537ms      35.572us           240  
-ampere_fp16_s16816gemm_fp16_128x128_ldg8_f2f_stages_...         0.00%       0.000us         0.00%       0.000us       0.000us       7.767ms         2.83%       7.767ms      32.362us           240  
-void cutlass::Kernel2<cutlass_80_wmma_tensorop_f16_s...         0.00%       0.000us         0.00%       0.000us       0.000us       7.566ms         2.76%       7.566ms      15.763us           480  
-ampere_fp16_s16816gemm_fp16_128x64_ldg8_f2f_stages_3...         0.00%       0.000us         0.00%       0.000us       0.000us       6.214ms         2.26%       6.214ms      25.892us           240  
-ampere_fp16_s16816gemm_fp16_64x64_sliced1x2_ldg8_f2f...         0.00%       0.000us         0.00%       0.000us       0.000us       5.615ms         2.05%       5.615ms      11.698us           480  
-                                              aten::mul         0.82%       4.978ms         1.28%       7.770ms      16.188us       4.454ms         1.62%       4.454ms       9.279us           480  
-void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us       3.967ms         1.45%       3.967ms      16.528us           240  
-                                              aten::cat         2.82%      17.111ms         3.81%      23.079ms      23.550us       3.739ms         1.36%       3.739ms       3.815us           980  
-void at::native::(anonymous namespace)::CatArrayBatc...         0.00%       0.000us         0.00%       0.000us       0.000us       3.701ms         1.35%       3.701ms       3.815us           970  
-                                        Memset (Device)         0.00%       0.000us         0.00%       0.000us       0.000us       2.041ms         0.74%       2.041ms       1.417us          1440  
-void at::native::unrolled_elementwise_kernel<at::nat...         0.00%       0.000us         0.00%       0.000us       0.000us       1.364ms         0.50%       1.364ms       5.682us           240  
-                         Memcpy DtoD (Device -> Device)         0.00%       0.000us         0.00%       0.000us       0.000us       1.316ms         0.48%       1.316ms       2.057us           640  
-                                              aten::sub         0.40%       2.418ms         0.63%       3.834ms      15.974us     533.599us         0.19%     533.599us       2.223us           240  
-void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us     533.599us         0.19%     533.599us       2.223us           240  
-void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us     487.068us         0.18%     487.068us       2.029us           240  
+                                           forward_iter         0.00%       0.000us         0.00%       0.000us       0.000us     355.360ms       142.14%     355.360ms      35.536ms            10  
+                                            aten::addmm         4.98%      33.766ms         7.87%      53.415ms      36.838us     125.445ms        50.18%     125.445ms      86.514us          1450  
+ampere_fp16_s16816gemm_fp16_128x128_ldg8_relu_f2f_st...         0.00%       0.000us         0.00%       0.000us       0.000us     123.385ms        49.35%     123.385ms      85.684us          1440  
+                                            aten::copy_         1.75%      11.888ms         4.74%      32.137ms      15.303us      35.854ms        14.34%      35.856ms      17.074us          2100  
+void at::native::elementwise_kernel<128, 4, at::nati...         0.00%       0.000us         0.00%       0.000us       0.000us      26.369ms        10.55%      26.369ms      27.468us           960  
+                                              aten::add         1.92%      12.995ms         3.09%      20.972ms      16.913us      25.832ms        10.33%      25.832ms      20.832us          1240  
+                                              aten::bmm         3.52%      23.909ms         4.98%      33.815ms      23.321us      24.720ms         9.89%      24.720ms      17.048us          1450  
+void at::native::elementwise_kernel<128, 4, at::nati...         0.00%       0.000us         0.00%       0.000us       0.000us      14.801ms         5.92%      14.801ms      61.671us           240  
+void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us      11.008ms         4.40%      11.008ms      11.120us           990  
+                                             aten::gelu         0.36%       2.463ms         0.59%       4.028ms      16.784us      10.649ms         4.26%      10.649ms      44.370us           240  
+void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us      10.649ms         4.26%      10.649ms      44.370us           240  
+                                         aten::_softmax         0.29%       1.982ms         0.51%       3.469ms      14.454us       9.832ms         3.93%       9.832ms      40.966us           240  
+void (anonymous namespace)::softmax_warp_forward<flo...         0.00%       0.000us         0.00%       0.000us       0.000us       9.832ms         3.93%       9.832ms      40.966us           240  
+                                aten::native_layer_norm         0.87%       5.887ms         2.30%      15.578ms      31.792us       9.358ms         3.74%       9.358ms      19.098us           490  
+void at::native::(anonymous namespace)::vectorized_l...         0.00%       0.000us         0.00%       0.000us       0.000us       9.358ms         3.74%       9.358ms      19.098us           490  
+void cutlass::Kernel2<cutlass_80_wmma_tensorop_f16_s...         0.00%       0.000us         0.00%       0.000us       0.000us       7.322ms         2.93%       7.322ms      15.254us           480  
+void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us       6.831ms         2.73%       6.831ms      28.462us           240  
+ampere_fp16_s16816gemm_fp16_128x128_ldg8_f2f_stages_...         0.00%       0.000us         0.00%       0.000us       0.000us       6.493ms         2.60%       6.493ms      27.055us           240  
+ampere_fp16_s16816gemm_fp16_128x64_ldg8_f2f_stages_3...         0.00%       0.000us         0.00%       0.000us       0.000us       5.805ms         2.32%       5.805ms      24.188us           240  
+ampere_fp16_s16816gemm_fp16_64x64_sliced1x2_ldg8_f2f...         0.00%       0.000us         0.00%       0.000us       0.000us       5.036ms         2.01%       5.036ms      10.491us           480  
+                                              aten::mul         0.74%       4.993ms         1.20%       8.158ms      16.649us       3.837ms         1.53%       3.837ms       7.831us           490  
+                                              aten::cat         2.61%      17.687ms         3.59%      24.325ms      24.822us       3.577ms         1.43%       3.577ms       3.650us           980  
+void at::native::(anonymous namespace)::CatArrayBatc...         0.00%       0.000us         0.00%       0.000us       0.000us       3.540ms         1.42%       3.540ms       3.649us           970  
+void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us       3.316ms         1.33%       3.316ms      13.816us           240  
+                                        Memset (Device)         0.00%       0.000us         0.00%       0.000us       0.000us       1.978ms         0.79%       1.978ms       1.374us          1440  
+void at::native::unrolled_elementwise_kernel<at::nat...         0.00%       0.000us         0.00%       0.000us       0.000us       1.314ms         0.53%       1.314ms       5.475us           240  
+                         Memcpy DtoD (Device -> Device)         0.00%       0.000us         0.00%       0.000us       0.000us       1.258ms         0.50%       1.258ms       1.966us           640  
+                                              aten::sub         0.36%       2.413ms         0.93%       6.328ms      26.367us     528.598us         0.21%     530.870us       2.212us           240  
+void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us     528.598us         0.21%     528.598us       2.202us           240  
+void at::native::vectorized_elementwise_kernel<4, at...         0.00%       0.000us         0.00%       0.000us       0.000us     475.841us         0.19%     475.841us       1.983us           240  
 -------------------------------------------------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  ------------  
-Self CPU time total: 606.151ms
-Self CUDA time total: 274.483ms
+Self CPU time total: 678.395ms
+Self CUDA time total: 250.010ms
 
 
 ## 3. Aggregated by category (SELF CUDA time, no double-counting)
-  Total forward self CUDA time (sum of op self-times): 274.48 ms
+  Total forward self CUDA time (sum of op self-times): 250.01 ms
 
-  base_linear           :  136.023 ms  ( 49.6%)  calls=1450
-  other                 :   53.188 ms  ( 19.4%)  calls=3860
-  layernorm_residual    :   28.450 ms  ( 10.4%)  calls=1230
-  lora_bmm              :   27.228 ms  (  9.9%)  calls=1450
-  elementwise           :   17.243 ms  (  6.3%)  calls=730
-  attention             :   12.351 ms  (  4.5%)  calls=240
+  base_linear           :  125.445 ms  ( 50.2%)  calls=1450
+  other                 :   49.673 ms  ( 19.9%)  calls=3870
+  layernorm_residual    :   25.832 ms  ( 10.3%)  calls=1240
+  lora_bmm              :   24.720 ms  (  9.9%)  calls=1450
+  elementwise           :   14.509 ms  (  5.8%)  calls=740
+  attention             :    9.832 ms  (  3.9%)  calls=240
 
 NOTE: the 'lora_bmm' category counts ALL aten::bmm, which includes
 attention (matmul over 4-D tensors) and the LR head, not just LoRA.
 See section 3b for the LoRA-only bmm isolation.
 
 ## 3b. LoRA-only bmm isolation (apply_lora on vs off)
-  bmm_self_ms_lora_on           :   27.228 ms
-  bmm_self_ms_lora_off          :   14.142 ms
-  lora_bmm_self_ms              :   13.085 ms
-  lora_bmm_self_share_pct       :    4.767%
-  total_self_ms_lora_on         :  274.483 ms
-  total_self_ms_lora_off        :  253.265 ms
+  bmm_self_ms_lora_on           :   24.720 ms
+  bmm_self_ms_lora_off          :   12.294 ms
+  lora_bmm_self_ms              :   12.426 ms
+  lora_bmm_self_share_pct       :    4.970%
+  total_self_ms_lora_on         :  250.010 ms
+  total_self_ms_lora_off        :  230.462 ms
 
 Interpretation: lora_bmm_self_share_pct is the LoRA shrink/expand
 share of total forward self CUDA time, with attention/head bmm removed.
 
 ## 4. No-LoRA ablation (wall-clock, apply_lora on vs off)
-  lora_on_mean_ms               :   28.720 ms
-  lora_on_p50_ms                :   28.713 ms
-  lora_off_mean_ms              :   26.329 ms
-  lora_off_p50_ms               :   26.351 ms
-  lora_cost_mean_ms             :    2.391 ms
-  lora_cost_share_pct           :    8.325%
+  lora_on_mean_ms               :   25.969 ms
+  lora_on_p50_ms                :   25.926 ms
+  lora_off_mean_ms              :   23.809 ms
+  lora_off_p50_ms               :   23.779 ms
+  lora_cost_mean_ms             :    2.159 ms
+  lora_cost_share_pct           :    8.315%
 
 Interpretation: lora_cost_share_pct is the wall-clock contribution
 of the entire LoRA path (cat/shrink/expand/add). If small, a faster
