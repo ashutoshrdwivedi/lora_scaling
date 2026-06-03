@@ -35,6 +35,10 @@ from peft import LoraConfig
 
 
 MODEL_NAME = "intfloat/multilingual-e5-small"
+# Tiny XLM-RoBERTa (model_type "xlm-roberta", pad_token_id=1) for the mask-offset
+# position-id path. e5-small is BERT (arange positions), so it cannot catch the
+# RoBERTa-family position bug that bge-m3 actually hits.
+XLMR_MODEL_NAME = "hf-internal-testing/tiny-xlm-roberta"
 LORA_RANK = 8
 TARGET_MODULES = ["query", "value"]
 BATCH_SIZE = 4
@@ -97,7 +101,7 @@ def _encode_pooled(
     """Run our encoder up to the pooled CLS output (skip the LR head)."""
     B, S = input_ids.shape
     device = input_ids.device
-    position_ids = torch.arange(S, device=device).unsqueeze(0).expand(B, -1)
+    position_ids = model.position_ids(input_ids)
     token_type_ids = torch.zeros(B, S, dtype=torch.long, device=device)
 
     x = (
@@ -339,4 +343,76 @@ def test_distinct_ab_per_module_matches_peft(serving_config, our_model, batch_in
 
     assert torch.allclose(our_pooled, peft_out.pooler_output, atol=ATOL, rtol=RTOL), (
         f"max abs diff = {(our_pooled - peft_out.pooler_output).abs().max().item()}"
+    )
+
+
+def test_xlmr_padded_matches_base_hf():
+    """Padded XLM-RoBERTa batch must match raw HF — guards the position-id fix.
+
+    This is an **isolation test** for the base encoder path. A "zero" adapter
+    is loaded with B=0, so the LoRA delta is exactly zero (ΔW = BA = 0)
+    regardless of A. The forward pass therefore reduces to h = W₀x, letting
+    us compare our EncoderWithLora against a vanilla HuggingFace AutoModel
+    without any LoRA arithmetic muddying the result.
+
+    What this catches:
+      - Position-id bugs: XLM-R derives position ids from the non-pad mask
+        (offset by pad_token_id), unlike BERT's simple arange. The other
+        tests pin BERT (e5-small) with all-ones masks, so they exercise
+        neither the RoBERTa-family scheme nor real padding — the exact
+        combination bge-m3 hits in production.
+      - Attention-mask handling with variable-length padding.
+      - Pooler reimplementation correctness.
+
+    Built inline (separate config/model), not via the e5-small module fixtures.
+    """
+    device = torch.device("cuda:0")
+    cfg = LoraServingConfig(
+        model_name=XLMR_MODEL_NAME,
+        lora_rank=LORA_RANK,
+        batch_size=BATCH_SIZE,
+        max_seq_len=SEQ_LEN,
+        target_modules=TARGET_MODULES,
+        device=device,
+        dtype=torch.float32,
+    )
+    from transformers import AutoConfig
+
+    hf_model = AutoModel.from_pretrained(XLMR_MODEL_NAME, torch_dtype=cfg.dtype)
+    hf_model.to(device)
+    hf_model.eval()
+
+    # Build our model from the SAME weights as hf_model so any (possibly
+    # random-init) pooler matches exactly — the position-id scheme is then the
+    # only thing under test. Construct from AutoConfig (not hf_model.config,
+    # which carries the resolved sdpa attn-impl our manual encoder doesn't claim).
+    our_model = EncoderWithLora(AutoConfig.from_pretrained(XLMR_MODEL_NAME), cfg)
+    our_model.load_state_dict(hf_model.state_dict(), strict=True)
+    our_model = our_model.to(device=device, dtype=cfg.dtype)
+    our_model.eval()
+    assert our_model.offset_positions, "XLM-R must use mask-offset position ids"
+
+    pad_id = hf_model.config.pad_token_id  # 1 for XLM-R
+    vocab = hf_model.config.vocab_size
+    torch.manual_seed(0)
+    # real tokens avoid pad_id; trailing positions are padded so the mask-offset
+    # position scheme actually differs from arange on most rows.
+    input_ids = torch.randint(pad_id + 1, vocab, (BATCH_SIZE, SEQ_LEN), device=device)
+    attention_mask = torch.ones(BATCH_SIZE, SEQ_LEN, dtype=torch.long, device=device)
+    for i, n_pad in enumerate([0, 1, 3, SEQ_LEN // 2]):
+        if n_pad:
+            input_ids[i, SEQ_LEN - n_pad:] = pad_id
+            attention_mask[i, SEQ_LEN - n_pad:] = 0
+
+    store = AdapterStore(cfg)
+    store.load_synthetic("zero", seed=0)  # wb=0 → zero LoRA delta
+    ids = ["zero"] * BATCH_SIZE
+    lora_w = BatchAssembler(store, cfg).assemble_lora(ids)
+
+    with torch.no_grad():
+        our_pooled = _encode_pooled(our_model, input_ids, attention_mask, lora_w)
+        hf_out = hf_model(input_ids=input_ids, attention_mask=attention_mask)
+
+    assert torch.allclose(our_pooled, hf_out.pooler_output, atol=ATOL, rtol=RTOL), (
+        f"max abs diff = {(our_pooled - hf_out.pooler_output).abs().max().item()}"
     )

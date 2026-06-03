@@ -156,6 +156,14 @@ class EncoderWithLora(PreTrainedModel):
         H = serving_config.hidden_size
         lora_ops = LoraOps(serving_config)
 
+        # Position-id scheme. BERT/DistilBERT index positions as arange(S). RoBERTa
+        # family (incl. XLM-RoBERTa / bge-m3) and MPNet derive positions from the
+        # non-pad mask, offset by pad_idx (first real token = pad_idx + 1).
+        self.pad_idx = hf_config.pad_token_id if hf_config.pad_token_id is not None else 0
+        self.offset_positions = hf_config.model_type in {
+            "roberta", "xlm-roberta", "xlm-roberta-xl", "camembert", "mpnet",
+        }
+
         self.embeddings = nn.ModuleDict({
             "word_embeddings": nn.Embedding(hf_config.vocab_size, H, hf_config.pad_token_id),
             "position_embeddings": nn.Embedding(hf_config.max_position_embeddings, H),
@@ -193,6 +201,19 @@ class EncoderWithLora(PreTrainedModel):
         model.load_state_dict(state_dict, strict=True)
         return model.to(device=serving_config.device, dtype=serving_config.dtype)
 
+    def position_ids(self, input_ids: Tensor) -> Tensor:
+        """Position ids matching the base model's embedding scheme.
+
+        arange for BERT/DistilBERT; mask-offset for RoBERTa/XLM-RoBERTa/MPNet
+        (HF create_position_ids_from_input_ids: pad tokens map to pad_idx,
+        the first real token to pad_idx + 1).
+        """
+        B, S = input_ids.shape
+        if not self.offset_positions:
+            return torch.arange(S, device=input_ids.device).unsqueeze(0).expand(B, -1)
+        mask = input_ids.ne(self.pad_idx).int()
+        return (torch.cumsum(mask, dim=1) * mask).long() + self.pad_idx
+
     def forward(
         self,
         input_ids: Tensor,
@@ -221,7 +242,7 @@ class EncoderWithLora(PreTrainedModel):
         B, S = input_ids.shape
         device = input_ids.device
 
-        position_ids = torch.arange(S, device=device).unsqueeze(0).expand(B, -1)
+        position_ids = self.position_ids(input_ids)
         if token_type_ids is None:
             token_type_ids = torch.zeros(B, S, dtype=torch.long, device=device)
 
