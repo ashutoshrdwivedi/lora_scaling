@@ -103,9 +103,8 @@ LoRA \cite{hu2022lora} resolves the \emph{storage} problem: by expressing
 each customer's adaptation as a low-rank update to a single shared base
 encoder, the per-customer footprint shrinks to $\approx$1.6~MB (rank~8,
 24 layers)---a $\approx$700$\times$ reduction.
-The remaining challenge is \textbf{inference}: how to serve thousands of
-different LoRA adapters simultaneously on one GPU, at low latency, in batched
-mixed-tenant requests.
+The remaining challenge is \textbf{batched serving} across heterogeneous
+adapters on a single GPU.
 
 Existing multi-tenant LoRA serving systems---Punica \cite{chen2024punica},
 S-LoRA \cite{sheng2024slora}, vLLM \cite{kwon2023vllm}, and LoRAX
@@ -113,26 +112,26 @@ S-LoRA \cite{sheng2024slora}, vLLM \cite{kwon2023vllm}, and LoRAX
 custom CUDA kernels and paged-memory pools are needed for token-by-token
 generation over a KV cache. Encoders are structurally different: the
 bidirectional forward pass at sequence length $S \gg 1$ is compute-bound
-and dominated by base-model projections, so the LoRA path lends itself to
-standard batched matrix multiplication rather than custom kernels.
-Heterogeneous-adapter batching for encoder models is, to our knowledge,
-not yet supported by released runtimes (\S\ref{sec:relwork}).
+and dominated by base-model projections, so the LoRA path consumes only
+$\approx$5\% of forward GPU time and any custom-kernel replacement is
+bounded to single-digit speedup (\S\ref{sec:results_custom_kernels},
+Finding~6). This makes standard batched matrix multiplication, rather
+than a custom kernel, the right primitive. Heterogeneous-adapter
+batching for encoder models is, to our knowledge, not yet supported by
+released runtimes (\S\ref{sec:relwork}).
 
 We present \sysname, a serving system that fills this gap.
-The core design principle is \textbf{late fusion}: rather than merging a
-tenant's LoRA weights into the base model (which serializes batching),
-\sysname{} decomposes each projection into a shared base path
-$W_0 x$ and a per-sample LoRA delta $B_i A_i x$, computing both
-independently and summing the results.
-This decomposition enables an entire mixed-tenant batch to be processed in
-% * <Ashutosh Dwivedi> 17:43:39 26 May 2026 UTC+0530:
-% Add the parameters space vs the activation space wording
-one forward pass---the base path runs once over all $\mathcal{B}$ samples, and the LoRA
-paths run in parallel via a single \texttt{torch.bmm} call per attention
-layer.
-% * <Ashutosh Dwivedi> 17:42:54 26 May 2026 UTC+0530:
-% remove the classification specific framing. The same logic applies to other downstream tasks as well.
-Per-tenant classification heads with variable numbers of output classes are
+The core insight is to fuse adapters in \emph{activation space} rather
+than \emph{parameter space}: merging $B_i A_i$ into $W_0$ produces a
+per-sample weight matrix $W'_i$ that must be applied serially, but
+computing the base output $W_0 x$ and the delta $B_i A_i x$ separately
+and summing them lets the per-sample work live inside a single batched
+matrix multiplication. \sysname{} runs the shared base path once over
+all $\mathcal{B}$ samples and dispatches the per-sample LoRA paths in
+parallel via one \texttt{torch.bmm} call per attention layer, so a
+mixed-tenant batch completes in a single forward pass regardless of how
+many distinct adapters it references. Per-tenant task heads
+(variable-size classifiers, regressors, retrieval re-rankers) are
 batched analogously via zero-padded BMM.
 
 \paragraph{Contributions.}
@@ -142,39 +141,27 @@ batched analogously via zero-padded BMM.
   (\S\ref{sec:relwork}).
 
   \item We present late-fusion BMM serving, an architecture that batches
-  arbitrary mixed-tenant encoder requests without weight merging,
-% * <Ashutosh Dwivedi> 17:46:12 26 May 2026 UTC+0530:
-% UN-necessary line. Is model modification ever required?
-  without the need of custom CUDA kernels, and without modification to the base model
-  (\S\ref{sec:system}).
+  arbitrary mixed-tenant encoder requests without weight merging and
+  without custom CUDA kernels, in standard PyTorch (\S\ref{sec:system}).
 
-  \item We empirically demonstrate that adapter count does not drive inference
-  latency: scaling from 100 to 20{,}000 adapters leaves p50 latency
-% * <Ashutosh Dwivedi> 17:46:50 26 May 2026 UTC+0530:
-% P50 latency is good for showing stable statistic for this, but we also need to show 
-% that P99 stays bound (P99 itself may be noisy so we need the stable P50 metric as well.)
-  statistically unchanged at batch size 32 on a single A100-80GB, with serving
+  \item We empirically demonstrate that adapter count does not drive
+  inference latency: scaling from 100 to 20{,}000 adapters at batch
+  size 32 on a single A100-80GB leaves p50 latency flat
+  (40.2$\to$40.3~ms) and p99 bounded ($\le$45.7~ms), with serving
   throughput saturating at $\approx$800~samples/sec by batch size 64
   (\S\ref{sec:experiments}).
 
-  \item We benchmark \sysname{} against a HuggingFace PEFT swap
-  baseline on identical hardware---under \emph{adapter-grouped}
-  (batch-by-adapter) batching---and show end-to-end throughput
-  improvements of \textbf{37--528$\times$} over the grouped baseline and
-  cold-start deployment improvements of
-  \textbf{$>$600$\times$}; the gap widens with both batch size and adapter
-  pool size, identifying $\mathcal{O}(N)$ per-swap overhead in the
-% * <Ashutosh Dwivedi> 17:47:34 26 May 2026 UTC+0530:
-% How can we confirm that it's O(N)?
-  state-of-the-practice baseline (\S\ref{sec:results_baselines}).
+  \item We benchmark \sysname{} against a HuggingFace PEFT swap baseline
+  on identical hardware and show \textbf{37--528$\times$} throughput
+  improvements under adapter-grouped batching and \textbf{$>$600$\times$}
+  cold-start deployment improvements. By holding batch composition fixed
+  and varying only $N$, we isolate \texttt{set\_adapter} as the
+  $\mathcal{O}(N)$ bottleneck in the state-of-the-practice baseline
+  (\S\ref{sec:results_baselines}, Finding~7).
 
-  \item \sysname{} runs on standard PyTorch with no custom CUDA compilation,
-  making it deployable on managed GPU environments (Databricks, SageMaker,
-% * <Ashutosh Dwivedi> 17:54:47 26 May 2026 UTC+0530:
-% Removing the friction (custom cuda kernel installation) of deployment
-  Modal) where custom kernel builds are impractical.
-  % * <Ashutosh Dwivedi> 17:47:34 26 May 2026 UTC+0530:
-% Rephrase this
+  \item By staying in standard PyTorch, \sysname{} removes the custom-CUDA
+  build step that is the dominant deployment friction on managed GPU
+  platforms (Databricks, SageMaker, Modal).
 \end{itemize}
 
 % =============================================================================
