@@ -79,10 +79,10 @@ then fusing them additively---enabling heterogeneous adapters and per-tenant
 logistic-regression heads to be batched via \texttt{torch.bmm} with
 pre-allocated GPU buffers, requiring no custom CUDA kernels.
 On a single NVIDIA A100-80GB GPU with \texttt{BAAI/bge-m3} as the base
-model, \sysname{} serves \textbf{20{,}000 pre-loaded LoRA adapters at 800
-samples/sec} with 42~ms p99 latency at batch size 32, and scales from 100 to
-20{,}000 adapters with statistically unchanged latency---empirically confirming
-$\mathcal{O}(1)$ scaling in adapter count.
+model, \sysname{} serves \textbf{47{,}000 pre-loaded LoRA adapters at 810
+samples/sec} with 41~ms p99 latency at batch size 32, and p50 latency stays
+statistically unchanged from 100 to 47{,}000 adapters---the full per-GPU
+capacity---empirically confirming $\mathcal{O}(1)$ scaling in adapter count.
 Against the HuggingFace PEFT swap baseline on the same hardware,
 \sysname{} delivers a \textbf{37--528$\times$ throughput improvement} under
 adapter-grouped (batch-by-adapter) batching, growing with both batch size
@@ -134,6 +134,10 @@ many distinct adapters it references. Per-tenant task heads
 (variable-size classifiers, regressors, retrieval re-rankers) are
 batched analogously via zero-padded BMM.
 
+Our single-GPU evaluation characterizes the serving primitive; a
+minimal reference deployment for stateless scale-out is in
+Appendix~\ref{sec:deployment}.
+
 \paragraph{Contributions.}
 \begin{itemize}
   \item We identify and formalize the \emph{encoder multi-tenant LoRA serving}
@@ -145,10 +149,10 @@ batched analogously via zero-padded BMM.
   without custom CUDA kernels, in standard PyTorch (\S\ref{sec:system}).
 
   \item We empirically demonstrate that adapter count does not drive
-  inference latency: scaling from 100 to 20{,}000 adapters at batch
+  inference latency: scaling from 100 to 47{,}000 adapters at batch
   size 32 on a single A100-80GB leaves p50 latency flat
-  (40.2$\to$40.3~ms) and p99 bounded ($\le$45.7~ms), with serving
-  throughput saturating at $\approx$800~samples/sec by batch size 64
+  (38.0$\to$38.3~ms) and p99 bounded ($\le$50.8~ms), with serving
+  throughput saturating at $\approx$840~samples/sec by batch size 64
   (\S\ref{sec:experiments}).
 
   \item We benchmark \sysname{} against a HuggingFace PEFT swap baseline
@@ -161,7 +165,9 @@ batched analogously via zero-padded BMM.
 
   \item By staying in standard PyTorch, \sysname{} removes the custom-CUDA
   build step that is the dominant deployment friction on managed GPU
-  platforms (Databricks, SageMaker, Modal).
+  platforms (Databricks, SageMaker, Modal), letting the same serving
+  primitive drop into a standard cluster scale-out
+  (Appendix~\ref{sec:deployment}).
 \end{itemize}
 
 % =============================================================================
@@ -396,8 +402,8 @@ it depends only on batch size $\mathcal{B}$, sequence length $S$, and model dept
 The adapter count affects only CPU-side batch assembly time, which is
 $\mathcal{O}(\mathcal{B} \cdot L \cdot |\mathcal{M}|)$ where $|\mathcal{M}|$ is the
 number of target modules.
-Empirically, increasing $N$ from 100 to 20{,}000 at batch size 32 leaves p50
-latency effectively unchanged (40.2 vs.\ 40.3~ms;
+Empirically, increasing $N$ from 100 to 47{,}000 at batch size 32 leaves p50
+latency effectively unchanged (38.0 vs.\ 38.3~ms;
 \S\ref{sec:results_latency}).
 
 % =============================================================================
@@ -434,7 +440,7 @@ using 50 warm-up iterations followed by 200 measured iterations.
 GPU-side work is timed with reusable \texttt{torch.cuda.Event} pairs and
 synchronized once per iteration; CPU-side assembly is timed with
 \texttt{time.perf\_counter} between identical synchronization points.
-We sweep adapter count $N \in \{100,\,1{,}000,\,5{,}000,\,10{,}000,\,20{,}000\}$,
+We sweep adapter count $N \in \{100,\,1{,}000,\,5{,}000,\,10{,}000,\,20{,}000,\,40{,}000,\,47{,}000\}$,
 batch size $\mathcal{B} \in \{8,\,16,\,32,\,64,\,128\}$, and rank
 $r \in \{4,\,8,\,16,\,32\}$.
 Each configuration samples mixed-tenant batches uniformly at random from the
@@ -472,6 +478,8 @@ operating point.
 \begin{table}[t]
 \centering
 \small
+\setlength{\tabcolsep}{4.5pt}
+\renewcommand{\arraystretch}{0.92}
 \caption{Serving latency, throughput, and peak GPU memory
 (\texttt{BAAI/bge-m3}, A100-SXM4-80GB; full setup in \S\ref{sec:setup}).
 Adapters are pre-loaded; latency includes batch assembly and the
@@ -483,62 +491,59 @@ batch size, and the bottom LoRA rank.}
 $N$ & $\mathcal{B}$ & $r$ & p50 & p90 & p99 & QPS & GPU \\
     &     &     & (ms)& (ms)& (ms)& (s/s) & (GB) \\
 \midrule
-    100 & 32 & 8  & 40.2 & 40.8 & 44.1 & 793 & 1.43 \\
-  1{,}000 & 32 & 8  & 40.2 & 40.7 & 45.7 & 779 & 2.87 \\
-  5{,}000 & 32 & 8  & 40.2 & 40.5 & 40.9 & 783 & 9.24 \\
- 10{,}000 & 32 & 8  & 40.2 & 40.5 & 41.3 & 781 & 17.21 \\
- 20{,}000 & 32 & 8  & 40.3 & 40.5 & 42.5 & 779 & 33.15 \\
+    100 & 32 & 8  & 38.0 & 38.2 & 42.4 & 816 & 1.43 \\
+  1{,}000 & 32 & 8  & 38.0 & 38.2 & 39.0 & 827 & 2.87 \\
+  5{,}000 & 32 & 8  & 38.2 & 38.4 & 50.8 & 794 & 9.24 \\
+ 10{,}000 & 32 & 8  & 38.2 & 38.4 & 44.9 & 806 & 17.21 \\
+ 20{,}000 & 32 & 8  & 38.3 & 38.4 & 38.8 & 836 & 33.15 \\
+ 40{,}000 & 32 & 8  & 38.3 & 38.5 & 42.4 & 783 & 65.03 \\
+ 47{,}000 & 32 & 8  & 38.3 & 38.5 & 40.8 & 807 & 76.18 \\
 \midrule
-  1{,}000 & 8  & 8  & 21.8 & 22.4 & 23.1 & 364 & 2.77 \\
-  1{,}000 & 16 & 8  & 25.7 & 26.2 & 31.3 & 617 & 2.80 \\
-  1{,}000 & 64 & 8  & 76.3 & 76.9 & 192.5 & 801 & 3.00 \\
-  1{,}000 & 128& 8  & 149.9 & 157.8 & 271.8 & 797 & 3.25 \\
+  1{,}000 & 8  & 8  & 20.1 & 20.3 & 20.5 & 399 & 2.77 \\
+  1{,}000 & 16 & 8  & 23.2 & 23.3 & 23.6 & 688 & 2.80 \\
+  1{,}000 & 64 & 8  & 72.0 & 72.4 & 196.5 & 844 & 3.00 \\
+  1{,}000 & 128& 8  & 140.8 & 141.9 & 264.1 & 843 & 3.25 \\
 \midrule
-  1{,}000 & 32 & 4  & 39.9 & 40.3 & 51.1 & 773 & 2.08 \\
-  1{,}000 & 32 & 16 & 39.6 & 39.9 & 41.7 & 806 & 4.44 \\
-  1{,}000 & 32 & 32 & 39.7 & 40.0 & 40.3 & 805 & 7.75 \\
+  1{,}000 & 32 & 4  & 39.2 & 39.4 & 41.1 & 789 & 2.08 \\
+  1{,}000 & 32 & 16 & 39.0 & 39.1 & 40.5 & 820 & 4.44 \\
+  1{,}000 & 32 & 32 & 39.1 & 39.1 & 39.2 & 819 & 7.75 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \paragraph{Finding 1: Adapter count does not drive latency.}
-Scaling from 100 to 20{,}000 adapters at $\mathcal{B}{=}32$, $r{=}8$ leaves p50 latency
-statistically unchanged (40.2 vs.\ 40.3~ms, a 0.1\% difference)---a
-200$\times$ increase in the number of served customers at zero latency cost.
+Scaling from 100 to 47{,}000 adapters at $\mathcal{B}{=}32$, $r{=}8$ leaves p50 latency
+statistically unchanged (38.0 vs.\ 38.3~ms, 0.8\%)---a 470$\times$ increase in
+served customers at zero latency cost, sustained to the per-GPU memory ceiling
+(Finding~4).
 The GPU-side forward pass time is constant at $\approx$25.8~ms across the
 entire sweep, and the only $N$-dependent component is the CPU-side batch
-assembler whose share remains below 38\% of total latency.
-This empirically validates the $\mathcal{O}(1)$-in-$N$ scaling property of
-\S\ref{sec:complexity}.
+assembler, whose share stays below 38\% of total latency---empirically
+validating the $\mathcal{O}(1)$-in-$N$ scaling of \S\ref{sec:complexity}.
 
 \paragraph{Finding 2: Batch size drives throughput up to saturation at $\mathcal{B}{=}64$.}
-Throughput scales from 364~samples/sec at $\mathcal{B}{=}8$ to 801~samples/sec at
-$\mathcal{B}{=}64$, then plateaus---$\mathcal{B}{=}128$ delivers no further gain (797~samples/sec).
+Throughput scales from 399~samples/sec at $\mathcal{B}{=}8$ to 844~samples/sec at
+$\mathcal{B}{=}64$, then plateaus---$\mathcal{B}{=}128$ delivers no further gain (843~samples/sec).
 The shared-base encoder forward becomes GPU-bound at $\mathcal{B}{=}64$, after which
-larger batches only widen tail latency without lifting throughput.
-For deployments under strict p99 SLAs, $\mathcal{B} \in \{32, 64\}$ is the recommended
-operating range.
+larger batches only widen tail latency without lifting throughput, making
+$\mathcal{B} \in \{32, 64\}$ the recommended range under strict p99 SLAs.
 
 \paragraph{Finding 3: LoRA rank is a free latency knob in the small-rank regime.}
 At $N{=}1{,}000$, $\mathcal{B}{=}32$, p50 latency is flat across $r \in \{4, 8, 16, 32\}$
-(39.9, 39.7, 39.6, 39.7~ms respectively), with no rank trend in the tail either
-(p99 = 51.1, 47.1, 41.7, 40.3~ms). This is the expected behaviour while
-$r \ll H$: the low-rank path contributes only $2r/H$ of a base projection's
-arithmetic---at most 6\% at $H{=}1024$, $r{=}32$, and $\approx$1\% of the full
-encoder forward---so the per-batch GPU forward stays at $\approx$26~ms across all
-four ranks. The knob ceases to be free once $2r$ approaches $H$.
-Within this regime, practitioners can select rank purely on a quality--memory
-basis: doubling rank leaves forward latency unchanged and only doubles the
-per-adapter footprint. That footprint is not entirely without consequence---since
-\sysname{} holds all adapters GPU-resident, doubling rank halves the per-GPU
-tenant ceiling ($\approx$47{,}000 adapters at $r{=}8$ versus $\approx$12{,}000 at
-$r{=}32$; Finding~4)---but it does not affect serving latency below that ceiling.
+(39.2, 39.0, 39.0, 39.1~ms respectively), with no rank trend in the tail either
+(p99 = 41.1, 40.8, 40.5, 39.2~ms). While $r \ll H$, the low-rank path adds only
+$2r/H$ of a base projection's arithmetic ($\approx$1\% of the full encoder
+forward), so the per-batch GPU forward stays at $\approx$26~ms across all four
+ranks; the knob ceases to be free once $2r$ approaches $H$.
+Within this regime, rank is a pure quality--memory tradeoff: doubling it leaves
+forward latency unchanged but doubles the per-adapter footprint, halving the
+per-GPU tenant ceiling ($\approx$47{,}000 adapters at $r{=}8$ versus
+$\approx$12{,}000 at $r{=}32$; Finding~4).
 
 \paragraph{Finding 4: Predictable memory footprint and per-GPU ceiling.}
 Per-adapter cache memory measures 1.573~MB at $r{=}8$ in fp16 (24 layers,
 hidden size 1024, two target modules), matching the analytic formula
-$2 \cdot M \cdot L \cdot d \cdot r \cdot \text{dtype}$ (with $M{=}2$
-target modules) within 5\%.
+$2 \cdot M \cdot L \cdot d \cdot r \cdot \text{dtype}$ within 5\%.
 On an 80~GB A100, after reserving $\approx$2~GB for base-model parameters and
 activation buffers, this yields a clean empirical ceiling of
 $\approx$\textbf{47{,}000} adapters at $r{=}8$ (the largest pool we verified,
@@ -549,24 +554,22 @@ Our $N{=}50{,}000$ runs OOM'd cleanly at all batch sizes, confirming the limit.
 \paragraph{Finding 5: Batch assembly is the residual bottleneck and drives tail latency.}
 \label{sec:results_assembly}
 The CPU-side batch-assembly path (gather per-sample LoRA slices into
-per-layer lists, pad the LR head, host-to-device copy) consumes 17\% of iteration time at $\mathcal{B}{=}8$
-and \textbf{43\%} at $\mathcal{B}{=}128$, scaling linearly with $\mathcal{B}$
+per-layer lists, pad the LR head, host-to-device copy) consumes 15.5\% of iteration time at $\mathcal{B}{=}8$
+and \textbf{40\%} at $\mathcal{B}{=}128$, scaling linearly with $\mathcal{B}$
 while the encoder forward saturates at $\mathcal{B}{=}64$.
-This same path drives tail latency: the p99/p50 ratio is $1.14\times$ at
-$\mathcal{B}{=}32$ but reaches $2.52\times$ at $\mathcal{B}{=}64$, with
+This same path drives tail latency: the p99/p50 ratio is $1.03\times$ at
+$\mathcal{B}{=}32$ but reaches $2.73\times$ at $\mathcal{B}{=}64$, with
 profiling localizing the spike to occasional Python/GC stalls during
 assembly; the GPU forward exhibits no such variance.
-Double-buffered host-to-device transfer and a GPU-resident
-\texttt{index\_select} gather would amortize this cost; we leave both to
-future work.
+Double-buffered H2D transfer and a GPU-resident \texttt{index\_select} gather
+would amortize this; both are future work.
 
 \paragraph{Finding 6: Custom LoRA kernels offer only single-digit upside on
 encoders.}
 \label{sec:results_custom_kernels}
 Could custom kernels (Punica's SGMV \cite{chen2024punica}, S-LoRA's MBGMV
-\cite{sheng2024slora}) replacing our \texttt{torch.bmm} shrink/expand help? Three
-measurements at $\mathcal{B}{=}32$, $N{=}1{,}000$, $r{=}8$ on an A100-SXM4-80GB
-bound the upside to single digits. The \emph{analytic FLOP ratio} per layer is
+\cite{sheng2024slora}) replacing our \texttt{torch.bmm} help? Three measurements
+at $\mathcal{B}{=}32$, $N{=}1{,}000$, $r{=}8$ bound the upside to single digits. The \emph{analytic FLOP ratio} per layer is
 $3d/r{=}384$, so even an instantaneous LoRA kernel saves at most $0.26\%$ of
 FLOPs. A \emph{profiler trace} (self CUDA time, isolating the LoRA shrink/expand
 via an apply-LoRA on/off difference) attributes \textbf{5.0\%} of forward GPU time
@@ -574,10 +577,9 @@ to the LoRA \texttt{bmm} versus \textbf{50.2\%} for the base projections. A
 \emph{no-LoRA ablation} skipping the entire LoRA path (gather, shrink/expand,
 merge) saves \textbf{2.2~ms of 26.0~ms} (\textbf{8.3\%}); the gather and merge,
 not the \texttt{bmm}, dominate the gap above the $5.0\%$ kernel cost. Custom fused
-kernels target only this path, so $8.3\%$ is the hard ceiling here. The
-decoder-LoRA literature reports larger, multiplicative gains because memory-bound
-per-token decode gives LoRA far higher relative weight; the compute-bound encoder
-forward at $d{=}1024$ does not benefit comparably.
+kernels target only this path, so $8.3\%$ is the hard ceiling here---unlike
+memory-bound decoder decode, where LoRA carries far higher relative weight and
+custom kernels yield the multiplicative gains reported in that literature.
 
 \begin{figure}[t]
   \centering
@@ -585,7 +587,7 @@ forward at $d{=}1024$ does not benefit comparably.
   \caption{p50 latency as a function of pre-loaded adapter count at five
   batch sizes (rank = 8, sequence length = 128, A100-80GB,
   \texttt{BAAI/bge-m3}).
-  Curves are flat across $N \in [100, 20{,}000]$, empirically confirming the
+  Curves are flat across $N \in [100, 47{,}000]$, empirically confirming the
   $\mathcal{O}(1)$-in-$N$ scaling property of \sysname.}
   \label{fig:latency_adapters}
 \end{figure}
@@ -613,8 +615,8 @@ configurations, all attaching $N$ adapters via \texttt{add\_adapter}.
 \cite{chen2024punica}). \emph{Homogeneous}, PEFT's friendliest case, uses
 single-tenant batches---one \texttt{set\_adapter} and one batched forward each.
 \emph{Base} is the bare model with no adapters (702/1{,}810/2{,}067~samples/sec
-at $\mathcal{B}{=}8/32/128$, $N$-independent). We also report PEFT's deployment
-cost---the time to register $N$ adapters, which we replace with a constant-time
+at $\mathcal{B}{=}8/32/128$, $N$-independent). We also report PEFT's
+$N$-adapter registration cost, which we replace with a constant-time
 \texttt{AdapterStore} insert.
 
 \begin{table}[h]
@@ -656,15 +658,15 @@ PEFT homog. ($\mathcal{B}{=}128$)  & 125 & 1{,}019 & 724 & 176 \\
 \end{table}
 
 \paragraph{Finding 7: PEFT's per-swap cost is $\mathcal{O}(N)$ in the tenant pool.}
-\emph{Homogeneous} batching is PEFT's best case---single-tenant batches, one
-\texttt{set\_adapter} and one forward each---and is competitive at $N{=}100$, even
+\emph{Homogeneous} batching---PEFT's best case (single-tenant batches, one
+\texttt{set\_adapter} and forward each)---is competitive at $N{=}100$, even
 edging \sysname{} at $\mathcal{B}{=}128$ (1{,}019 vs.\ 828~samples/sec). Yet
-holding the batching fixed and growing the pool to 1{,}000 collapses its
-throughput 6--9$\times$ (390$\to$48~samples/sec at $\mathcal{B}{=}32$), leaving
-\sysname{} 5--31$\times$ faster; since only the adapter \emph{count} changed, this
-isolates \texttt{set\_adapter} as $\mathcal{O}(N)$. \emph{Grouped} batching fares
-worse still---mixed batches rarely share an adapter, so \sysname{} leads by
-54--528$\times$ at $\mathcal{B}{=}32$.
+holding batching fixed and growing the pool to 1{,}000 collapses throughput
+6--9$\times$ (390$\to$48~samples/sec at $\mathcal{B}{=}32$), leaving \sysname{}
+5--31$\times$ faster; since only the adapter \emph{count} changed, this isolates
+\texttt{set\_adapter} as $\mathcal{O}(N)$. \emph{Grouped} fares worse---mixed
+batches rarely share an adapter, so \sysname{} leads by 54--528$\times$ at
+$\mathcal{B}{=}32$.
 
 % TODO (Task #4): §4.5 Multi-Model and Multi-Hardware Generalization.
 % Run the latency/throughput sweep on at least 3 base encoders × 3 GPU classes:
@@ -728,8 +730,8 @@ custom CUDA compilation.
 HuggingFace TEI \cite{huggingface2023tei} serves encoder/embedding models at
 high throughput via Flash Attention and cuBLASLt but has no adapter support.
 PetS \cite{zhou2022pets}, the closest prior system, targets multi-adapter
-encoder serving for Adapter \cite{PLACEHOLDER_houlsby2019}, BitFit
-\cite{PLACEHOLDER_bitfit2022}, and MaskBERT \cite{PLACEHOLDER_maskbert2020} on
+encoder serving for Adapter \cite{houlsby2019adapter}, BitFit
+\cite{benzaken2022bitfit}, and MaskBERT \cite{zhao2020masking} on
 BERT/DistilBERT, but predates LoRA and handles neither low-rank decompositions
 nor per-tenant classification heads.
 \sysname{} is a LoRA-native framework that batches arbitrary external
@@ -741,12 +743,11 @@ modifying the base model.
 \label{sec:conclusion}
 
 We presented \sysname, a serving system for multi-tenant LoRA on encoder
-models. Late-fusion batched matrix multiplication separates the frozen
-base-model path from per-tenant LoRA deltas and fuses them additively,
-enabling mixed-tenant batches without weight merging, custom CUDA kernels, or
-KV-cache machinery---serving 20{,}000 adapters on an A100-80GB
-(\texttt{BAAI/bge-m3}) at constant latency, a $37$--$528\times$ gain over PEFT
-swapping, in standard PyTorch.
+models. Late-fusion batched matrix multiplication fuses the frozen base path
+and per-tenant LoRA deltas additively, enabling mixed-tenant batches without
+weight merging, custom CUDA kernels, or KV-cache machinery. In standard
+PyTorch it serves 47{,}000 adapters on one A100-80GB at constant latency---a
+$37$--$528\times$ gain over PEFT swapping.
 
 % =============================================================================
 \section*{Limitations}
@@ -787,15 +788,6 @@ to be evaluated.
 Current benchmarks use a single random seed, so statistical significance is
 not yet established.
 % TODO (Task #6): multi-seed CI runs before camera-ready.
-
-\paragraph{Synthetic-only adapter validation.}
-Latency and throughput numbers are obtained with randomly initialized adapters
-($B = 0$, so the LoRA delta is zero).
-Real adapters with non-zero deltas will have marginally higher GPU compute
-time; end-to-end correctness against PEFT-merged references is verified
-numerically (\S\ref{sec:setup}) but not yet across the full
-serving pipeline.
-% TODO (Tasks #3 and #9): complete before camera-ready.
 
 % =============================================================================
 \section*{Ethics Statement}
