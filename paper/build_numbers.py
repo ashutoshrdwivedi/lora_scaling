@@ -52,7 +52,13 @@ SOURCE-OF-TRUTH MAP (one entry per number that appears in main.tex)
       benchmarks/results/forward_breakdown.json
 
   Per-task accuracy (Table 1, Appendix A):
-      benchmarks/quality/setfit_paper_results.csv
+      benchmarks/quality/setfit_mpnet_multiseed.csv
+      Aggregated per (dataset, method): mean over the 10 seeds. Vanilla uses
+      its single LR (2e-5); LoRA uses one shared body_lr across all datasets
+      (the LR with the highest across-dataset mean, currently 5e-4). Scores
+      come from the 'score' column and respect the per-dataset 'metric'
+      (e.g. AmazonCF = MCC), so the q+v adapter (294,912 params) matches the
+      reported param count.
 """
 
 from __future__ import annotations
@@ -60,6 +66,7 @@ from __future__ import annotations
 import csv
 import json
 import math
+import statistics
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -105,6 +112,49 @@ def find_row(rows: list[dict[str, str]], **filters: Any) -> dict[str, str]:
     if len(out) != 1:
         raise LookupError(f"expected 1 row for {filters}, got {len(out)}")
     return out[0]
+
+
+def _fmt_lr(lr: float) -> str:
+    """0.00002 -> '2\\times10^{-5}' (LaTeX math, used inside the table caption)."""
+    mant, exp = f"{lr:.0e}".split("e")
+    return rf"{int(float(mant))}\times10^{{{int(exp)}}}"
+
+
+def aggregate_setfit(rows: list[dict[str, str]]) -> tuple[list[dict[str, str]], str, str]:
+    """Collapse the multiseed sweep to one score per (dataset, method).
+
+    Mean over seeds. Vanilla uses its single LR; LoRA uses one shared body_lr
+    across all datasets (the LR whose across-dataset mean is highest). Reads
+    the 'score' column, so per-dataset metrics (AmazonCF = MCC) are respected.
+    Returns (agg_rows, vanilla_lr_tex, lora_lr_tex); agg_rows carry an
+    'accuracy' field so the downstream renderers stay unchanged.
+    """
+    groups: dict[tuple, list[float]] = {}
+    for r in rows:
+        groups.setdefault(
+            (r["dataset"], r["method"], float(r["body_lr"])), []
+        ).append(float(r["score"]))
+    means = {k: statistics.fmean(v) for k, v in groups.items()}
+    datasets = sorted({k[0] for k in means})
+
+    vanilla_lrs = sorted({k[2] for k in means if k[1] == "vanilla"})
+    if len(vanilla_lrs) != 1:
+        raise ValueError(f"expected one vanilla LR, got {vanilla_lrs}")
+    vanilla_lr = vanilla_lrs[0]
+
+    lora_lrs = sorted({k[2] for k in means if k[1] == "lora"})
+    lora_lr = max(
+        lora_lrs,
+        key=lambda lr: statistics.fmean([means[(d, "lora", lr)] for d in datasets]),
+    )
+
+    agg: list[dict[str, str]] = []
+    for d in datasets:
+        agg.append({"dataset": d, "method": "vanilla", "lora_rank": "0",
+                    "accuracy": f"{means[(d, 'vanilla', vanilla_lr)]:.6f}"})
+        agg.append({"dataset": d, "method": "lora", "lora_rank": "8",
+                    "accuracy": f"{means[(d, 'lora', lora_lr)]:.6f}"})
+    return agg, _fmt_lr(vanilla_lr), _fmt_lr(lora_lr)
 
 
 def load_model_arch() -> dict[str, dict[str, str]]:
@@ -258,7 +308,8 @@ def build() -> None:
     peft_base      = load_csv(RESULTS / "peft_base_sxm80.csv")
     sysname_ref    = load_csv(RESULTS / "sysname_sxm80_ref.csv")
     fwd            = json.loads((RESULTS / "forward_breakdown.json").read_text())
-    setfit         = load_csv(QUALITY / "setfit_paper_results.csv")
+    setfit_raw     = load_csv(QUALITY / "setfit_mpnet_multiseed.csv")
+    setfit, setfit_vanilla_lr, setfit_lora_lr = aggregate_setfit(setfit_raw)
 
     m = Macros()
 
@@ -572,8 +623,13 @@ def build() -> None:
     # =======================================================================
     # 10. SetFit accuracy (Table 1 / Appendix A)
     # =======================================================================
-    m.section("SetFit accuracy (mpnet, n=8 per class, seed=42)",
-              "benchmarks/quality/setfit_paper_results.csv")
+    m.section("SetFit accuracy (mpnet, n=8 per class, 10-seed mean)",
+              "benchmarks/quality/setfit_mpnet_multiseed.csv "
+              "(vanilla @2e-5; LoRA @ shared best LR; scores respect per-dataset metric)")
+    m.add("SetfitVanillaLR", setfit_vanilla_lr,
+          comment="vanilla body LR (single LR in the sweep)")
+    m.add("SetfitLoraLR", setfit_lora_lr,
+          comment="shared LoRA body LR = argmax across-dataset mean")
     SETFIT_TASKS = [
         ("SSTTwo",      "SetFit/sst2"),
         ("SSTFive",     "SetFit/sst5"),
@@ -585,6 +641,7 @@ def build() -> None:
     ]
     van_total = 0.0
     lora_total = 0.0
+    drops_pp: list[float] = []
     for tag, key in SETFIT_TASKS:
         van = float(next(r for r in setfit
                          if r["dataset"] == key and r["method"] == "vanilla"
@@ -599,6 +656,7 @@ def build() -> None:
         m.add(f"Setfit{tag}Delta",   fmt_f(delta, 3))
         van_total += van
         lora_total += lora
+        drops_pp.append((van - lora) * 100)
 
     van_mean = van_total / len(SETFIT_TASKS)
     lora_mean = lora_total / len(SETFIT_TASKS)
@@ -609,6 +667,10 @@ def build() -> None:
           fmt_f(100 * lora_mean / van_mean, 1))
     m.add("SetfitMeanDropPP",
           fmt_f((van_mean - lora_mean) * 100, 2))
+    m.add("SetfitMinDropPP", fmt_f(min(drops_pp), 1),
+          comment="smallest per-task accuracy drop (pp)")
+    m.add("SetfitMaxDropPP", fmt_f(max(drops_pp), 1),
+          comment="largest per-task accuracy drop (pp)")
 
     # MPNet-specific param counts (used in Table 1 footer + Appendix A)
     mpnet_lora_params = (2 * MPNET_TARGET_MODULES * MPNET_NUM_LAYERS

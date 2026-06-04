@@ -251,34 +251,38 @@
 \newcommand{\PeftHomogCollapseMin}{5.8}
 \newcommand{\PeftHomogCollapseMax}{8.7}
 
-% ===== SetFit accuracy (mpnet, n=8 per class, seed=42) =====
-% source: benchmarks/quality/setfit_paper_results.csv
-\newcommand{\SetfitSSTTwoVanilla}{0.817}
-\newcommand{\SetfitSSTTwoLora}{0.801}
-\newcommand{\SetfitSSTTwoDelta}{-0.016}
-\newcommand{\SetfitSSTFiveVanilla}{0.374}
-\newcommand{\SetfitSSTFiveLora}{0.360}
-\newcommand{\SetfitSSTFiveDelta}{-0.014}
-\newcommand{\SetfitCRVanilla}{0.771}
-\newcommand{\SetfitCRLora}{0.742}
-\newcommand{\SetfitCRDelta}{-0.029}
-\newcommand{\SetfitAmazonCFVanilla}{0.568}
-\newcommand{\SetfitAmazonCFLora}{0.563}
-\newcommand{\SetfitAmazonCFDelta}{-0.005}
-\newcommand{\SetfitEmotionVanilla}{0.361}
-\newcommand{\SetfitEmotionLora}{0.310}
-\newcommand{\SetfitEmotionDelta}{-0.051}
-\newcommand{\SetfitEnronSpamVanilla}{0.889}
-\newcommand{\SetfitEnronSpamLora}{0.883}
-\newcommand{\SetfitEnronSpamDelta}{-0.006}
-\newcommand{\SetfitAGNewsVanilla}{0.804}
-\newcommand{\SetfitAGNewsLora}{0.770}
-\newcommand{\SetfitAGNewsDelta}{-0.034}
-\newcommand{\SetfitMeanVanilla}{0.655}
-\newcommand{\SetfitMeanLora}{0.633}
-\newcommand{\SetfitMeanDelta}{-0.022}
-\newcommand{\SetfitRetainsPct}{96.6}
-\newcommand{\SetfitMeanDropPP}{2.22}
+% ===== SetFit accuracy (mpnet, n=8 per class, 10-seed mean) =====
+% source: benchmarks/quality/setfit_mpnet_multiseed.csv (vanilla @2e-5; LoRA @ shared best LR; scores respect per-dataset metric)
+\newcommand{\SetfitVanillaLR}{2\times10^{-5}}  % vanilla body LR (single LR in the sweep)
+\newcommand{\SetfitLoraLR}{5\times10^{-4}}  % shared LoRA body LR = argmax across-dataset mean
+\newcommand{\SetfitSSTTwoVanilla}{0.830}
+\newcommand{\SetfitSSTTwoLora}{0.796}
+\newcommand{\SetfitSSTTwoDelta}{-0.034}
+\newcommand{\SetfitSSTFiveVanilla}{0.431}
+\newcommand{\SetfitSSTFiveLora}{0.408}
+\newcommand{\SetfitSSTFiveDelta}{-0.023}
+\newcommand{\SetfitCRVanilla}{0.871}
+\newcommand{\SetfitCRLora}{0.829}
+\newcommand{\SetfitCRDelta}{-0.041}
+\newcommand{\SetfitAmazonCFVanilla}{0.272}
+\newcommand{\SetfitAmazonCFLora}{0.221}
+\newcommand{\SetfitAmazonCFDelta}{-0.051}
+\newcommand{\SetfitEmotionVanilla}{0.443}
+\newcommand{\SetfitEmotionLora}{0.415}
+\newcommand{\SetfitEmotionDelta}{-0.028}
+\newcommand{\SetfitEnronSpamVanilla}{0.907}
+\newcommand{\SetfitEnronSpamLora}{0.900}
+\newcommand{\SetfitEnronSpamDelta}{-0.007}
+\newcommand{\SetfitAGNewsVanilla}{0.821}
+\newcommand{\SetfitAGNewsLora}{0.799}
+\newcommand{\SetfitAGNewsDelta}{-0.022}
+\newcommand{\SetfitMeanVanilla}{0.654}
+\newcommand{\SetfitMeanLora}{0.624}
+\newcommand{\SetfitMeanDelta}{-0.030}
+\newcommand{\SetfitRetainsPct}{95.5}
+\newcommand{\SetfitMeanDropPP}{2.96}
+\newcommand{\SetfitMinDropPP}{0.7}  % smallest per-task accuracy drop (pp)
+\newcommand{\SetfitMaxDropPP}{5.1}  % largest per-task accuracy drop (pp)
 \newcommand{\MpnetLoraParams}{294{,}912}
 \newcommand{\MpnetParamReductionRankEight}{371}  % = MPNET_VANILLA_TRAINABLE / mpnet_lora_params
 
