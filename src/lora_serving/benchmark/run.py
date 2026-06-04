@@ -110,7 +110,11 @@ def run_single_config(
 
     print(f"  Generating {num_adapters} synthetic adapters (rank={lora_rank})...")
     store = AdapterStore(config)
+    t0 = time.perf_counter()
     make_synthetic_adapters(store, num_adapters)
+    adapter_load_total_s = time.perf_counter() - t0
+    print(f"  AdapterStore preload x{num_adapters} took {adapter_load_total_s:.2f}s",
+          flush=True)
     adapter_ids = [f"adapter_{i}" for i in range(num_adapters)]
 
     lr_coefs = {}
@@ -190,6 +194,9 @@ def run_single_config(
         "throughput_samples_sec": round(throughput, 1),
         "peak_gpu_mem_gb": round(peak_mem_gb, 3),
         "adapter_cache_gb": round(adapter_mem_gb, 3),
+        "adapter_load_total_s": round(adapter_load_total_s, 2),
+        "warmup": warmup,
+        "iters": iters,
     }
 
 

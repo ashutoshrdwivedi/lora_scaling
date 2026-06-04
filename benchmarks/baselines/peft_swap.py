@@ -218,6 +218,8 @@ def measure_config(
         "throughput_samples_sec": round(throughput, 1),
         "peak_gpu_mem_gb": round(peak_mem_gb, 3),
         "add_adapter_total_s": round(add_time_s, 2),
+        "warmup": warmup,
+        "iters": iters,
     }
 
 
