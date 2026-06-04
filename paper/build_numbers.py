@@ -1,0 +1,914 @@
+"""
+Generate LaTeX fragments from benchmark CSVs/JSON so the paper stays in sync
+with the data when benchmarks are re-run.
+
+Outputs (overwrites on every run):
+    paper/numbers.tex             -- \\newcommand macros (inline prose numbers)
+    paper/table_main.tex          -- \\begin{tabular}...\\end{tabular} body
+    paper/table_baselines.tex     -- ditto
+    paper/table_accuracy.tex      -- ditto
+
+Run:
+    uv run python paper/build_numbers.py
+
+To wire the macros into main.tex (one-time):
+    \\input{numbers.tex}                in the preamble
+    \\input{table_main.tex}             inside the existing \\begin{table}...
+    \\input{table_baselines.tex}
+    \\input{table_accuracy.tex}
+
+Prose numbers in main.tex should then reference the macros (e.g.
+\\HeadlineQPS instead of '810'). All macros live in paper/numbers.tex with
+sectioned comments showing their source CSV row.
+
+----------------------------------------------------------------------------
+SOURCE-OF-TRUTH MAP (one entry per number that appears in main.tex)
+----------------------------------------------------------------------------
+  Architecture / model:
+      sweep_main.csv (model, dtype columns), plus a few constants pulled
+      from the paper that should be re-derived from the model on GPU:
+        BGE_NUM_PARAMS, MPNET_VANILLA_TRAINABLE.
+        See SOURCES_TODO at the bottom of the printed summary.
+
+  Adapter count / batch size sweeps (Table 2 top + middle blocks, Findings
+  1/2/5, p50/p90/p99/QPS/GPU mem):
+      benchmarks/results/sweep_main.csv
+
+  Rank sweep (Table 2 bottom block, Finding 3):
+      benchmarks/results/sweep_ranks.csv
+
+  Capacity sweep (Finding 4 ceiling claim):
+      benchmarks/results/sweep_capacity.csv  +  sweep_main.csv
+
+  PEFT baselines (Table 3, Finding 7, baseline ceiling text):
+      benchmarks/results/peft_grouped_sxm80.csv
+      benchmarks/results/peft_homogeneous_sxm80.csv
+      benchmarks/results/peft_base_sxm80.csv
+
+  LateFuse reference for Table 3:
+      benchmarks/results/sysname_sxm80_ref.csv
+
+  Forward-pass FLOP / profiler / ablation (Finding 6):
+      benchmarks/results/forward_breakdown.json
+
+  Per-task accuracy (Table 1, Appendix A):
+      benchmarks/quality/setfit_paper_results.csv
+"""
+
+from __future__ import annotations
+
+import csv
+import json
+import math
+from pathlib import Path
+from typing import Any, Iterable
+
+# ===========================================================================
+# Required architecture / environment metadata
+# ===========================================================================
+# The script reads model_metadata.csv and env_metadata.csv unconditionally
+# (no fallbacks). Both are produced by benchmarks/profiling/model_metadata.py
+# on the GPU host. If either is missing the script aborts with a clear error.
+
+# Hub identifiers used to look up rows in model_metadata.csv. If you point
+# the metadata script at different hub names, update these to match.
+BGE_NAME       = "BAAI/bge-m3"
+MPNET_NAME_HUB = "sentence-transformers/paraphrase-mpnet-base-v2"
+
+FP16_BYTES = 2
+# Decimal GB/TB to match the paper's arithmetic
+# (80 GB A100 / 22 TB at 20k models).
+A100_80GB_BYTES = 80 * 10**9
+HEADLINE_DTYPE  = "float16"
+
+# ===========================================================================
+# Paths
+# ===========================================================================
+REPO    = Path(__file__).resolve().parent.parent
+RESULTS = REPO / "benchmarks" / "results"
+QUALITY = REPO / "benchmarks" / "quality"
+OUT     = REPO / "paper"
+
+
+# ===========================================================================
+# CSV / formatting helpers
+# ===========================================================================
+
+def load_csv(path: Path) -> list[dict[str, str]]:
+    with path.open() as f:
+        return list(csv.DictReader(f))
+
+
+def find_row(rows: list[dict[str, str]], **filters: Any) -> dict[str, str]:
+    out = [r for r in rows
+           if all(str(r[k]) == str(v) for k, v in filters.items())]
+    if len(out) != 1:
+        raise LookupError(f"expected 1 row for {filters}, got {len(out)}")
+    return out[0]
+
+
+def load_model_arch() -> dict[str, dict[str, str]]:
+    """Read model_metadata.csv into {model_name: {key: value}}.
+
+    Required input -- the script aborts if it's not present. Generate it
+    with benchmarks/profiling/model_metadata.py on the GPU host.
+    """
+    path = RESULTS / "model_metadata.csv"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"missing {path}\n"
+            "  Run benchmarks/profiling/model_metadata.py on a GPU host to\n"
+            "  produce it, then copy it back and re-run this script."
+        )
+    data: dict[str, dict[str, str]] = {}
+    with path.open() as f:
+        for row in csv.DictReader(f):
+            data.setdefault(row["model"], {})[row["key"]] = row["value"]
+    return data
+
+
+def load_env() -> dict[str, str]:
+    """Read env_metadata.csv (single row) into a flat dict.
+
+    Required input -- aborts if missing. Source: model_metadata.py.
+    """
+    path = RESULTS / "env_metadata.csv"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"missing {path}\n"
+            "  Run benchmarks/profiling/model_metadata.py on a GPU host."
+        )
+    with path.open() as f:
+        return next(csv.DictReader(f))
+
+
+def arch_int(arch: dict[str, str], model: str, key: str) -> int:
+    """Pull an int field from the per-model arch dict; clear error if missing."""
+    if key not in arch or not str(arch[key]).strip():
+        raise KeyError(
+            f"model_metadata.csv: model={model!r} is missing required key {key!r}"
+        )
+    return int(arch[key])
+
+
+def num_comma(n: int) -> str:
+    """Format an int with LaTeX-friendly thousands separator: 47000 -> '47{,}000'."""
+    return f"{n:,}".replace(",", "{,}")
+
+
+def fmt_f(v: float | str, dp: int) -> str:
+    return f"{float(v):.{dp}f}"
+
+
+def fmt_int(v: float | str) -> str:
+    return str(round(float(v)))
+
+
+# Macro-name suffix maps. LaTeX macros can't contain digits, so each numeric
+# axis value gets a word-form name. Used in macro names AND nowhere else.
+N_SUFFIX = {
+    100:    "Hundred",
+    1000:   "OneK",
+    5000:   "FiveK",
+    10000:  "TenK",
+    20000:  "TwentyK",
+    40000:  "FortyK",
+    47000:  "FortySevenK",
+}
+B_SUFFIX = {
+    8:   "Eight",
+    16:  "Sixteen",
+    32:  "ThirtyTwo",
+    64:  "SixtyFour",
+    128: "OneTwentyEight",
+}
+R_SUFFIX = {
+    4:  "Four",
+    8:  "Eight",
+    16: "Sixteen",
+    32: "ThirtyTwo",
+}
+
+
+# ===========================================================================
+# Macro collector
+# ===========================================================================
+
+class Macros:
+    """Collects \\newcommand definitions in declaration order, with comments."""
+
+    def __init__(self) -> None:
+        self._chunks: list[str] = []
+        self._defined: set[str] = set()
+
+    def section(self, title: str, source: str = "") -> None:
+        line = f"\n% ===== {title} =====\n"
+        if source:
+            line += f"% source: {source}\n"
+        self._chunks.append(line)
+
+    def add(self, name: str, value: Any, comment: str = "") -> None:
+        if name in self._defined:
+            raise ValueError(f"duplicate macro: {name}")
+        self._defined.add(name)
+        suffix = f"  % {comment}" if comment else ""
+        self._chunks.append(f"\\newcommand{{\\{name}}}{{{value}}}{suffix}\n")
+
+    def render(self) -> str:
+        header = (
+            "% AUTO-GENERATED by paper/build_numbers.py -- DO NOT EDIT.\n"
+            "% Regenerate with:  uv run python paper/build_numbers.py\n"
+            "% Macros are grouped by topic; the comment above each block names\n"
+            "% the CSV/JSON source so it's clear what to re-run.\n"
+        )
+        return header + "".join(self._chunks)
+
+
+# ===========================================================================
+# Build
+# ===========================================================================
+
+def build() -> None:
+    # ---- Load architecture + env metadata (required) -----------------------
+    arch = load_model_arch()
+    env  = load_env()
+    for name in (BGE_NAME, MPNET_NAME_HUB):
+        if name not in arch:
+            raise KeyError(
+                f"model_metadata.csv has no rows for {name!r}. "
+                "Re-run benchmarks/profiling/model_metadata.py with "
+                "--model 'name:tm1,tm2' covering this model."
+            )
+    BGE_HIDDEN_SIZE    = arch_int(arch[BGE_NAME],       BGE_NAME,       "hidden_size")
+    BGE_NUM_LAYERS     = arch_int(arch[BGE_NAME],       BGE_NAME,       "num_layers")
+    BGE_NUM_HEADS      = arch_int(arch[BGE_NAME],       BGE_NAME,       "num_heads")
+    BGE_NUM_PARAMS     = arch_int(arch[BGE_NAME],       BGE_NAME,       "total_params")
+    BGE_TARGET_MODULES = arch_int(arch[BGE_NAME],       BGE_NAME,       "num_target_modules")
+    MPNET_HIDDEN_SIZE       = arch_int(arch[MPNET_NAME_HUB], MPNET_NAME_HUB, "hidden_size")
+    MPNET_NUM_LAYERS        = arch_int(arch[MPNET_NAME_HUB], MPNET_NAME_HUB, "num_layers")
+    MPNET_TARGET_MODULES    = arch_int(arch[MPNET_NAME_HUB], MPNET_NAME_HUB, "num_target_modules")
+    MPNET_VANILLA_TRAINABLE = arch_int(arch[MPNET_NAME_HUB], MPNET_NAME_HUB, "total_params")
+
+    # ---- Load benchmark CSVs / JSON ----------------------------------------
+    sweep_main     = load_csv(RESULTS / "sweep_main.csv")
+    sweep_ranks    = load_csv(RESULTS / "sweep_ranks.csv")
+    sweep_capacity = load_csv(RESULTS / "sweep_capacity.csv")
+    peft_grouped   = load_csv(RESULTS / "peft_grouped_sxm80.csv")
+    peft_homog     = load_csv(RESULTS / "peft_homogeneous_sxm80.csv")
+    peft_base      = load_csv(RESULTS / "peft_base_sxm80.csv")
+    sysname_ref    = load_csv(RESULTS / "sysname_sxm80_ref.csv")
+    fwd            = json.loads((RESULTS / "forward_breakdown.json").read_text())
+    setfit         = load_csv(QUALITY / "setfit_paper_results.csv")
+
+    m = Macros()
+
+    # =======================================================================
+    # 1. Architecture constants (sourced from model_metadata.csv)
+    # =======================================================================
+    m.section("Architecture (BGE-m3, mpnet)",
+              "benchmarks/results/model_metadata.csv (params, dims, heads)")
+    m.add("BgeHidden", BGE_HIDDEN_SIZE)
+    m.add("BgeLayers", BGE_NUM_LAYERS)
+    m.add("BgeHeads",  BGE_NUM_HEADS)
+    m.add("BgeParamsM", round(BGE_NUM_PARAMS / 1e6),
+          comment=f"= round({BGE_NUM_PARAMS} / 1e6)")
+    m.add("BgeFpSixteenGB",
+          fmt_f(BGE_NUM_PARAMS * FP16_BYTES / 1e9, 2),
+          comment="per-model fp16 size, decimal GB")
+
+    m.add("MpnetHidden", MPNET_HIDDEN_SIZE)
+    m.add("MpnetLayers", MPNET_NUM_LAYERS)
+    m.add("MpnetVanillaParamsM", round(MPNET_VANILLA_TRAINABLE / 1e6),
+          comment=f"= round({MPNET_VANILLA_TRAINABLE} / 1e6)")
+
+    # =======================================================================
+    # 2. LoRA per-adapter params / storage (BGE-m3 at each rank)
+    # =======================================================================
+    m.section(
+        "LoRA per-adapter params and storage (BGE-m3)",
+        "analytic: 2 * M * L * d * r  (A is r×d, B is d×r, both trainable)",
+    )
+
+    def lora_params(rank: int, d=BGE_HIDDEN_SIZE, L=BGE_NUM_LAYERS,
+                    M=BGE_TARGET_MODULES) -> int:
+        return 2 * M * L * d * rank
+
+    def lora_bytes(rank: int) -> int:
+        return lora_params(rank) * FP16_BYTES
+
+    for r, tag in R_SUFFIX.items():
+        m.add(f"LoraParamsR{tag}",     num_comma(lora_params(r)))
+        m.add(f"LoraBytesR{tag}MB",    fmt_f(lora_bytes(r) / 1e6, 3))
+
+    # Full Q+V fine-tune param count and the LoRA reduction multiplier
+    full_qv = (BGE_TARGET_MODULES * BGE_NUM_LAYERS
+               * BGE_HIDDEN_SIZE * BGE_HIDDEN_SIZE)
+    m.add("FullQVParams", num_comma(full_qv))
+    m.add("LoraReductionVsQVRankEight",
+          round(full_qv / lora_params(8)),
+          comment="= (M*L*d*d) / (2*M*L*d*r) at r=8")
+    m.add("StorageReductionFullVsLoraRankEight",
+          round(BGE_NUM_PARAMS * FP16_BYTES / lora_bytes(8)),
+          comment=f"= (BGE_NUM_PARAMS * 2) / bytes(r=8); "
+                  f"reflects BGE_NUM_PARAMS = {BGE_NUM_PARAMS}")
+
+    # =======================================================================
+    # 3. Aggregate storage / capacity numbers (intro + complexity §)
+    # =======================================================================
+    m.section("Aggregate storage / per-GPU capacity",
+              "derived from arch constants and sweep_main.csv")
+
+    storage_20k_bytes = BGE_NUM_PARAMS * FP16_BYTES * 20_000
+    m.add("StorageTwentyKTB",     fmt_f(storage_20k_bytes / 1e12, 1))
+    m.add("StorageTwentyKGPUs",   math.ceil(storage_20k_bytes / A100_80GB_BYTES))
+
+    m.add("CacheNHundredMB",
+          fmt_int(100 * lora_bytes(8) / 1e6),
+          comment="100 adapters at r=8 fp16")
+    m.add("CacheNTwentyKGB",
+          fmt_f(20_000 * lora_bytes(8) / 1e9, 1),
+          comment="20k adapters at r=8 fp16")
+
+    # Empirical 47k capacity (largest N in sweep_main); ranks 16/32 are
+    # back-calculated by the linear-in-r scaling shown in Finding 4.
+    cap_r8 = max(int(r["num_adapters"]) for r in sweep_main)
+    m.add("CapacityRankEight",      num_comma(cap_r8))
+    m.add("CapacityRankSixteen",    num_comma(cap_r8 // 2))
+    m.add("CapacityRankThirtyTwo",  num_comma(cap_r8 // 4))
+
+    # =======================================================================
+    # 4. Main N-sweep (B=32, r=8) — Table 2 top block, Findings 1/4
+    # =======================================================================
+    m.section("Adapter-count sweep (B=32, r=8)",
+              "benchmarks/results/sweep_main.csv")
+    n_main_rows: dict[int, dict[str, str]] = {}
+    for n, tag in N_SUFFIX.items():
+        row = find_row(sweep_main,
+                       num_adapters=str(n), batch_size="32", lora_rank="8")
+        n_main_rows[n] = row
+        m.add(f"PFiftyAtN{tag}",        fmt_f(row["p50_ms"], 1))
+        m.add(f"PNinetyAtN{tag}",       fmt_f(row["p90_ms"], 1))
+        m.add(f"PNinetyNineAtN{tag}",   fmt_f(row["p99_ms"], 1))
+        m.add(f"QpsAtN{tag}",           fmt_int(row["throughput_samples_sec"]))
+        m.add(f"GpuGBAtN{tag}",         fmt_f(row["peak_gpu_mem_gb"], 2))
+        m.add(f"AssemblePctAtN{tag}",   fmt_f(row["assemble_share_pct"], 1))
+        m.add(f"FwdMsAtN{tag}",         fmt_f(row["forward_p50_ms"], 1))
+
+    # Derived: drift and ceiling claims from Finding 1
+    p50_lo = float(n_main_rows[100]["p50_ms"])
+    p50_hi = float(n_main_rows[47000]["p50_ms"])
+    m.add("PFiftyDriftPctNHundredToFortySevenK",
+          fmt_f((p50_hi - p50_lo) / p50_lo * 100, 1),
+          comment="(p50_47k - p50_100) / p50_100 * 100")
+    m.add("CustomerMultiplierHundredToFortySevenK",
+          round(47000 / 100), comment="= 47000 / 100")
+
+    p99_ceiling_n_sweep = max(
+        float(r["p99_ms"]) for r in sweep_main
+        if r["batch_size"] == "32" and r["lora_rank"] == "8"
+    )
+    m.add("PNinetyNineCeilingNSweep", fmt_f(p99_ceiling_n_sweep, 1),
+          comment="max p99 over N at B=32 r=8")
+    fwd_mean_b32_r8 = sum(float(r["forward_p50_ms"]) for r in sweep_main
+                          if r["batch_size"] == "32" and r["lora_rank"] == "8"
+                          ) / len(N_SUFFIX)
+    m.add("ForwardMsConstantBThirtyTwo", fmt_f(fwd_mean_b32_r8, 1),
+          comment="mean forward_p50 across N at B=32 r=8")
+    asm_max_b32_r8 = max(float(r["assemble_share_pct"]) for r in sweep_main
+                         if r["batch_size"] == "32" and r["lora_rank"] == "8")
+    m.add("AssemblePctCeilingBThirtyTwo", fmt_f(asm_max_b32_r8, 1),
+          comment="max assemble_share_pct across N at B=32 r=8")
+
+    # Base + activation buffer overhead at the per-GPU ceiling (Finding 4).
+    # Derived from N=47000 row: peak GPU mem minus adapter-cache footprint.
+    base_act_gb = (float(n_main_rows[47000]["peak_gpu_mem_gb"])
+                   - float(n_main_rows[47000]["adapter_cache_gb"]))
+    m.add("BaseActivationOverheadGB", fmt_f(base_act_gb, 2),
+          comment="peak_gpu - adapter_cache @ N=47000 B=32 r=8")
+
+    # =======================================================================
+    # 5. Batch-size sweep (N=1000, r=8) — Table 2 middle, Findings 2/5
+    # =======================================================================
+    m.section("Batch-size sweep (N=1000, r=8)",
+              "benchmarks/results/sweep_main.csv")
+    b_rows: dict[int, dict[str, str]] = {}
+    for b, tag in B_SUFFIX.items():
+        row = find_row(sweep_main,
+                       num_adapters="1000", batch_size=str(b), lora_rank="8")
+        b_rows[b] = row
+        m.add(f"PFiftyAtB{tag}",        fmt_f(row["p50_ms"], 1))
+        m.add(f"PNinetyAtB{tag}",       fmt_f(row["p90_ms"], 1))
+        m.add(f"PNinetyNineAtB{tag}",   fmt_f(row["p99_ms"], 1))
+        m.add(f"QpsAtB{tag}",           fmt_int(row["throughput_samples_sec"]))
+        m.add(f"GpuGBAtB{tag}",         fmt_f(row["peak_gpu_mem_gb"], 2))
+        m.add(f"AssemblePctAtB{tag}",   fmt_f(row["assemble_share_pct"], 1))
+
+    # p99/p50 ratios (Finding 5)
+    for b in (32, 64):
+        ratio = float(b_rows[b]["p99_ms"]) / float(b_rows[b]["p50_ms"])
+        m.add(f"PNinetyNineOverPFiftyAtB{B_SUFFIX[b]}", fmt_f(ratio, 2))
+
+    # Throughput at B=64 (the batch size at which the encoder forward
+    # becomes GPU-bound and throughput stops climbing)
+    m.add("QpsAtBSixtyFourSatVal",
+          fmt_int(b_rows[64]["throughput_samples_sec"]),
+          comment="QPS at the saturation knee, B=64 N=1000 r=8")
+
+    # =======================================================================
+    # 6. Rank sweep (N=1000, B=32) — Table 2 bottom, Finding 3
+    # =======================================================================
+    m.section("Rank sweep (N=1000, B=32)",
+              "benchmarks/results/sweep_ranks.csv")
+    for r, tag in R_SUFFIX.items():
+        row = find_row(sweep_ranks,
+                       num_adapters="1000", batch_size="32", lora_rank=str(r))
+        m.add(f"PFiftyAtR{tag}",        fmt_f(row["p50_ms"], 1))
+        m.add(f"PNinetyAtR{tag}",       fmt_f(row["p90_ms"], 1))
+        m.add(f"PNinetyNineAtR{tag}",   fmt_f(row["p99_ms"], 1))
+        m.add(f"QpsAtR{tag}",           fmt_int(row["throughput_samples_sec"]))
+        m.add(f"GpuGBAtR{tag}",         fmt_f(row["peak_gpu_mem_gb"], 2))
+        m.add(f"FwdMsAtR{tag}",         fmt_f(row["forward_p50_ms"], 1))
+
+    # =======================================================================
+    # 7. Forward pass breakdown (Finding 6)
+    # =======================================================================
+    m.section("Forward-pass breakdown",
+              "benchmarks/results/forward_breakdown.json")
+    m.add("FlopBaseGFlopsPerLayer",
+          fmt_f(fwd["flop_ratio"]["base_GFLOPs_per_layer"], 2))
+    m.add("FlopLoraGFlopsPerLayer",
+          fmt_f(fwd["flop_ratio"]["lora_GFLOPs_per_layer"], 3))
+    m.add("FlopBaseToLoraRatio",
+          fmt_int(fwd["flop_ratio"]["base_to_lora_ratio"]))
+    m.add("FlopMaxLoraSavingsPct",
+          fmt_f(100 / fwd["flop_ratio"]["base_to_lora_ratio"], 2),
+          comment="ceiling savings if LoRA kernel were free")
+
+    m.add("ProfBaseLinearPct",
+          fmt_f(fwd["profiler_categories"]["base_linear"]["share_pct"], 1))
+    m.add("ProfLoraBmmIsolatedPct",
+          fmt_f(fwd["bmm_isolation"]["lora_bmm_self_share_pct"], 2),
+          comment="LoRA-only bmm share (attn/LR head subtracted)")
+    m.add("ProfTotalCudaMs",
+          fmt_f(fwd["profiler_total_ms"], 1))
+
+    m.add("AblationLoraOnMs",
+          fmt_f(fwd["ablation"]["lora_on_mean_ms"], 1))
+    m.add("AblationLoraCostMs",
+          fmt_f(fwd["ablation"]["lora_cost_mean_ms"], 1))
+    m.add("AblationLoraCostPct",
+          fmt_f(fwd["ablation"]["lora_cost_share_pct"], 1))
+
+    # =======================================================================
+    # 8. PEFT baselines (Table 3, baseline text, Finding 7)
+    # =======================================================================
+    m.section("PEFT baseline (no-adapter ceiling)",
+              "benchmarks/results/peft_base_sxm80.csv")
+    for b in (8, 32, 128):
+        row = find_row(peft_base, batch_size=str(b))
+        m.add(f"PeftBaseQpsAtB{B_SUFFIX[b]}",
+              fmt_int(row["throughput_samples_sec"]))
+        m.add(f"PeftBasePFiftyAtB{B_SUFFIX[b]}",
+              fmt_f(row["p50_ms"], 1))
+
+    m.section("PEFT grouped baseline",
+              "benchmarks/results/peft_grouped_sxm80.csv")
+    PEFT_NB = [(100, 8), (100, 32), (100, 128),
+               (1000, 8), (1000, 32), (1000, 128)]
+    for n, b in PEFT_NB:
+        row = find_row(peft_grouped, num_adapters=str(n), batch_size=str(b))
+        suf = f"N{N_SUFFIX[n]}B{B_SUFFIX[b]}"
+        m.add(f"PeftGroupedPFifty{suf}",  fmt_int(row["p50_ms"]))
+        m.add(f"PeftGroupedQps{suf}",     fmt_f(row["throughput_samples_sec"], 1))
+        # Cold-start: add_adapter_total_s (per-N constant)
+    # add_adapter_total_s is the same for each row of a given N; emit once per N
+    for n in (100, 1000):
+        row = find_row(peft_grouped, num_adapters=str(n), batch_size="8")
+        m.add(f"PeftGroupedAddAdapterSecN{N_SUFFIX[n]}",
+              fmt_f(row["add_adapter_total_s"], 1))
+
+    m.section("PEFT homogeneous baseline",
+              "benchmarks/results/peft_homogeneous_sxm80.csv")
+    for n, b in PEFT_NB:
+        row = find_row(peft_homog, num_adapters=str(n), batch_size=str(b))
+        suf = f"N{N_SUFFIX[n]}B{B_SUFFIX[b]}"
+        m.add(f"PeftHomogPFifty{suf}",  fmt_int(row["p50_ms"]))
+        m.add(f"PeftHomogQps{suf}",     fmt_f(row["throughput_samples_sec"], 1))
+    for n in (100, 1000):
+        row = find_row(peft_homog, num_adapters=str(n), batch_size="8")
+        m.add(f"PeftHomogAddAdapterSecN{N_SUFFIX[n]}",
+              fmt_f(row["add_adapter_total_s"], 1))
+
+    m.section("LateFuse reference for Table 3",
+              "benchmarks/results/sysname_sxm80_ref.csv")
+    for n, b in PEFT_NB:
+        row = find_row(sysname_ref, num_adapters=str(n), batch_size=str(b))
+        suf = f"N{N_SUFFIX[n]}B{B_SUFFIX[b]}"
+        m.add(f"SysRefPFifty{suf}",  fmt_f(row["p50_ms"], 1))
+        m.add(f"SysRefQps{suf}",     fmt_int(row["throughput_samples_sec"]))
+
+    # =======================================================================
+    # 9. Speedup multipliers (paper uses QPS ratios)
+    # =======================================================================
+    m.section("Speedup multipliers (LateFuse QPS / PEFT QPS)",
+              "derived from sysname_sxm80_ref vs peft_grouped/homog")
+
+    def qps(rows, n: int, b: int) -> float:
+        return float(find_row(rows, num_adapters=str(n),
+                              batch_size=str(b))["throughput_samples_sec"])
+
+    speedups_grouped: list[int] = []
+    speedups_homog: list[float] = []
+    for n, b in PEFT_NB:
+        suf = f"N{N_SUFFIX[n]}B{B_SUFFIX[b]}"
+        sp_g = qps(sysname_ref, n, b) / qps(peft_grouped, n, b)
+        sp_h = qps(sysname_ref, n, b) / qps(peft_homog, n, b)
+        m.add(f"SpeedupGrouped{suf}", round(sp_g))
+        m.add(f"SpeedupHomog{suf}",   fmt_f(sp_h, 1))
+        speedups_grouped.append(round(sp_g))
+        speedups_homog.append(sp_h)
+
+    m.add("SpeedupGroupedMin", min(speedups_grouped),
+          comment="min over ALL measured (N,B) grouped speedups")
+    m.add("SpeedupGroupedMax", max(speedups_grouped),
+          comment="max over ALL measured (N,B) grouped speedups")
+
+    # Cold-start: PEFT add_adapter loop seconds vs LateFuse AdapterStore preload.
+    # The LateFuse side (column 'adapter_load_total_s' in sweep_main.csv) only
+    # exists if benchmarks have been re-run after the run.py instrumentation
+    # change. Emit TODO if missing so the macro is well-defined either way.
+    sys_load_row = next(
+        (r for r in sweep_main
+         if r["num_adapters"] == "1000" and r["batch_size"] == "32"
+         and r["lora_rank"] == "8"
+         and r.get("adapter_load_total_s", "").strip() not in ("", "0", "0.0")),
+        None,
+    )
+    if sys_load_row is not None:
+        sys_load_s = float(sys_load_row["adapter_load_total_s"])
+        peft_add_s = float(find_row(peft_grouped, num_adapters="1000",
+                                    batch_size="8")["add_adapter_total_s"])
+        m.add("LateFuseColdLoadSecNOneK",
+              fmt_f(sys_load_s, 2),
+              comment="AdapterStore preload time, N=1000 from sweep_main.csv")
+        m.add("ColdStartSpeedupNOneK",
+              round(peft_add_s / sys_load_s),
+              comment=f"PEFT add_adapter ({peft_add_s:.1f}s) / "
+                      f"LateFuse preload ({sys_load_s:.2f}s)")
+    else:
+        m.add("LateFuseColdLoadSecNOneK", "TODO",
+              comment="re-run benchmarks/run_sxm80.sh after run.py instrumentation")
+        m.add("ColdStartSpeedupNOneK", "TODO",
+              comment="needs adapter_load_total_s column in sweep_main.csv")
+
+    # Finding 7 ratios: PEFT homog QPS collapse N=100 -> N=1000
+    homog_collapse = [
+        qps(peft_homog, 100, b) / qps(peft_homog, 1000, b)
+        for b in (8, 32, 128)
+    ]
+    m.add("PeftHomogCollapseMin", fmt_f(min(homog_collapse), 1))
+    m.add("PeftHomogCollapseMax", fmt_f(max(homog_collapse), 1))
+
+    # =======================================================================
+    # 10. SetFit accuracy (Table 1 / Appendix A)
+    # =======================================================================
+    m.section("SetFit accuracy (mpnet, n=8 per class, seed=42)",
+              "benchmarks/quality/setfit_paper_results.csv")
+    SETFIT_TASKS = [
+        ("SSTTwo",      "SetFit/sst2"),
+        ("SSTFive",     "SetFit/sst5"),
+        ("CR",          "SetFit/CR"),
+        ("AmazonCF",    "SetFit/amazon_counterfactual_en"),
+        ("Emotion",     "SetFit/emotion"),
+        ("EnronSpam",   "SetFit/enron_spam"),
+        ("AGNews",      "SetFit/ag_news"),
+    ]
+    van_total = 0.0
+    lora_total = 0.0
+    for tag, key in SETFIT_TASKS:
+        van = float(next(r for r in setfit
+                         if r["dataset"] == key and r["method"] == "vanilla"
+                         )["accuracy"])
+        lora = float(next(r for r in setfit
+                          if r["dataset"] == key and r["method"] == "lora"
+                          )["accuracy"])
+        delta = lora - van
+        m.add(f"Setfit{tag}Vanilla", fmt_f(van, 3))
+        m.add(f"Setfit{tag}Lora",    fmt_f(lora, 3))
+        # Delta with explicit minus sign (paper writes it as -0.016)
+        m.add(f"Setfit{tag}Delta",   fmt_f(delta, 3))
+        van_total += van
+        lora_total += lora
+
+    van_mean = van_total / len(SETFIT_TASKS)
+    lora_mean = lora_total / len(SETFIT_TASKS)
+    m.add("SetfitMeanVanilla",     fmt_f(van_mean, 3))
+    m.add("SetfitMeanLora",        fmt_f(lora_mean, 3))
+    m.add("SetfitMeanDelta",       fmt_f(lora_mean - van_mean, 3))
+    m.add("SetfitRetainsPct",
+          fmt_f(100 * lora_mean / van_mean, 1))
+    m.add("SetfitMeanDropPP",
+          fmt_f((van_mean - lora_mean) * 100, 2))
+
+    # MPNet-specific param counts (used in Table 1 footer + Appendix A)
+    mpnet_lora_params = (2 * MPNET_TARGET_MODULES * MPNET_NUM_LAYERS
+                         * MPNET_HIDDEN_SIZE * 8)
+    m.add("MpnetLoraParams",   num_comma(mpnet_lora_params))
+    m.add("MpnetParamReductionRankEight",
+          round(MPNET_VANILLA_TRAINABLE / mpnet_lora_params),
+          comment="= MPNET_VANILLA_TRAINABLE / mpnet_lora_params")
+
+    # =======================================================================
+    # 11. Headline / abstract-friendly aliases
+    # =======================================================================
+    m.section("Benchmark protocol (warmup/iters from CSV rows)", "")
+    sys_proto_row = n_main_rows[47000]
+    peft_proto_row = find_row(peft_grouped, num_adapters="1000",
+                              batch_size="32")
+    # If the run pre-dates the warmup/iters CSV columns, fall back to "?" so
+    # the macro is defined and the prose still compiles after a stale run.
+    def _proto(row, key, fallback="?"):
+        v = row.get(key, "").strip()
+        return v if v else fallback
+    m.add("SysWarmup",  _proto(sys_proto_row,  "warmup"),
+          comment="from sweep_main.csv N=47000 row")
+    m.add("SysIters",   _proto(sys_proto_row,  "iters"))
+    m.add("PeftWarmup", _proto(peft_proto_row, "warmup"),
+          comment="from peft_grouped_sxm80.csv N=1000 B=32 row")
+    m.add("PeftIters",  _proto(peft_proto_row, "iters"))
+
+    m.section("Headline aliases (abstract/intro/conclusion)", "")
+    m.add("HeadlineCapacity",     num_comma(cap_r8))
+    m.add("HeadlineQps",          fmt_int(n_main_rows[47000]["throughput_samples_sec"]))
+    m.add("HeadlinePNinetyNine",  fmt_int(n_main_rows[47000]["p99_ms"]))
+    m.add("HeadlineBatch",        32)
+    m.add("HeadlineRank",         8)
+    m.add("HeadlineDtype",        HEADLINE_DTYPE)
+    m.add("HeadlineGPU",          env.get("gpu_name", ""))
+    m.add("EnvTorchVersion",      env.get("torch_version", ""))
+    m.add("EnvCudaVersion",       env.get("cuda_version", ""))
+    m.add("EnvTransformersVersion", env.get("transformers_version", ""))
+    m.add("EnvPeftVersion",       env.get("peft_version", ""))
+    m.add("HeadlineSpeedupLow",   min(speedups_grouped))
+    m.add("HeadlineSpeedupHigh",  max(speedups_grouped))
+
+    # =======================================================================
+    # Write outputs
+    # =======================================================================
+    (OUT / "numbers.tex").write_text(m.render())
+    (OUT / "table_main.tex").write_text(
+        render_table_main(sweep_main, sweep_ranks))
+    (OUT / "table_baselines.tex").write_text(
+        render_table_baselines(peft_grouped, peft_homog, sysname_ref))
+    (OUT / "table_accuracy.tex").write_text(render_table_accuracy(
+        setfit, MPNET_HIDDEN_SIZE, MPNET_NUM_LAYERS,
+        MPNET_TARGET_MODULES, MPNET_VANILLA_TRAINABLE))
+
+    # Stdout summary
+    storage_reduction_x = round(
+        BGE_NUM_PARAMS * FP16_BYTES / lora_bytes(8)
+    )
+    print_summary(m._defined, sweep_main, peft_grouped, sysname_ref,
+                  fwd, setfit, env, storage_reduction_x)
+
+
+# ===========================================================================
+# Table renderers
+# ===========================================================================
+
+GEN_HEADER = (
+    "% AUTO-GENERATED by paper/build_numbers.py -- DO NOT EDIT.\n"
+    "% Regenerate with:  uv run python paper/build_numbers.py\n"
+)
+
+
+def render_table_main(sweep_main, sweep_ranks) -> str:
+    """tab:main_results body: N sweep + B sweep + r sweep, all at the same op-point."""
+    lines: list[str] = []
+    lines.append(r"\begin{tabular}{rrr rrr r r}")
+    lines.append(r"\toprule")
+    lines.append(r"$N$ & $\mathcal{B}$ & $r$ & p50 & p90 & p99 & QPS & GPU \\")
+    lines.append(r"    &     &     & (ms)& (ms)& (ms)& (s/s) & (GB) \\")
+    lines.append(r"\midrule")
+
+    def row_line(row, n, b, r):
+        return (
+            f"{num_comma(n)} & {b} & {r} & "
+            f"{fmt_f(row['p50_ms'], 1)} & "
+            f"{fmt_f(row['p90_ms'], 1)} & "
+            f"{fmt_f(row['p99_ms'], 1)} & "
+            f"{fmt_int(row['throughput_samples_sec'])} & "
+            f"{fmt_f(row['peak_gpu_mem_gb'], 2)} \\\\"
+        )
+
+    # adapter-count sweep (B=32, r=8) -- top block
+    for n in (100, 1000, 5000, 10000, 20000, 40000, 47000):
+        row = find_row(sweep_main, num_adapters=str(n),
+                       batch_size="32", lora_rank="8")
+        lines.append(row_line(row, n, 32, 8))
+    lines.append(r"\midrule")
+
+    # batch-size sweep (N=1000, r=8); skip B=32 (in top block already)
+    for b in (8, 16, 64, 128):
+        row = find_row(sweep_main, num_adapters="1000",
+                       batch_size=str(b), lora_rank="8")
+        lines.append(row_line(row, 1000, b, 8))
+    lines.append(r"\midrule")
+
+    # rank sweep (N=1000, B=32); skip r=8 (in top block already)
+    for r in (4, 16, 32):
+        row = find_row(sweep_ranks, num_adapters="1000",
+                       batch_size="32", lora_rank=str(r))
+        lines.append(row_line(row, 1000, 32, r))
+
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabular}")
+    return GEN_HEADER + "\n".join(lines) + "\n"
+
+
+def render_table_baselines(peft_grouped, peft_homog, sysname_ref) -> str:
+    """tab:baselines body: PEFT grouped, PEFT homog, LateFuse, speedups."""
+    lines: list[str] = []
+    lines.append(r"\begin{tabular}{lrrrr}")
+    lines.append(r"\toprule")
+    lines.append(r" & \multicolumn{2}{c}{$N = 100$} & \multicolumn{2}{c}{$N = 1{,}000$} \\")
+    lines.append(r"\cmidrule(lr){2-3} \cmidrule(lr){4-5}")
+    lines.append(r"System & p50 (ms) & QPS & p50 (ms) & QPS \\")
+    lines.append(r"\midrule")
+
+    BATCHES = [8, 32, 128]
+
+    def emit_block(label_fn, csv_rows, p50_dp=0):
+        for b in BATCHES:
+            n100 = find_row(csv_rows, num_adapters="100", batch_size=str(b))
+            n1k  = find_row(csv_rows, num_adapters="1000", batch_size=str(b))
+            label = label_fn(b)
+            lines.append(
+                f"{label} & "
+                f"{fmt_int(n100['p50_ms']) if p50_dp == 0 else fmt_f(n100['p50_ms'], p50_dp):>5} & "
+                f"{fmt_f(n100['throughput_samples_sec'], 1):>6} & "
+                f"{num_comma(round(float(n1k['p50_ms']))) if p50_dp == 0 else fmt_f(n1k['p50_ms'], p50_dp):>5} & "
+                f"{fmt_f(n1k['throughput_samples_sec'], 1):>5} \\\\"
+            )
+
+    emit_block(
+        lambda b: f"PEFT grouped ($\\mathcal{{B}}{{=}}{b}$)",
+        peft_grouped,
+    )
+    lines.append(r"\midrule")
+    emit_block(
+        lambda b: f"PEFT homog. ($\\mathcal{{B}}{{=}}{b}$)",
+        peft_homog,
+    )
+    lines.append(r"\midrule")
+
+    # LateFuse block (p50 with one decimal place, QPS as integer for headline)
+    for b in BATCHES:
+        n100 = find_row(sysname_ref, num_adapters="100", batch_size=str(b))
+        n1k  = find_row(sysname_ref, num_adapters="1000", batch_size=str(b))
+        bold = (b in (32, 128))
+        def fmt_qps(x):
+            v = fmt_int(x)
+            return f"\\textbf{{{v}}}" if bold else v
+        lines.append(
+            rf"\sysname{{}} ($\mathcal{{B}}{{=}}{b}$) & "
+            f"{fmt_f(n100['p50_ms'], 1)} & {fmt_qps(n100['throughput_samples_sec'])} & "
+            f"{fmt_f(n1k['p50_ms'], 1)} & {fmt_qps(n1k['throughput_samples_sec'])} \\\\"
+        )
+    lines.append(r"\midrule")
+
+    # Speedup rows (only B=32 and B=128 are in the paper)
+    def qps(rows, n, b):
+        return float(find_row(rows, num_adapters=str(n),
+                              batch_size=str(b))["throughput_samples_sec"])
+    for b in (32, 128):
+        sp100 = round(qps(sysname_ref, 100, b) / qps(peft_grouped, 100, b))
+        sp1k  = round(qps(sysname_ref, 1000, b) / qps(peft_grouped, 1000, b))
+        lines.append(
+            rf"\textbf{{Speedup}} ($\mathcal{{B}}{{=}}{b}$) & "
+            rf"\multicolumn{{2}}{{c}}{{\textbf{{{sp100}$\times$}}}} & "
+            rf"\multicolumn{{2}}{{c}}{{\textbf{{{sp1k}$\times$}}}} \\"
+        )
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabular}")
+    return GEN_HEADER + "\n".join(lines) + "\n"
+
+
+def render_table_accuracy(setfit, mpnet_hidden: int, mpnet_layers: int,
+                          mpnet_target_modules: int,
+                          mpnet_vanilla_trainable: int) -> str:
+    """tab:accuracy body: per-task SetFit vanilla vs LoRA-r8."""
+    DATASETS = [
+        ("SST-2",      "SetFit/sst2"),
+        ("SST-5",      "SetFit/sst5"),
+        ("CR",         "SetFit/CR"),
+        ("Amazon-CF",  "SetFit/amazon_counterfactual_en"),
+        ("Emotion",    "SetFit/emotion"),
+        ("EnronSpam",  "SetFit/enron_spam"),
+        ("AG News",    "SetFit/ag_news"),
+    ]
+    lines: list[str] = []
+    lines.append(r"\begin{tabular}{lrrr}")
+    lines.append(r"\toprule")
+    lines.append(r"Dataset & Vanilla & LoRA-$r$8 & $\Delta$ \\")
+    lines.append(r"\midrule")
+
+    van_sum = lora_sum = 0.0
+    for label, key in DATASETS:
+        van = float(next(r for r in setfit
+                         if r["dataset"] == key and r["method"] == "vanilla"
+                         )["accuracy"])
+        lora = float(next(r for r in setfit
+                          if r["dataset"] == key and r["method"] == "lora"
+                          )["accuracy"])
+        delta = lora - van
+        delta_str = f"$-${abs(delta):.3f}" if delta < 0 else f"{delta:.3f}"
+        lines.append(
+            f"{label:<14s} & {van:.3f} & {lora:.3f} & {delta_str} \\\\"
+        )
+        van_sum += van
+        lora_sum += lora
+
+    van_mean = van_sum / len(DATASETS)
+    lora_mean = lora_sum / len(DATASETS)
+    mean_delta = lora_mean - van_mean
+    mean_delta_str = (f"$-${abs(mean_delta):.3f}"
+                      if mean_delta < 0 else f"{mean_delta:.3f}")
+    lines.append(r"\midrule")
+    lines.append(
+        rf"\textbf{{Mean}}  & \textbf{{{van_mean:.3f}}} & "
+        rf"\textbf{{{lora_mean:.3f}}} & {mean_delta_str} \\"
+    )
+
+    # Trainable-param footer row (sourced from model_metadata.csv)
+    mpnet_lora_params = (2 * mpnet_target_modules * mpnet_layers
+                         * mpnet_hidden * 8)
+    reduction = round(mpnet_vanilla_trainable / mpnet_lora_params)
+    van_M = round(mpnet_vanilla_trainable / 1e6)
+    lora_K = round(mpnet_lora_params / 1000)
+    lines.append(
+        f"Trainable params & {van_M}M & {lora_K}K & "
+        rf"{reduction}$\times$ smaller \\"
+    )
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabular}")
+    return GEN_HEADER + "\n".join(lines) + "\n"
+
+
+# ===========================================================================
+# Stdout summary
+# ===========================================================================
+
+def print_summary(macros_defined, sweep_main, peft_grouped, sysname_ref,
+                  fwd, setfit, env, storage_reduction) -> None:
+    print(f"Wrote {len(macros_defined)} macros to paper/numbers.tex")
+    print( "Wrote tabular bodies to paper/table_main.tex, "
+          "paper/table_baselines.tex, paper/table_accuracy.tex")
+    print()
+
+    print("== ENVIRONMENT (from env_metadata.csv) ==")
+    for k in ("gpu_name", "torch_version", "cuda_version",
+              "transformers_version", "peft_version", "captured_at_utc"):
+        if k in env:
+            print(f"  {k}: {env[k]}")
+    print()
+
+    print("== HEADLINE NUMBERS (re-derived this run) ==")
+    n47 = find_row(sweep_main, num_adapters="47000",
+                   batch_size="32", lora_rank="8")
+    print(f"  N=47000 B=32 r=8: p50={n47['p50_ms']} ms  "
+          f"p99={n47['p99_ms']} ms  QPS={n47['throughput_samples_sec']}  "
+          f"GPU={n47['peak_gpu_mem_gb']} GB")
+    qps_sys_32_1k = float(find_row(sysname_ref, num_adapters="1000",
+                                   batch_size="32")["throughput_samples_sec"])
+    qps_peft_32_1k = float(find_row(peft_grouped, num_adapters="1000",
+                                    batch_size="32")["throughput_samples_sec"])
+    print(f"  Speedup at N=1000 B=32 (sys/peft-grouped): "
+          f"{qps_sys_32_1k / qps_peft_32_1k:.1f}x")
+    print(f"  LoRA self-CUDA share: "
+          f"{fwd['bmm_isolation']['lora_bmm_self_share_pct']:.2f}%")
+    print(f"  LoRA wall-clock share (ablation): "
+          f"{fwd['ablation']['lora_cost_share_pct']:.2f}%")
+    print()
+
+    print("== ITEMS NOT CAPTURED IN CURRENT CSVS ==")
+    print("  LateFuse cold-load wall time (column adapter_load_total_s):")
+    print("    src/lora_serving/benchmark/run.py is instrumented; the column")
+    print("    will appear once benchmarks/run_sxm80.sh is re-run. Until then,")
+    print("    \\ColdStartSpeedupNOneK and \\LateFuseColdLoadSecNOneK are TODO.")
+    print()
+
+    print("== KNOWN DRIFT BETWEEN PAPER PROSE AND DATA ==")
+    print("  - paper 'headline' QPS = 810; computed = "
+          f"{round(float(n47['throughput_samples_sec']))} (rounded)")
+    print("  - paper 'headline' p99 = 41 ms; computed = "
+          f"{round(float(n47['p99_ms']))} (rounded)")
+    print(f"  - paper 'storage reduction' = 700x; computed = {storage_reduction}x")
+    print("  - paper 'LoRA retains 97% of vanilla'; computed = "
+          f"{100 * sum(float(r['accuracy']) for r in setfit if r['method']=='lora') / sum(float(r['accuracy']) for r in setfit if r['method']=='vanilla'):.1f}%")
+    print("  - paper 'mean drop 2.2 pp'; computed = "
+          f"{(sum(float(r['accuracy']) for r in setfit if r['method']=='vanilla') - sum(float(r['accuracy']) for r in setfit if r['method']=='lora')) / 7 * 100:.2f} pp")
+
+
+if __name__ == "__main__":
+    build()

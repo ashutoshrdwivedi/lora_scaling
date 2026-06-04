@@ -1,0 +1,2 @@
+gpu_name,gpu_total_mem_gb,torch_version,cuda_version,transformers_version,peft_version,captured_at_utc
+NVIDIA A100-SXM4-80GB,85.1,2.4.1+cu124,12.4,4.46.3,0.19.1,2026-06-03T13:07:52.126316Z
