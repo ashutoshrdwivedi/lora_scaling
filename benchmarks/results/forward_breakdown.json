@@ -22,51 +22,51 @@
   },
   "profiler_categories": {
     "other": {
-      "cuda_ms_total": 49.67256899999975,
-      "share_pct": 19.868250671925985,
+      "cuda_ms_total": 49.524904000001065,
+      "share_pct": 19.66217479558432,
       "calls": 3870
     },
     "elementwise": {
-      "cuda_ms_total": 14.508867000001068,
-      "share_pct": 5.803319866980454,
+      "cuda_ms_total": 14.49084699999942,
+      "share_pct": 5.753096798532939,
       "calls": 740
     },
     "layernorm_residual": {
-      "cuda_ms_total": 25.831509999998378,
-      "share_pct": 10.332199969651926,
+      "cuda_ms_total": 25.8129659999995,
+      "share_pct": 10.24815816875595,
       "calls": 1240
     },
     "base_linear": {
-      "cuda_ms_total": 125.44475099999791,
-      "share_pct": 50.175938320108,
+      "cuda_ms_total": 127.4596479999988,
+      "share_pct": 50.603508052424935,
       "calls": 1450
     },
     "lora_bmm": {
-      "cuda_ms_total": 24.7201339999982,
-      "share_pct": 9.887666952670942,
+      "cuda_ms_total": 24.748555000001062,
+      "share_pct": 9.82557006770054,
       "calls": 1450
     },
     "attention": {
-      "cuda_ms_total": 9.831945000000182,
-      "share_pct": 3.9326242186626974,
+      "cuda_ms_total": 9.84215500000088,
+      "share_pct": 3.9074921170013233,
       "calls": 240
     }
   },
-  "profiler_total_ms": 250.00977599999547,
+  "profiler_total_ms": 251.8790750000007,
   "bmm_isolation": {
-    "bmm_self_ms_lora_on": 24.7201339999982,
-    "bmm_self_ms_lora_off": 12.293658999999893,
-    "lora_bmm_self_ms": 12.426474999998307,
-    "lora_bmm_self_share_pct": 4.970395637648398,
-    "total_self_ms_lora_on": 250.00977599999547,
-    "total_self_ms_lora_off": 230.46206400000173
+    "bmm_self_ms_lora_on": 24.748555000001062,
+    "bmm_self_ms_lora_off": 12.314806999999924,
+    "lora_bmm_self_ms": 12.433748000001138,
+    "lora_bmm_self_share_pct": 4.936395768485771,
+    "total_self_ms_lora_on": 251.8790750000007,
+    "total_self_ms_lora_off": 232.30594799999986
   },
   "ablation": {
-    "lora_on_mean_ms": 25.968588466644288,
-    "lora_on_p50_ms": 25.926448822021484,
-    "lora_off_mean_ms": 23.80922981262207,
-    "lora_off_p50_ms": 23.779008865356445,
-    "lora_cost_mean_ms": 2.159358654022217,
-    "lora_cost_share_pct": 8.315271570481526
+    "lora_on_mean_ms": 26.398426246643066,
+    "lora_on_p50_ms": 26.334176063537598,
+    "lora_off_mean_ms": 24.030947246551513,
+    "lora_off_p50_ms": 23.949647903442383,
+    "lora_cost_mean_ms": 2.367479000091553,
+    "lora_cost_share_pct": 8.968258099827489
   }
 }

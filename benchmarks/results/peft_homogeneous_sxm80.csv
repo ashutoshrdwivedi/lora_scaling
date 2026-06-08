@@ -1,7 +1,7 @@
-harness,model,dtype,num_adapters,batch_size,lora_rank,seq_len,p50_ms,p90_ms,p95_ms,p99_ms,mean_ms,throughput_samples_sec,peak_gpu_mem_gb,add_adapter_total_s
-peft_homogeneous,BAAI/bge-m3,float16,100,8,8,128,77.39,78.0,78.16,79.13,77.52,103.2,1.326,14.36
-peft_homogeneous,BAAI/bge-m3,float16,100,32,8,128,81.99,82.34,82.43,82.46,81.98,390.3,1.395,14.36
-peft_homogeneous,BAAI/bge-m3,float16,100,128,8,128,125.02,126.17,127.59,133.32,125.62,1019.0,1.672,14.36
-peft_homogeneous,BAAI/bge-m3,float16,1000,8,8,128,668.16,681.38,683.7,684.77,670.47,11.9,2.741,1242.17
-peft_homogeneous,BAAI/bge-m3,float16,1000,32,8,128,669.91,689.24,691.71,692.86,673.25,47.5,2.81,1242.17
-peft_homogeneous,BAAI/bge-m3,float16,1000,128,8,128,724.12,739.53,740.84,755.26,725.85,176.3,3.088,1242.17
+harness,model,dtype,num_adapters,batch_size,lora_rank,seq_len,p50_ms,p90_ms,p95_ms,p99_ms,mean_ms,throughput_samples_sec,peak_gpu_mem_gb,add_adapter_total_s,warmup,iters
+peft_homogeneous,BAAI/bge-m3,float16,100,8,8,128,77.21,79.45,81.98,84.97,77.71,103.0,1.326,14.41,10,50
+peft_homogeneous,BAAI/bge-m3,float16,100,32,8,128,81.59,83.19,87.17,103.91,82.73,386.8,1.395,14.41,10,50
+peft_homogeneous,BAAI/bge-m3,float16,100,128,8,128,127.48,130.84,135.26,140.44,128.06,999.5,1.672,14.41,10,50
+peft_homogeneous,BAAI/bge-m3,float16,1000,8,8,128,655.77,672.66,678.41,679.79,658.9,12.1,2.741,1173.43,10,50
+peft_homogeneous,BAAI/bge-m3,float16,1000,32,8,128,657.56,669.82,674.29,694.28,660.09,48.5,2.81,1173.43,10,50
+peft_homogeneous,BAAI/bge-m3,float16,1000,128,8,128,708.29,712.17,722.74,738.53,708.85,180.6,3.088,1173.43,10,50

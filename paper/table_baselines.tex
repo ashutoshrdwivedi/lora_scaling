@@ -6,19 +6,19 @@
 \cmidrule(lr){2-3} \cmidrule(lr){4-5}
 System & p50 (ms) & QPS & p50 (ms) & QPS \\
 \midrule
-PEFT grouped ($\mathcal{B}{=}8$) &   624 &   12.9 & 5{,}331 &   1.5 \\
-PEFT grouped ($\mathcal{B}{=}32$) &  2085 &   15.1 & 20{,}865 &   1.5 \\
-PEFT grouped ($\mathcal{B}{=}128$) &  5674 &   22.4 & 81{,}025 &   1.6 \\
+PEFT grouped ($\mathcal{B}{=}8$) &   605 &   13.6 & 5{,}287 &   1.5 \\
+PEFT grouped ($\mathcal{B}{=}32$) &  2107 &   15.2 & 21{,}225 &   1.5 \\
+PEFT grouped ($\mathcal{B}{=}128$) &  5550 &   23.1 & 79{,}979 &   1.6 \\
 \midrule
-PEFT homog. ($\mathcal{B}{=}8$) &    77 &  103.2 &   668 &  11.9 \\
-PEFT homog. ($\mathcal{B}{=}32$) &    82 &  390.3 &   670 &  47.5 \\
-PEFT homog. ($\mathcal{B}{=}128$) &   125 & 1019.0 &   724 & 176.3 \\
+PEFT homog. ($\mathcal{B}{=}8$) &    77 &  103.0 &   656 &  12.1 \\
+PEFT homog. ($\mathcal{B}{=}32$) &    82 &  386.8 &   658 &  48.5 \\
+PEFT homog. ($\mathcal{B}{=}128$) &   127 &  999.5 &   708 & 180.6 \\
 \midrule
-\sysname{} ($\mathcal{B}{=}8$) & 20.6 & 384 & 20.7 & 368 \\
-\sysname{} ($\mathcal{B}{=}32$) & 38.5 & \textbf{810} & 38.7 & \textbf{792} \\
-\sysname{} ($\mathcal{B}{=}128$) & 143.2 & \textbf{828} & 144.1 & \textbf{825} \\
+\sysname{} ($\mathcal{B}{=}8$) & 21.0 & 378 & 21.0 & 368 \\
+\sysname{} ($\mathcal{B}{=}32$) & 39.2 & \textbf{791} & 39.3 & \textbf{776} \\
+\sysname{} ($\mathcal{B}{=}128$) & 144.8 & \textbf{825} & 146.0 & \textbf{778} \\
 \midrule
-\textbf{Speedup} ($\mathcal{B}{=}32$) & \multicolumn{2}{c}{\textbf{54$\times$}} & \multicolumn{2}{c}{\textbf{528$\times$}} \\
-\textbf{Speedup} ($\mathcal{B}{=}128$) & \multicolumn{2}{c}{\textbf{37$\times$}} & \multicolumn{2}{c}{\textbf{516$\times$}} \\
+\textbf{Speedup} ($\mathcal{B}{=}32$) & \multicolumn{2}{c}{\textbf{52$\times$}} & \multicolumn{2}{c}{\textbf{517$\times$}} \\
+\textbf{Speedup} ($\mathcal{B}{=}128$) & \multicolumn{2}{c}{\textbf{36$\times$}} & \multicolumn{2}{c}{\textbf{486$\times$}} \\
 \bottomrule
 \end{tabular}
