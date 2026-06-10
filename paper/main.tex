@@ -68,32 +68,35 @@
 
 % =============================================================================
 \begin{abstract}
-Serving a personalized encoder feature---classification, retrieval, or
-ranking---to thousands of customers is a multi-tenant problem that
-released LoRA serving runtimes do not address: they target autoregressive
-decoder workloads, and the standard HuggingFace PEFT adapter-swap
-fallback collapses throughput as the tenant pool grows. We present
-\sysname, a serving system that batches arbitrary mixed-tenant encoder
-requests in one shared forward pass without custom CUDA kernels.
-\sysname{} fuses adapters in \emph{activation space} rather than
-parameter space: the shared base projection $W_0 x$ runs once over the
-batch, while per-sample deltas $B_i A_i x$ are applied as batched matrix
-multiplications and fused additively, so a mixed-adapter batch completes
-in one pass regardless of how many distinct adapters or per-tenant heads
-it carries.
-
-On a single \HeadlineGPU{} with \texttt{BAAI/bge-m3},
-\sysname{} sustains \textbf{\HeadlineQps{}~samples/sec across
-\HeadlineCapacity{} pre-loaded adapters at \HeadlinePNinetyNine{}~ms p99},
-and p50 latency is statistically unchanged across the full
-pool---empirically $\mathcal{O}(1)$ in adapter count up to the per-GPU
-memory ceiling. Against the PEFT swap baseline on identical hardware,
-\sysname{} is \textbf{\HeadlineSpeedupLow--\HeadlineSpeedupHigh$\times$
-faster}---a gap that widens with the tenant pool because PEFT's
-per-request \texttt{set\_adapter} scales $\mathcal{O}(N)$---and loads new
-adapters \textbf{$>$\ColdStartSpeedupMin{}$\times$ faster}. Because it is
-standard PyTorch, \sysname{} deploys on managed GPU platforms
-(Databricks, SageMaker, Modal) with no custom-CUDA build step.
+Multi-tenant NLP services personalize a shared encoder---for
+classification, retrieval, or ranking---by giving each customer a
+LoRA adapter: a megabytes-per-tenant update that retains
+\SetfitRetainsPct\% of full fine-tuning accuracy. Serving thousands
+of these adapters concurrently, however, remains unsolved: existing
+multi-tenant LoRA runtimes target autoregressive decoders, and the
+standard fallback, HuggingFace PEFT with per-request adapter
+swapping, degrades as the tenant pool grows because swap cost scales
+linearly with the number of registered adapters. We present \sysname,
+a serving system that runs a mixed-tenant batch of encoder requests
+in a single shared forward pass, with no custom CUDA kernels.
+\sysname{} fuses adapters late, in \emph{activation space} rather
+than parameter space: the shared base projection runs once over the
+batch, while per-sample low-rank deltas and per-tenant classification
+heads are applied as batched matrix multiplications---tenant weights
+are never merged into the shared base, ruling out cross-tenant
+contamination by construction. On a single \HeadlineGPU{} serving
+\texttt{BAAI/bge-m3}, \sysname{} sustains \HeadlineQps{}~samples/s
+across \HeadlineCapacity{} resident adapters at
+\HeadlinePNinetyNine{}~ms p99, with p50 latency flat from 100
+adapters to the per-GPU memory ceiling. On identical hardware,
+\sysname{} outperforms the PEFT baseline by
+\HeadlineSpeedupLow--\HeadlineSpeedupHigh$\times$ on mixed-tenant
+traffic and by
+\SpeedupHomogNOneKBOneTwentyEight--\SpeedupHomogNOneKBEight$\times$
+even in PEFT's best case of single-tenant batches, and registers new
+adapters over \ColdStartSpeedupMin{}$\times$ faster. Because the
+system is pure PyTorch, it deploys on managed GPU platforms with no
+custom-kernel build step.
 \end{abstract}
 
 % =============================================================================
