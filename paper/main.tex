@@ -787,7 +787,9 @@ to be evaluated.
 \paragraph{Evaluation scope.}
 Accuracy is averaged over 10 random seeds (Table~\ref{tab:accuracy}); the
 remaining per-seed variance is non-trivial on the smaller few-shot tasks. The
-serving measurements report a single deterministic run per configuration.
+\sysname{} serving sweeps report the mean over \SweepNumSeeds{} seeded runs
+per configuration; the PEFT baselines are single runs, adequate for the
+order-of-magnitude gaps they support (\S\ref{sec:results_baselines}).
 
 % =============================================================================
 \section*{Ethics Statement}
