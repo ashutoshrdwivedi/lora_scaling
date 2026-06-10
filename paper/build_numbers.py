@@ -606,10 +606,33 @@ def build() -> None:
               round(peft_add_s / sys_load_s),
               comment=f"PEFT add_adapter ({peft_add_s:.1f}s) / "
                       f"LateFuse preload ({sys_load_s:.2f}s)")
+
+        # Min cold-start speedup across every (N) where both LateFuse and PEFT
+        # have a paired measurement at B=32 r=8. add_adapter_total_s is
+        # B-independent, so picking B=32 just selects the canonical row.
+        cold_ratios: list[tuple[int, float]] = []
+        for n in sorted({int(r["num_adapters"]) for r in peft_grouped}):
+            try:
+                lf_row = find_row(sweep_main, num_adapters=str(n),
+                                  batch_size="32", lora_rank="8")
+                pf_row = find_row(peft_grouped, num_adapters=str(n),
+                                  batch_size="32", lora_rank="8")
+            except LookupError:
+                continue
+            lf_s = float(lf_row.get("adapter_load_total_s") or 0)
+            pf_s = float(pf_row.get("add_adapter_total_s") or 0)
+            if lf_s > 0 and pf_s > 0:
+                cold_ratios.append((n, pf_s / lf_s))
+        if cold_ratios:
+            min_n, min_ratio = min(cold_ratios, key=lambda x: x[1])
+            m.add("ColdStartSpeedupMin", round(min_ratio),
+                  comment=f"min across {[n for n,_ in cold_ratios]}; min at N={min_n}")
     else:
         m.add("LateFuseColdLoadSecNOneK", "TODO",
               comment="re-run benchmarks/run_sxm80.sh after run.py instrumentation")
         m.add("ColdStartSpeedupNOneK", "TODO",
+              comment="needs adapter_load_total_s column in sweep_main.csv")
+        m.add("ColdStartSpeedupMin", "TODO",
               comment="needs adapter_load_total_s column in sweep_main.csv")
 
     # Finding 7 ratios: PEFT homog QPS collapse N=100 -> N=1000
