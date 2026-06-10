@@ -3,7 +3,7 @@
 Measures latency / throughput for a mixed-tenant batch served via HuggingFace PEFT.
 This is the worst-case-but-realistic baseline that our multi-tenant impl is compared against.
 
-Four modes:
+Five modes:
   - sequential:  each sample uses set_adapter() + forward(B=1). Worst case (no batching).
   - grouped:     bucket a mixed (uniformly sampled) batch by adapter_id, one batched
                  forward per bucket. With N >> B a batch is nearly all-distinct, so this
@@ -12,6 +12,12 @@ Four modes:
                  pays exactly one set_adapter() + one batched forward per batch. This is
                  PEFT's friendliest batching (single-tenant batches); the swap cost is
                  O(N) in attached adapters, so it still bites at large N.
+  - mixed:       PEFT's native mixed-batch API: one forward over the whole mixed batch
+                 with adapter_names= listing each sample's adapter. No set_adapter();
+                 PEFT shares the base path and loops over the distinct adapters inside
+                 every LoRA layer, and validates adapter_names against all registered
+                 adapters on every call (O(N*layers) scan, uncached as of peft 0.19.1).
+                 Cannot route per-tenant heads (huggingface/peft#1960).
   - base:        no adapters; one batched forward of the bare base model. Single-tenant
                  throughput ceiling (N-independent), the upper bound any multi-tenant
                  serving system can aspire to. Run once per batch size (use --adapters 1).
@@ -115,6 +121,19 @@ def run_base(model, adapter_ids: list[str], inputs: tuple[torch.Tensor, torch.Te
     return start.elapsed_time(end)
 
 
+def run_mixed(model, adapter_ids: list[str], inputs: tuple[torch.Tensor, torch.Tensor], device: torch.device) -> float:
+    """One forward over the whole mixed batch via PEFT's adapter_names API. Returns total ms."""
+    input_ids, attention_mask = inputs
+    start = torch.cuda.Event(enable_timing=True)
+    end = torch.cuda.Event(enable_timing=True)
+    start.record()
+    with torch.no_grad():
+        model(input_ids, attention_mask=attention_mask, adapter_names=adapter_ids)
+    end.record()
+    torch.cuda.synchronize(device)
+    return start.elapsed_time(end)
+
+
 def run_grouped(model, adapter_ids: list[str], inputs: tuple[torch.Tensor, torch.Tensor], device: torch.device) -> float:
     """Bucket samples by adapter_id, one batched forward per bucket. Returns total ms."""
     input_ids, attention_mask = inputs
@@ -162,7 +181,8 @@ def build_for_config(
     adapter_ids = [f"adapter_{i}" for i in range(num_adapters)]
     # homogeneous reuses run_grouped: a single-adapter batch forms one bucket, so it
     # naturally becomes one set_adapter() + one batched forward.
-    runner = run_sequential if mode == "sequential" else run_grouped
+    runners = {"sequential": run_sequential, "mixed": run_mixed}
+    runner = runners.get(mode, run_grouped)
     return model, adapter_ids, runner, add_time_s
 
 
@@ -233,7 +253,7 @@ def main():
     parser.add_argument("--seq-len", type=int, default=128)
     parser.add_argument("--warmup", type=int, default=20)
     parser.add_argument("--iters", type=int, default=100)
-    parser.add_argument("--mode", choices=["sequential", "grouped", "homogeneous", "base"], default="sequential")
+    parser.add_argument("--mode", choices=["sequential", "grouped", "homogeneous", "mixed", "base"], default="sequential")
     parser.add_argument("--out", default="peft_baseline.csv")
     args = parser.parse_args()
 

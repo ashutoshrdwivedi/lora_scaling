@@ -71,12 +71,12 @@
 Multi-tenant NLP services personalize a shared encoder---for
 classification, retrieval, or ranking---by giving each customer a
 LoRA adapter: a megabytes-per-tenant update that retains
-\SetfitRetainsPct\% of full fine-tuning accuracy. Serving thousands
-of these adapters concurrently, however, remains unsolved: existing
-multi-tenant LoRA runtimes target autoregressive decoders, and the
-standard fallback, HuggingFace PEFT with per-request adapter
-swapping, degrades as the tenant pool grows because swap cost scales
-linearly with the number of registered adapters. We present \sysname,
+\SetfitRetainsPct\% of full fine-tuning accuracy. Serving these
+adapters efficiently, however, is unsolved: multi-tenant LoRA
+runtimes target autoregressive decoders, not encoders, so deployments
+fall back to per-request adapter swapping with HuggingFace PEFT,
+whose swap cost grows linearly with the number of registered
+adapters. We present \sysname,
 a serving system that runs a mixed-tenant batch of encoder requests
 in a single shared forward pass, with no custom CUDA kernels.
 \sysname{} fuses adapters late, in \emph{activation space} rather
@@ -125,9 +125,11 @@ and dominated by base-model projections, so the LoRA path consumes only
 \ProfLoraBmmIsolatedPct{}\% of forward GPU time and any custom-kernel
 replacement is bounded to single-digit speedup
 (\S\ref{sec:results_custom_kernels}, Finding~6). This makes standard batched matrix multiplication, rather
-than a custom kernel, the right primitive. Heterogeneous-adapter
-batching for encoder models is, to our knowledge, not yet supported by
-released runtimes (\S\ref{sec:relwork}).
+than a custom kernel, the right primitive. Released runtimes do not
+fill this gap: vLLM has no runtime LoRA path for encoder models at
+all, TEI serves encoders without adapters, and PEFT's mixed-batch
+support sub-batches by adapter and cannot route per-tenant heads
+(\S\ref{sec:relwork}).
 
 We present \sysname, a serving system that fills this gap.
 Its design turns on \emph{where} the adapter is applied: merging
@@ -459,13 +461,24 @@ both the BERT and XLM-RoBERTa position-id conventions.
 
 \paragraph{Baselines.}
 We compare against \texttt{HuggingFace PEFT}~\cite{mangrulkar2022peft} in an
-adapter-grouped configuration (\S\ref{sec:results_baselines}).
-\texttt{vLLM} \cite{kwon2023vllm} supports single-adapter encoder LoRA as of
-v0.8.3 but does not yet support multi-adapter classification serving
-(in-progress PR~\#24596, unmerged as of submission);
-\texttt{LoRAX} \cite{predibase2023lorax} is likewise decoder-oriented.
+adapter-grouped configuration (\S\ref{sec:results_baselines}). PEFT also
+offers a native mixed-batch API (\texttt{adapter\_names}) that shares the
+base forward but loops over the distinct adapters in the batch at every
+LoRA layer; it does not route per-request classification
+heads correctly,\footnote{\url{https://github.com/huggingface/peft/issues/1960}}
+which our workload requires.
+\texttt{vLLM} \cite{kwon2023vllm} has no runtime LoRA path for encoder
+models: v0.22.1 rejects \texttt{enable\_lora} for \texttt{BAAI/bge-m3} at
+initialization (``\texttt{RobertaEmbeddingModel does not support LoRA
+yet}''), and multi-adapter classification serving remains an unmerged
+draft (PR~\#24596, last active May~2026);
+\texttt{LoRAX} \cite{predibase2023lorax} is decoder-oriented.
 We therefore omit these from quantitative comparison; see
 \S\ref{sec:relwork} for a detailed discussion.
+All PEFT configurations time the bare encoder forward with no
+classification head, whereas \sysname{} latencies include batch
+assembly and the per-tenant head; the comparison is therefore
+conservative in PEFT's favor.
 
 \subsection{Latency and Throughput Scaling}
 \label{sec:results_latency}
@@ -614,7 +627,9 @@ $N$-adapter registration cost, which we replace with a constant-time
 batches, the friendliest case for PEFT) configurations (\texttt{BAAI/bge-m3},
 \HeadlineGPU, rank=\HeadlineRank; setup in \S\ref{sec:setup}). Grouped and \sysname{}
 draw uniform mixed-tenant batches; the $N$-independent no-adapter base ceiling
-is reported in-text. Speedup is \sysname{} over PEFT grouped.}
+is reported in-text. PEFT rows time the bare encoder (no classification
+head); \sysname{} rows include batch assembly and per-tenant heads.
+Speedup is \sysname{} over PEFT grouped.}
 \label{tab:baselines}
 \input{table_baselines.tex}
 \end{table}
@@ -681,16 +696,27 @@ LoRA id for per-group matrix-vector products) and S-LoRA \cite{sheng2024slora}
 both scope their designs to the autoregressive prefill$\to$decode pipeline and
 never expose the encoder operations---bidirectional attention, pooling,
 classification heads---that classification workloads require. vLLM
-\cite{kwon2023vllm} adopts these kernels as its multi-LoRA backend, but
-multi-adapter classification serving---the scope we target---was still unmerged
-at submission (PR~\#24596). LoRAX \cite{predibase2023lorax}, CaraServe \cite{li2024caraserve}, and dLoRA
+\cite{kwon2023vllm} adopts these kernels as its multi-LoRA backend, but its
+encoder model classes do not implement them---encoder LoRA is rejected at
+initialization as of v0.22.1 (\S\ref{sec:setup})---and multi-adapter
+classification serving remains an unmerged draft (PR~\#24596). LoRAX \cite{predibase2023lorax}, CaraServe \cite{li2024caraserve}, and dLoRA
 \cite{wu2024dlora} likewise optimize decoder-only serving and do not address
 encoder classifiers, variable-size classification heads, or deployment without
 custom CUDA compilation.
+fLoRA \cite{wen2024flora} batches per-example adapters in the
+bandwidth-bound decode regime, where gathering per-sample $A_i, B_i$
+matrices for a batched matrix multiplication is itself costly; it
+therefore replaces LoRA's additive update with a multiplicative one
+served by element-wise scaling---a parameterization that cannot serve
+existing LoRA checkpoints. In the compute-bound encoder regime the
+additive path costs only \ProfLoraBmmIsolatedPct\% of forward GPU time
+(Finding~6), so \sysname{} serves stock adapters unchanged.
 
 \paragraph{Encoder and multi-adapter serving.}
 HuggingFace TEI \cite{huggingface2023tei} serves encoder/embedding models at
-high throughput via Flash Attention and cuBLASLt but has no adapter support.
+high throughput via Flash Attention and cuBLASLt but has no adapter support
+(an open feature request as of
+June~2026).\footnote{\url{https://github.com/huggingface/text-embeddings-inference/issues/788}}
 PetS \cite{zhou2022pets}, the closest prior system, targets multi-adapter
 encoder serving for Adapter \cite{houlsby2019adapter}, BitFit
 \cite{benzaken2022bitfit}, and MaskBERT \cite{zhao2020masking} on
