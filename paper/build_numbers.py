@@ -114,6 +114,50 @@ def find_row(rows: list[dict[str, str]], **filters: Any) -> dict[str, str]:
     return out[0]
 
 
+SWEEP_GROUP_KEYS = ("model", "dtype", "num_adapters", "batch_size",
+                    "lora_rank", "seq_len")
+
+
+def aggregate_seeds(rows: list[dict[str, str]],
+                    group_keys: tuple[str, ...] = SWEEP_GROUP_KEYS,
+                    ) -> list[dict[str, str]]:
+    """Collapse multi-seed sweep CSVs to one row per configuration.
+
+    run.py --seeds writes one row per (config, seed). Group by config, replace
+    each numeric metric with its mean over seeds, and add '<col>_std' (sample
+    s.d.; 0.0 when n=1) plus 'n_seeds'. Single-run CSVs pass through with
+    values unchanged, so downstream find_row lookups work for both formats.
+    """
+    groups: dict[tuple, list[dict[str, str]]] = {}
+    for r in rows:
+        groups.setdefault(tuple(r[k] for k in group_keys), []).append(r)
+    # warmup/iters are protocol constants, not measurements -- pass through
+    skip = set(group_keys) | {"seed", "warmup", "iters"}
+    out: list[dict[str, str]] = []
+    for grp in groups.values():
+        agg = {k: v for k, v in grp[0].items() if k != "seed"}
+        agg["n_seeds"] = str(len(grp))
+        for col in agg.copy():
+            if col in skip or col == "n_seeds":
+                continue
+            try:
+                vals = [float(g[col]) for g in grp]
+            except (ValueError, KeyError):
+                continue
+            agg[col] = repr(statistics.fmean(vals))
+            agg[col + "_std"] = repr(
+                statistics.stdev(vals) if len(vals) > 1 else 0.0)
+        out.append(agg)
+    return out
+
+
+def std_or_todo(row: dict[str, str], col: str, dp: int = 1) -> str:
+    """s.d.-over-seeds macro value; 'TODO' until the multi-seed re-run lands."""
+    if int(row.get("n_seeds", "1")) > 1:
+        return fmt_f(row[col + "_std"], dp)
+    return "TODO"
+
+
 def _fmt_lr(lr: float) -> str:
     """0.00002 -> '2\\times10^{-5}' (LaTeX math, used inside the table caption)."""
     mant, exp = f"{lr:.0e}".split("e")
@@ -300,12 +344,17 @@ def build() -> None:
     MPNET_VANILLA_TRAINABLE = arch_int(arch[MPNET_NAME_HUB], MPNET_NAME_HUB, "total_params")
 
     # ---- Load benchmark CSVs / JSON ----------------------------------------
-    sweep_main     = load_csv(RESULTS / "sweep_main.csv")
-    sweep_ranks    = load_csv(RESULTS / "sweep_ranks.csv")
-    sweep_capacity = load_csv(RESULTS / "sweep_capacity.csv")
+    sweep_main     = aggregate_seeds(load_csv(RESULTS / "sweep_main.csv"))
+    sweep_ranks    = aggregate_seeds(load_csv(RESULTS / "sweep_ranks.csv"))
+    sweep_capacity = aggregate_seeds(load_csv(RESULTS / "sweep_capacity.csv"))
     peft_grouped   = load_csv(RESULTS / "peft_grouped_sxm80.csv")
     peft_homog     = load_csv(RESULTS / "peft_homogeneous_sxm80.csv")
     peft_base      = load_csv(RESULTS / "peft_base_sxm80.csv")
+    # PEFT native mixed-batch (adapter_names) baseline: optional until the
+    # first run_sxm80.sh re-run produces it (run.py mode added 2026-06-10).
+    peft_mixed_path = RESULTS / "peft_mixed_sxm80.csv"
+    peft_mixed     = (load_csv(peft_mixed_path)
+                      if peft_mixed_path.exists() else None)
     sysname_ref    = load_csv(RESULTS / "sysname_sxm80_ref.csv")
     fwd            = json.loads((RESULTS / "forward_breakdown.json").read_text())
     setfit_raw     = load_csv(QUALITY / "setfit_mpnet_multiseed.csv")
@@ -398,6 +447,8 @@ def build() -> None:
                        num_adapters=str(n), batch_size="32", lora_rank="8")
         n_main_rows[n] = row
         m.add(f"PFiftyAtN{tag}",        fmt_f(row["p50_ms"], 1))
+        m.add(f"PFiftyAtN{tag}Std",     std_or_todo(row, "p50_ms"),
+              comment="s.d. over seeds; TODO until multi-seed re-run")
         m.add(f"PNinetyAtN{tag}",       fmt_f(row["p90_ms"], 1))
         m.add(f"PNinetyNineAtN{tag}",   fmt_f(row["p99_ms"], 1))
         m.add(f"QpsAtN{tag}",           fmt_int(row["throughput_samples_sec"]))
@@ -411,6 +462,8 @@ def build() -> None:
     m.add("PFiftyDriftPctNHundredToFortySevenK",
           fmt_f((p50_hi - p50_lo) / p50_lo * 100, 1),
           comment="(p50_47k - p50_100) / p50_100 * 100")
+    m.add("SweepNumSeeds", n_main_rows[100].get("n_seeds", "1"),
+          comment="seeded repeats per config in sweep_main/sweep_ranks")
     m.add("CustomerMultiplierHundredToFortySevenK",
           round(47000 / 100), comment="= 47000 / 100")
 
@@ -470,15 +523,27 @@ def build() -> None:
     # =======================================================================
     m.section("Rank sweep (N=1000, B=32)",
               "benchmarks/results/sweep_ranks.csv")
+    r_rows: dict[int, dict[str, str]] = {}
     for r, tag in R_SUFFIX.items():
         row = find_row(sweep_ranks,
                        num_adapters="1000", batch_size="32", lora_rank=str(r))
+        r_rows[r] = row
         m.add(f"PFiftyAtR{tag}",        fmt_f(row["p50_ms"], 1))
+        m.add(f"PFiftyAtR{tag}Std",     std_or_todo(row, "p50_ms"),
+              comment="s.d. over seeds; TODO until multi-seed re-run")
         m.add(f"PNinetyAtR{tag}",       fmt_f(row["p90_ms"], 1))
         m.add(f"PNinetyNineAtR{tag}",   fmt_f(row["p99_ms"], 1))
+        m.add(f"PNinetyNineAtR{tag}Std", std_or_todo(row, "p99_ms"),
+              comment="s.d. over seeds; TODO until multi-seed re-run")
         m.add(f"QpsAtR{tag}",           fmt_int(row["throughput_samples_sec"]))
         m.add(f"GpuGBAtR{tag}",         fmt_f(row["peak_gpu_mem_gb"], 2))
         m.add(f"FwdMsAtR{tag}",         fmt_f(row["forward_p50_ms"], 1))
+
+    # Non-monotonic spread of p99 across ranks (Finding 3 tail-noise caveat)
+    p99_by_rank = [float(r_rows[r]["p99_ms"]) for r in R_SUFFIX]
+    m.add("PNinetyNineRankSpreadPct",
+          fmt_int((max(p99_by_rank) - min(p99_by_rank)) / min(p99_by_rank) * 100),
+          comment="(max - min) / min p99 over ranks, N=1000 B=32")
 
     # =======================================================================
     # 7. Forward pass breakdown (Finding 6)
@@ -538,6 +603,15 @@ def build() -> None:
         m.add(f"PeftGroupedAddAdapterSecN{N_SUFFIX[n]}",
               fmt_f(row["add_adapter_total_s"], 1))
 
+    if peft_mixed is not None:
+        m.section("PEFT mixed-batch baseline (adapter_names API)",
+                  "benchmarks/results/peft_mixed_sxm80.csv")
+        for n, b in PEFT_NB:
+            row = find_row(peft_mixed, num_adapters=str(n), batch_size=str(b))
+            suf = f"N{N_SUFFIX[n]}B{B_SUFFIX[b]}"
+            m.add(f"PeftMixedPFifty{suf}",  fmt_f(row["p50_ms"], 1))
+            m.add(f"PeftMixedQps{suf}",     fmt_f(row["throughput_samples_sec"], 1))
+
     m.section("PEFT homogeneous baseline",
               "benchmarks/results/peft_homogeneous_sxm80.csv")
     for n, b in PEFT_NB:
@@ -583,6 +657,12 @@ def build() -> None:
           comment="min over ALL measured (N,B) grouped speedups")
     m.add("SpeedupGroupedMax", max(speedups_grouped),
           comment="max over ALL measured (N,B) grouped speedups")
+
+    if peft_mixed is not None:
+        for n, b in PEFT_NB:
+            suf = f"N{N_SUFFIX[n]}B{B_SUFFIX[b]}"
+            m.add(f"SpeedupMixed{suf}",
+                  fmt_f(qps(sysname_ref, n, b) / qps(peft_mixed, n, b), 1))
 
     # Cold-start: PEFT add_adapter loop seconds vs LateFuse AdapterStore preload.
     # The LateFuse side (column 'adapter_load_total_s' in sweep_main.csv) only

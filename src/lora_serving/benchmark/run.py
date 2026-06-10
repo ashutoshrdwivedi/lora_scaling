@@ -90,9 +90,15 @@ def run_single_config(
     iters: int,
     dtype: torch.dtype,
     num_labels: int = 10,
+    seed: int | None = None,
 ) -> dict:
     """Run one benchmark configuration and return metrics (including assembly/forward split)."""
     device = torch.device("cuda:0")
+
+    if seed is not None:
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
 
     config = LoraServingConfig(
         model_name=model_name,
@@ -197,6 +203,7 @@ def run_single_config(
         "adapter_load_total_s": round(adapter_load_total_s, 2),
         "warmup": warmup,
         "iters": iters,
+        "seed": seed if seed is not None else "",
     }
 
 
@@ -225,6 +232,14 @@ def main():
     parser.add_argument("--warmup", type=int, default=50)
     parser.add_argument("--iters", type=int, default=200)
     parser.add_argument("--num-labels", type=int, default=10)
+    parser.add_argument(
+        "--seeds", nargs="+", type=int, default=None,
+        help="Repeat the full sweep once per seed (seeds RNG for batch "
+             "sampling / inputs / torch per config) and write all repeats to "
+             "one CSV with a 'seed' column, for between-run variance "
+             "estimates. Default None: single unseeded run (original "
+             "behaviour).",
+    )
     parser.add_argument("--out", default="results.csv")
     args = parser.parse_args()
 
@@ -238,40 +253,47 @@ def main():
     print(f"GPU: {gpu_name}  ({vram_gb:.1f} GB VRAM)")
     print_memory_ceiling(args.model, dtype, vram_gb)
 
+    seeds: list[int | None] = args.seeds if args.seeds else [None]
     print(f"Sweep: {len(args.adapters)} adapter counts × {len(args.batch_sizes)} batch sizes "
-          f"× {len(args.lora_ranks)} lora ranks\n")
+          f"× {len(args.lora_ranks)} lora ranks × {len(seeds)} seed(s)\n")
 
     results = []
-    total = len(args.adapters) * len(args.batch_sizes) * len(args.lora_ranks)
+    total = (len(args.adapters) * len(args.batch_sizes)
+             * len(args.lora_ranks) * len(seeds))
     done = 0
 
-    for num_adapters in args.adapters:
-        for batch_size in args.batch_sizes:
-            for lora_rank in args.lora_ranks:
-                done += 1
-                print(f"[{done}/{total}] adapters={num_adapters} batch={batch_size} rank={lora_rank}")
-                try:
-                    row = run_single_config(
-                        model_name=args.model,
-                        num_adapters=num_adapters,
-                        batch_size=batch_size,
-                        lora_rank=lora_rank,
-                        seq_len=args.seq_len,
-                        warmup=args.warmup,
-                        iters=args.iters,
-                        dtype=dtype,
-                        num_labels=args.num_labels,
-                    )
-                except torch.cuda.OutOfMemoryError as e:
-                    print(f"  OOM at adapters={num_adapters} batch={batch_size} rank={lora_rank}: {e}")
-                    torch.cuda.empty_cache()
-                    continue
-                results.append(row)
-                print(f"  p50={row['p50_ms']}ms  p95={row['p95_ms']}ms  p99={row['p99_ms']}ms  "
-                      f"asm={row['assemble_mean_ms']}ms ({row['assemble_share_pct']}%)  "
-                      f"fwd={row['forward_mean_ms']}ms  "
-                      f"tput={row['throughput_samples_sec']} samples/s  "
-                      f"peak_gpu={row['peak_gpu_mem_gb']}GB\n")
+    # Seed is the outermost loop: each repeat is a full pass over the sweep,
+    # so between-seed variance also captures slow drift (thermal, clocks).
+    for seed in seeds:
+        for num_adapters in args.adapters:
+            for batch_size in args.batch_sizes:
+                for lora_rank in args.lora_ranks:
+                    done += 1
+                    print(f"[{done}/{total}] adapters={num_adapters} batch={batch_size} "
+                          f"rank={lora_rank} seed={seed}")
+                    try:
+                        row = run_single_config(
+                            model_name=args.model,
+                            num_adapters=num_adapters,
+                            batch_size=batch_size,
+                            lora_rank=lora_rank,
+                            seq_len=args.seq_len,
+                            warmup=args.warmup,
+                            iters=args.iters,
+                            dtype=dtype,
+                            num_labels=args.num_labels,
+                            seed=seed,
+                        )
+                    except torch.cuda.OutOfMemoryError as e:
+                        print(f"  OOM at adapters={num_adapters} batch={batch_size} rank={lora_rank}: {e}")
+                        torch.cuda.empty_cache()
+                        continue
+                    results.append(row)
+                    print(f"  p50={row['p50_ms']}ms  p95={row['p95_ms']}ms  p99={row['p99_ms']}ms  "
+                          f"asm={row['assemble_mean_ms']}ms ({row['assemble_share_pct']}%)  "
+                          f"fwd={row['forward_mean_ms']}ms  "
+                          f"tput={row['throughput_samples_sec']} samples/s  "
+                          f"peak_gpu={row['peak_gpu_mem_gb']}GB\n")
 
     if not results:
         print("No results collected (all configs OOM'd?)")

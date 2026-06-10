@@ -41,6 +41,7 @@
 % ===== Adapter-count sweep (B=32, r=8) =====
 % source: benchmarks/results/sweep_main.csv
 \newcommand{\PFiftyAtNHundred}{39.2}
+\newcommand{\PFiftyAtNHundredStd}{TODO}  % s.d. over seeds; TODO until multi-seed re-run
 \newcommand{\PNinetyAtNHundred}{39.5}
 \newcommand{\PNinetyNineAtNHundred}{42.2}
 \newcommand{\QpsAtNHundred}{814}
@@ -48,6 +49,7 @@
 \newcommand{\AssemblePctAtNHundred}{33.7}
 \newcommand{\FwdMsAtNHundred}{26.0}
 \newcommand{\PFiftyAtNOneK}{39.4}
+\newcommand{\PFiftyAtNOneKStd}{TODO}  % s.d. over seeds; TODO until multi-seed re-run
 \newcommand{\PNinetyAtNOneK}{39.8}
 \newcommand{\PNinetyNineAtNOneK}{42.2}
 \newcommand{\QpsAtNOneK}{785}
@@ -55,6 +57,7 @@
 \newcommand{\AssemblePctAtNOneK}{35.9}
 \newcommand{\FwdMsAtNOneK}{26.0}
 \newcommand{\PFiftyAtNFiveK}{39.5}
+\newcommand{\PFiftyAtNFiveKStd}{TODO}  % s.d. over seeds; TODO until multi-seed re-run
 \newcommand{\PNinetyAtNFiveK}{39.9}
 \newcommand{\PNinetyNineAtNFiveK}{45.5}
 \newcommand{\QpsAtNFiveK}{795}
@@ -62,6 +65,7 @@
 \newcommand{\AssemblePctAtNFiveK}{35.0}
 \newcommand{\FwdMsAtNFiveK}{26.0}
 \newcommand{\PFiftyAtNTenK}{39.5}
+\newcommand{\PFiftyAtNTenKStd}{TODO}  % s.d. over seeds; TODO until multi-seed re-run
 \newcommand{\PNinetyAtNTenK}{39.9}
 \newcommand{\PNinetyNineAtNTenK}{41.0}
 \newcommand{\QpsAtNTenK}{796}
@@ -69,6 +73,7 @@
 \newcommand{\AssemblePctAtNTenK}{35.1}
 \newcommand{\FwdMsAtNTenK}{26.0}
 \newcommand{\PFiftyAtNTwentyK}{39.5}
+\newcommand{\PFiftyAtNTwentyKStd}{TODO}  % s.d. over seeds; TODO until multi-seed re-run
 \newcommand{\PNinetyAtNTwentyK}{39.8}
 \newcommand{\PNinetyNineAtNTwentyK}{40.1}
 \newcommand{\QpsAtNTwentyK}{784}
@@ -76,6 +81,7 @@
 \newcommand{\AssemblePctAtNTwentyK}{36.2}
 \newcommand{\FwdMsAtNTwentyK}{26.0}
 \newcommand{\PFiftyAtNFortyK}{39.6}
+\newcommand{\PFiftyAtNFortyKStd}{TODO}  % s.d. over seeds; TODO until multi-seed re-run
 \newcommand{\PNinetyAtNFortyK}{39.9}
 \newcommand{\PNinetyNineAtNFortyK}{42.1}
 \newcommand{\QpsAtNFortyK}{788}
@@ -83,6 +89,7 @@
 \newcommand{\AssemblePctAtNFortyK}{35.8}
 \newcommand{\FwdMsAtNFortyK}{26.0}
 \newcommand{\PFiftyAtNFortySevenK}{39.6}
+\newcommand{\PFiftyAtNFortySevenKStd}{TODO}  % s.d. over seeds; TODO until multi-seed re-run
 \newcommand{\PNinetyAtNFortySevenK}{40.0}
 \newcommand{\PNinetyNineAtNFortySevenK}{42.8}
 \newcommand{\QpsAtNFortySevenK}{789}
@@ -90,6 +97,7 @@
 \newcommand{\AssemblePctAtNFortySevenK}{35.6}
 \newcommand{\FwdMsAtNFortySevenK}{26.0}
 \newcommand{\PFiftyDriftPctNHundredToFortySevenK}{1.0}  % (p50_47k - p50_100) / p50_100 * 100
+\newcommand{\SweepNumSeeds}{1}  % seeded repeats per config in sweep_main/sweep_ranks
 \newcommand{\CustomerMultiplierHundredToFortySevenK}{470}  % = 47000 / 100
 \newcommand{\PNinetyNineCeilingNSweep}{45.5}  % max p99 over N at B=32 r=8
 \newcommand{\ForwardMsConstantBThirtyTwo}{26.0}  % mean forward_p50 across N at B=32 r=8
@@ -135,29 +143,38 @@
 % ===== Rank sweep (N=1000, B=32) =====
 % source: benchmarks/results/sweep_ranks.csv
 \newcommand{\PFiftyAtRFour}{39.7}
+\newcommand{\PFiftyAtRFourStd}{TODO}  % s.d. over seeds; TODO until multi-seed re-run
 \newcommand{\PNinetyAtRFour}{40.0}
 \newcommand{\PNinetyNineAtRFour}{44.0}
+\newcommand{\PNinetyNineAtRFourStd}{TODO}  % s.d. over seeds; TODO until multi-seed re-run
 \newcommand{\QpsAtRFour}{779}
 \newcommand{\GpuGBAtRFour}{2.08}
 \newcommand{\FwdMsAtRFour}{26.2}
 \newcommand{\PFiftyAtREight}{39.5}
+\newcommand{\PFiftyAtREightStd}{TODO}  % s.d. over seeds; TODO until multi-seed re-run
 \newcommand{\PNinetyAtREight}{40.0}
 \newcommand{\PNinetyNineAtREight}{49.1}
+\newcommand{\PNinetyNineAtREightStd}{TODO}  % s.d. over seeds; TODO until multi-seed re-run
 \newcommand{\QpsAtREight}{782}
 \newcommand{\GpuGBAtREight}{2.87}
 \newcommand{\FwdMsAtREight}{25.9}
 \newcommand{\PFiftyAtRSixteen}{39.6}
+\newcommand{\PFiftyAtRSixteenStd}{TODO}  % s.d. over seeds; TODO until multi-seed re-run
 \newcommand{\PNinetyAtRSixteen}{39.9}
 \newcommand{\PNinetyNineAtRSixteen}{50.5}
+\newcommand{\PNinetyNineAtRSixteenStd}{TODO}  % s.d. over seeds; TODO until multi-seed re-run
 \newcommand{\QpsAtRSixteen}{803}
 \newcommand{\GpuGBAtRSixteen}{4.44}
 \newcommand{\FwdMsAtRSixteen}{26.0}
 \newcommand{\PFiftyAtRThirtyTwo}{39.6}
+\newcommand{\PFiftyAtRThirtyTwoStd}{TODO}  % s.d. over seeds; TODO until multi-seed re-run
 \newcommand{\PNinetyAtRThirtyTwo}{39.9}
 \newcommand{\PNinetyNineAtRThirtyTwo}{46.1}
+\newcommand{\PNinetyNineAtRThirtyTwoStd}{TODO}  % s.d. over seeds; TODO until multi-seed re-run
 \newcommand{\QpsAtRThirtyTwo}{804}
 \newcommand{\GpuGBAtRThirtyTwo}{7.75}
 \newcommand{\FwdMsAtRThirtyTwo}{26.1}
+\newcommand{\PNinetyNineRankSpreadPct}{15}  % (max - min) / min p99 over ranks, N=1000 B=32
 
 % ===== Forward-pass breakdown =====
 % source: benchmarks/results/forward_breakdown.json
