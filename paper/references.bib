@@ -1,6 +1,6 @@
 % ============================================================
-% All entries verified programmatically. See search log.
-% Entries marked PLACEHOLDER require human verification.
+% All entries verified programmatically (Semantic Scholar /
+% arXiv API / DBLP / ACL Anthology). Last full check: 2026-06-10.
 % ============================================================
 
 @inproceedings{hu2022lora,
@@ -72,32 +72,21 @@
   url       = {https://arxiv.org/abs/2309.06180}
 }
 
-% PLACEHOLDER - verify first author name (ADS ID suggests S-surname lead author)
-@article{gunther2024jina,
-  title   = {jina-embeddings-v3: Multilingual Embeddings With Task {LoRA}},
-  author  = {PLACEHOLDER-verify-first-author and others},
-  journal = {arXiv preprint arXiv:2409.10173},
-  year    = {2024},
-  note    = {TODO: verify author list before submission}
-}
-
-% PLACEHOLDER - LoRAX is a software product (Predibase), no canonical academic paper
-% Use GitHub/blog citation or remove; verify with supervisor
+% LoRAX is a software product (Predibase); no companion academic paper
+% exists as of June 2026, so the GitHub citation is the canonical form.
 @misc{predibase2023lorax,
   title        = {{LoRAX}: Serve Hundreds of Fine-Tuned Models on a Single {GPU}},
   author       = {{Predibase}},
   year         = {2023},
-  howpublished = {\url{https://github.com/predibase/lorax}},
-  note         = {TODO: check whether a companion academic paper has been published}
+  howpublished = {\url{https://github.com/predibase/lorax}}
 }
 
-% PLACEHOLDER - HuggingFace TEI has no canonical academic paper
+% HuggingFace TEI has no academic paper; GitHub citation is canonical.
 @misc{huggingface2023tei,
   title        = {Text Embeddings Inference},
   author       = {{Hugging Face}},
   year         = {2023},
-  howpublished = {\url{https://github.com/huggingface/text-embeddings-inference}},
-  note         = {TODO: verify correct citation form}
+  howpublished = {\url{https://github.com/huggingface/text-embeddings-inference}}
 }
 
 % ---- supporting PEFT / adapter work ----
@@ -150,31 +139,31 @@
   url       = {https://aclanthology.org/2020.emnlp-main.174/}
 }
 
-% PLACEHOLDER - verify SetFit citation
+% Verified via arXiv API (2209.11055): this is the SetFit paper.
 @article{tunstall2022efficient,
   title   = {Efficient Few-Shot Learning Without Prompts},
   author  = {Tunstall, Lewis and Reimers, Nils and Jo, Unso Eun Seo and Bates, Luke and Korat, Daniel and Wasserblat, Moshe and Pereg, Oren},
   journal = {arXiv preprint arXiv:2209.11055},
-  year    = {2022},
-  note    = {TODO: verify whether this is the right SetFit citation}
+  year    = {2022}
 }
 
-% PLACEHOLDER - verify dLoRA citation
-@article{wu2024dlora,
-  title   = {{dLoRA}: Dynamically Orchestrating Requests and Adapters for {LoRA} {LLM} Serving},
-  author  = {Wu, Dacheng and others},
-  journal = {arXiv preprint},
-  year    = {2024},
-  note    = {TODO: find arXiv ID and verify authors}
+% Verified via DBLP (conf/osdi/WuZZSL024).
+@inproceedings{wu2024dlora,
+  title     = {{dLoRA}: Dynamically Orchestrating Requests and Adapters for {LoRA} {LLM} Serving},
+  author    = {Wu, Bingyang and Zhu, Ruidong and Zhang, Zili and Sun, Peng and Liu, Xuanzhe and Jin, Xin},
+  booktitle = {18th {USENIX} Symposium on Operating Systems Design and Implementation ({OSDI} 24)},
+  year      = {2024},
+  url       = {https://www.usenix.org/conference/osdi24/presentation/wu-bingyang}
 }
 
-% PLACEHOLDER - CaraServe
-@article{su2023caraserve,
-  title   = {{CaraServe}: {CPU}-Assisted and Rank-Aware {LoRA} Serving for Generative {LLM} Inference},
-  author  = {Su, Suyi and others},
-  journal = {arXiv preprint},
-  year    = {2023},
-  note    = {TODO: find arXiv ID and verify authors}
+% Verified via arXiv API (2401.11240).
+@misc{li2024caraserve,
+  title         = {{CaraServe}: {CPU}-Assisted and Rank-Aware {LoRA} Serving for Generative {LLM} Inference},
+  author        = {Li, Suyi and Lu, Hanfeng and Wu, Tianyuan and Yu, Minchen and Weng, Qizhen and Chen, Xusheng and Shan, Yizhou and Yuan, Binhang and Wang, Wei},
+  year          = {2024},
+  eprint        = {2401.11240},
+  archivePrefix = {arXiv},
+  url           = {https://arxiv.org/abs/2401.11240}
 }
 
 @article{chen2024bge,

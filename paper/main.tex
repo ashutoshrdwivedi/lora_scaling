@@ -68,39 +68,39 @@
 
 % =============================================================================
 \begin{abstract}
-We introduce \sysname, a system for serving thousands of independently
-fine-tuned LoRA adapters on a single shared encoder model in a single GPU
-forward pass.
-Personalizing an NLP feature (e.g.\ text classification) for thousands of
-customers traditionally required one fine-tuned model per customer.
-LoRA \cite{hu2022lora} eliminated the \emph{storage} barrier by reducing
-per-customer state to a few hundred kilobytes; the remaining barrier is
-\emph{serving}---batching requests across customers without merging adapter
-weights into the base model.
-\sysname{} avoids weight merging by computing the base projection
-$W_0 x$ and the per-tenant LoRA delta $\Delta W_i x = B_i A_i x$ separately,
-then fusing them additively---enabling heterogeneous adapters and per-tenant
-logistic-regression heads to be batched via \texttt{torch.bmm} with
-pre-allocated GPU buffers, requiring no custom CUDA kernels.
-On a single \HeadlineGPU{} GPU with \texttt{BAAI/bge-m3} as the base
-model, \sysname{} serves \textbf{\HeadlineCapacity{} pre-loaded LoRA adapters
-at \HeadlineQps{} samples/sec} with \HeadlinePNinetyNine{}~ms p99 latency at
-batch size \HeadlineBatch{}, and p50 latency stays statistically unchanged
-from 100 to \HeadlineCapacity{} adapters---the full per-GPU capacity---empirically
-confirming $\mathcal{O}(1)$ scaling in adapter count.
-Against the HuggingFace PEFT swap baseline on the same hardware,
-\sysname{} delivers a \textbf{\HeadlineSpeedupLow--\HeadlineSpeedupHigh$\times$
-throughput improvement} under
-adapter-grouped (batch-by-adapter) batching, growing with both batch size
-and adapter pool size, plus a \textbf{$>$600$\times$ improvement in cold-start
-deployment time}.% TODO cold-start: replace 600 with \ColdStartSpeedupMin once LateFuse preload time is captured
+Serving a personalized encoder feature---classification, retrieval, or
+ranking---to thousands of customers is a multi-tenant problem that
+released LoRA serving runtimes do not address: they target autoregressive
+decoder workloads, and the standard HuggingFace PEFT adapter-swap
+fallback collapses throughput as the tenant pool grows. We present
+\sysname, a serving system that batches arbitrary mixed-tenant encoder
+requests in one shared forward pass without custom CUDA kernels.
+\sysname{} fuses adapters in \emph{activation space} rather than
+parameter space: the shared base projection $W_0 x$ runs once over the
+batch, while per-sample deltas $B_i A_i x$ are applied as batched matrix
+multiplications and fused additively, so a mixed-adapter batch completes
+in one pass regardless of how many distinct adapters or per-tenant heads
+it carries.
+
+On a single \HeadlineGPU{} with \texttt{BAAI/bge-m3},
+\sysname{} sustains \textbf{\HeadlineQps{}~samples/sec across
+\HeadlineCapacity{} pre-loaded adapters at \HeadlinePNinetyNine{}~ms p99},
+and p50 latency is statistically unchanged across the full
+pool---empirically $\mathcal{O}(1)$ in adapter count up to the per-GPU
+memory ceiling. Against the PEFT swap baseline on identical hardware,
+\sysname{} is \textbf{\HeadlineSpeedupLow--\HeadlineSpeedupHigh$\times$
+faster}---a gap that widens with the tenant pool because PEFT's
+per-request \texttt{set\_adapter} scales $\mathcal{O}(N)$---and loads new
+adapters \textbf{$>$\ColdStartSpeedupMin{}$\times$ faster}. Because it is
+standard PyTorch, \sysname{} deploys on managed GPU platforms
+(Databricks, SageMaker, Modal) with no custom-CUDA build step.
 \end{abstract}
 
 % =============================================================================
 \section{Introduction}
 \label{sec:intro}
 
-Deploying a personalized NLP feature---such as text classification---to
+Deploying a personalized NLP feature (such as text classification) to
 thousands of customers is a storage and compute challenge.
 Maintaining a fully fine-tuned model per customer is infeasible:
 at \BgeFpSixteenGB{}~GB per copy in float16, serving 20{,}000 customers would require
@@ -110,7 +110,7 @@ each customer's adaptation as a low-rank update to a single shared base
 encoder, the per-customer footprint shrinks to \LoraBytesREightMB{}~MB (rank~\HeadlineRank{},
 \BgeLayers{} layers)---a \StorageReductionFullVsLoraRankEight$\times$ reduction.
 The remaining challenge is \textbf{batched serving} across heterogeneous
-adapters on a single GPU.
+adapters on a shared GPU.
 
 Existing multi-tenant LoRA serving systems---Punica \cite{chen2024punica},
 S-LoRA \cite{sheng2024slora}, vLLM \cite{kwon2023vllm}, and LoRAX
@@ -127,12 +127,12 @@ batching for encoder models is, to our knowledge, not yet supported by
 released runtimes (\S\ref{sec:relwork}).
 
 We present \sysname, a serving system that fills this gap.
-The core insight is to fuse adapters in \emph{activation space} rather
-than \emph{parameter space}: merging $B_i A_i$ into $W_0$ produces a
-per-sample weight matrix $W'_i$ that must be applied serially, but
-computing the base output $W_0 x$ and the delta $B_i A_i x$ separately
-and summing them lets the per-sample work live inside a single batched
-matrix multiplication. \sysname{} runs the shared base path once over
+Its design turns on \emph{where} the adapter is applied: merging
+$B_i A_i$ into $W_0$ yields a per-sample weight matrix $W'_i$ that must be
+applied serially, whereas keeping the base output $W_0 x$ and the delta
+$B_i A_i x$ as separate terms and summing them lets the per-sample work
+live inside a single batched matrix multiplication. We call this
+\emph{activation-space} fusion, as opposed to parameter-space merging. \sysname{} runs the shared base path once over
 all $\mathcal{B}$ samples and dispatches the per-sample LoRA paths in
 parallel via one \texttt{torch.bmm} call per attention layer, so a
 mixed-tenant batch completes in a single forward pass regardless of how
@@ -164,8 +164,8 @@ Appendix~\ref{sec:deployment}.
 
   \item We benchmark \sysname{} against a HuggingFace PEFT swap baseline
   on identical hardware and show \textbf{\HeadlineSpeedupLow--\HeadlineSpeedupHigh$\times$}
-  throughput improvements under adapter-grouped batching and \textbf{$>$600$\times$}
-  cold-start deployment improvements.% TODO cold-start
+  throughput improvements under adapter-grouped batching and \textbf{$>$\ColdStartSpeedupMin{}$\times$}
+  cold-start deployment improvements.
   By holding batch composition fixed
   and varying only $N$, we isolate \texttt{set\_adapter} as the
   $\mathcal{O}(N)$ bottleneck in the state-of-the-practice baseline
@@ -680,8 +680,7 @@ never expose the encoder operations---bidirectional attention, pooling,
 classification heads---that classification workloads require. vLLM
 \cite{kwon2023vllm} adopts these kernels as its multi-LoRA backend, but
 multi-adapter classification serving---the scope we target---was still unmerged
-at submission (PR~\#24596). LoRAX \cite{predibase2023lorax}, MixLoRA
-\cite{PLACEHOLDER_mixlora2024}, CaraServe \cite{su2023caraserve}, and dLoRA
+at submission (PR~\#24596). LoRAX \cite{predibase2023lorax}, CaraServe \cite{li2024caraserve}, and dLoRA
 \cite{wu2024dlora} likewise optimize decoder-only serving and do not address
 encoder classifiers, variable-size classification heads, or deployment without
 custom CUDA compilation.
@@ -703,11 +702,19 @@ modifying the base model.
 \label{sec:conclusion}
 
 We presented \sysname, a serving system for multi-tenant LoRA on encoder
-models. Late-fusion batched matrix multiplication fuses the frozen base path
-and per-tenant LoRA deltas additively, enabling mixed-tenant batches without
-weight merging, custom CUDA kernels, or KV-cache machinery. In standard
-PyTorch it serves \CapacityRankEight{} adapters on one \HeadlineGPU{} at constant latency---a
-$\HeadlineSpeedupLow$--$\HeadlineSpeedupHigh\times$ gain over PEFT swapping.
+models built on late-fusion batched matrix multiplication. The broader
+lesson is that encoder serving inverts the economics that justify custom
+LoRA kernels on decoders: at sequence length $S \gg 1$ the adapter path
+is just \ProfLoraBmmIsolatedPct\% of forward GPU time, so the custom
+kernels that dominate decoder systems (Punica, S-LoRA) are bounded to
+single-digit gains here, while standard \texttt{torch.bmm} needs no
+compilation step and deploys on managed GPU platforms as-is. The residual
+cost has moved off the GPU---CPU-side batch assembly, not the forward
+pass, now bounds tail latency---so host-side gather and transfer, not
+faster kernels, is where further work belongs. For teams serving a
+personalized encoder feature across thousands of tenants, the upshot is
+that a single commodity GPU and a stock PyTorch stack replace a fleet of
+per-tenant deployments.
 
 % =============================================================================
 \section*{Limitations}
