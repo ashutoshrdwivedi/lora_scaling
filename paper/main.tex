@@ -95,9 +95,8 @@ per-GPU memory ceiling. On identical hardware,
 \HeadlineSpeedupLow--\HeadlineSpeedupHigh$\times$ under adapter-grouped
 batching of mixed-tenant traffic, by
 \SpeedupMixedMin--\SpeedupMixedMax$\times$ against PEFT's native
-mixed-batch API,\footnote{Benchmarked without classification heads:
-PEFT's \texttt{adapter\_names} API cannot route per-tenant heads,
-which our workload requires (\S\ref{sec:setup}).} and by
+mixed-batch API (measured without task heads, which that API cannot
+route), and---once the pool reaches 1{,}000 adapters---by
 \SpeedupHomogNOneKBOneTwentyEight--\SpeedupHomogNOneKBEight$\times$
 even in PEFT's best case of single-tenant batches; it registers new
 adapters over \ColdStartSpeedupMin{}$\times$ faster. Because the
@@ -129,7 +128,7 @@ generation over a KV cache. Encoders are structurally different: the
 bidirectional forward pass at sequence length $S \gg 1$ is compute-bound
 and dominated by base-model projections, so the LoRA path consumes only
 \ProfLoraBmmIsolatedPct{}\% of forward GPU time and any custom-kernel
-replacement is bounded to single-digit speedup
+replacement is bounded to single-digit percentage gains
 (\S\ref{sec:results_custom_kernels}, Finding~6). This makes standard batched matrix multiplication, rather
 than a custom kernel, the right primitive. Released runtimes do not
 fill this gap: vLLM has no runtime LoRA path for encoder models at
@@ -448,7 +447,8 @@ sharpening an order-of-magnitude speedup claim.
 GPU-side work is timed with reusable \texttt{torch.cuda.Event} pairs and
 synchronized once per iteration; CPU-side assembly is timed with
 \texttt{time.perf\_counter} between identical synchronization points.
-We sweep adapter count $N \in \{100,\,1{,}000,\,5{,}000,\,10{,}000,\,20{,}000,\,40{,}000,\,\CapacityRankEight\}$,
+We sweep adapter count $N \in \{100$, $1{,}000$, $5{,}000$, $10{,}000$,
+$20{,}000$, $40{,}000$, $\CapacityRankEight\}$,
 batch size $\mathcal{B} \in \{8,\,16,\,32,\,64,\,128\}$, and rank
 $r \in \{4,\,8,\,16,\,32\}$.
 Each configuration samples mixed-tenant batches uniformly at random from the
@@ -527,9 +527,13 @@ latency---empirically validating the $\mathcal{O}(1)$-in-$N$ scaling of
 \paragraph{Finding 2: Batch size drives throughput up to saturation at $\mathcal{B}{=}64$.}
 Throughput scales from \QpsAtBEight~samples/sec at $\mathcal{B}{=}8$ to \QpsAtBSixtyFour~samples/sec at
 $\mathcal{B}{=}64$, then plateaus---$\mathcal{B}{=}128$ delivers no further gain (\QpsAtBOneTwentyEight~samples/sec).
-The shared-base encoder forward becomes GPU-bound at $\mathcal{B}{=}64$, after which
-larger batches only widen tail latency without lifting throughput, making
-$\mathcal{B} \in \{32, 64\}$ the recommended range under strict p99 SLAs.
+The shared-base encoder forward becomes GPU-bound at $\mathcal{B}{=}64$;
+beyond $\mathcal{B}{=}32$, larger batches mainly widen tail latency
+(p99/p50 grows from \PNinetyNineOverPFiftyAtBThirtyTwo$\times$ at
+$\mathcal{B}{=}32$ to \PNinetyNineOverPFiftyAtBSixtyFour$\times$ at
+$\mathcal{B}{=}64$; Finding~5), making $\mathcal{B}{=}32$ the operating
+point under strict p99 SLAs and $\mathcal{B}{=}64$ the
+throughput-optimal choice when tails are tolerable.
 
 \paragraph{Finding 3: LoRA rank is a free latency knob in the small-rank regime.}
 At $N{=}1{,}000$, $\mathcal{B}{=}\HeadlineBatch$, p50 latency is flat across $r \in \{4, 8, 16, 32\}$
@@ -636,7 +640,7 @@ $N$-adapter registration cost, which we replace with a constant-time
 \begin{table}[h]
 \centering
 \footnotesize
-\setlength{\tabcolsep}{4.5pt}
+\setlength{\tabcolsep}{2.5pt}
 \renewcommand{\arraystretch}{0.95}
 \caption{Latency and throughput vs.\ the PEFT swap baseline in its
 \emph{grouped} (batch-by-adapter), \emph{mixed} (native
@@ -663,10 +667,11 @@ batches rarely share an adapter, so \sysname{} leads by
 \SpeedupGroupedNHundredBThirtyTwo--\SpeedupGroupedNOneKBThirtyTwo$\times$ at
 $\mathcal{B}{=}\HeadlineBatch$. PEFT's native \emph{mixed} API sits between
 the two: it shares the base forward, but loops over the batch's adapters at
-every LoRA layer and its per-call validation scales with $N$ (p50 grows from
-\PeftMixedPFiftyNHundredBThirtyTwo{} to \PeftMixedPFiftyNOneKBThirtyTwo~ms at
-$\mathcal{B}{=}\HeadlineBatch$ as $N$ grows $100\to1{,}000$ with batch
-composition fixed), leaving \sysname{}
+every LoRA layer and its per-call validation scales with $N$ (at
+$\mathcal{B}{=}8$, where the expected number of distinct adapters per batch
+is essentially unchanged, p50 still grows from
+\PeftMixedPFiftyNHundredBEight{} to \PeftMixedPFiftyNOneKBEight~ms as $N$
+grows $100\to1{,}000$), leaving \sysname{}
 \SpeedupMixedMin--\SpeedupMixedMax$\times$ faster across the measured grid.
 
 % TODO (Task #4): §4.5 Multi-Model and Multi-Hardware Generalization.
@@ -759,7 +764,7 @@ lesson is that encoder serving inverts the economics that justify custom
 LoRA kernels on decoders: at sequence length $S \gg 1$ the adapter path
 is just \ProfLoraBmmIsolatedPct\% of forward GPU time, so the custom
 kernels that dominate decoder systems (Punica, S-LoRA) are bounded to
-single-digit gains here, while standard \texttt{torch.bmm} needs no
+single-digit percentage gains here, while standard \texttt{torch.bmm} needs no
 compilation step and deploys on managed GPU platforms as-is. The residual
 cost has moved off the GPU---CPU-side batch assembly, not the forward
 pass, now bounds tail latency---so host-side gather and transfer, not
