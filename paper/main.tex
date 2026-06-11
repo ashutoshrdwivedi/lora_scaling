@@ -218,9 +218,12 @@ accuracy across seven public text-classification benchmarks
 (Table~\ref{tab:accuracy}; per-task drop \SetfitMinDropPP--\SetfitMaxDropPP pp),
 at $1/\MpnetParamReductionRankEight$ the trainable-parameter cost.\footnote{Accuracy reported on
 \texttt{paraphrase-mpnet-base-v2} to match the SetFit literature
-\cite{tunstall2022efficient}; serving experiments
-(\S\ref{sec:experiments}) use the larger \texttt{BAAI/bge-m3}
-encoder.} The remaining barrier is \emph{serving}: combining thousands of
+\cite{tunstall2022efficient}. The same protocol on \texttt{BAAI/bge-m3}---the
+encoder all serving experiments (\S\ref{sec:experiments}) use---shows the
+same pattern: LoRA retains \SetfitBgeRetainsPct\% of vanilla accuracy and
+beats a frozen-encoder baseline on all seven tasks
+(Table~\ref{tab:accuracy_bge}, Appendix~\ref{app:accuracy}).} The remaining
+barrier is \emph{serving}: combining thousands of
 these adapters in a single forward pass.
 
 \begin{table}[h]
@@ -785,7 +788,8 @@ cluster-level throughput and behaviour under skewed (hot-tenant) traffic remain
 to be evaluated.
 
 \paragraph{Evaluation scope.}
-Accuracy is averaged over 10 random seeds (Table~\ref{tab:accuracy}); the
+Accuracy is averaged over 10 random seeds (Tables~\ref{tab:accuracy}
+and~\ref{tab:accuracy_bge}); the
 remaining per-seed variance is non-trivial on the smaller few-shot tasks. The
 \sysname{} serving sweeps report the mean over \SweepNumSeeds{} seeded runs
 per configuration; the PEFT baselines are single runs, adequate for the
@@ -830,6 +834,39 @@ reported as MCC, where the low absolute scores magnify the difference). For
 deployments where this gap is unacceptable, rank can be increased at zero
 latency cost
 (Finding~3); the only price is GPU memory.
+
+\paragraph{Serving model.}
+Table~\ref{tab:accuracy_bge} repeats the protocol on \texttt{BAAI/bge-m3}
+\cite{chen2024bge}, the encoder used by every serving experiment in
+\S\ref{sec:experiments}, and adds a \emph{frozen} baseline: the pre-trained
+encoder with no body adaptation at all, only the logistic-regression head
+fit on its embeddings. The frozen column answers whether per-tenant
+adaptation is worth serving in the first place: LoRA improves on the frozen
+encoder on all seven tasks (mean \SetfitBgeMeanLora{} vs.\
+\SetfitBgeMeanFrozen, a \SetfitBgeLoraGainOverFrozenPP~pp gain), with the
+largest gains on AG~News, SST-5, and Emotion. The corresponding mpnet
+comparison is reported by \citet{tunstall2022efficient} and is not repeated
+here.
+
+Relative to vanilla fine-tuning, the bge-m3 results mirror the mpnet
+pattern: LoRA retains \SetfitBgeRetainsPct\% of vanilla mean accuracy (a
+\SetfitBgeMeanDropPP~pp mean drop), again with the largest gap on Amazon-CF
+(\SetfitBgeMaxDropPP~pp) and small gains on SST-5 and AG~News. Each adapter
+trains \LoraParamsREight{} parameters, $1/\BgeParamReductionRankEight$ of
+the \BgeParamsM{}M-parameter encoder.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Per-task accuracy on \texttt{BAAI/bge-m3}, the serving model, under
+the protocol of Table~\ref{tab:accuracy} ($N{=}8$ per class, rank=8, mean
+over 10 seeds; scores are accuracy except Amazon-CF, MCC). \emph{Frozen}
+fits only the classification head on pre-trained embeddings; $\Delta$ is
+LoRA minus vanilla. LoRA beats frozen on all seven tasks and retains
+$\SetfitBgeRetainsPct\%$ of vanilla mean accuracy.}
+\label{tab:accuracy_bge}
+\input{table_accuracy_bge.tex}
+\end{table}
 
 % =============================================================================
 \section{Horizontal Deployment}
