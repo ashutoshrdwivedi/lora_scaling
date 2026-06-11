@@ -448,7 +448,7 @@ def build() -> None:
         n_main_rows[n] = row
         m.add(f"PFiftyAtN{tag}",        fmt_f(row["p50_ms"], 1))
         m.add(f"PFiftyAtN{tag}Std",     std_or_todo(row, "p50_ms"),
-              comment="s.d. over seeds; TODO until multi-seed re-run")
+              comment="sample s.d. over seeds")
         m.add(f"PNinetyAtN{tag}",       fmt_f(row["p90_ms"], 1))
         m.add(f"PNinetyNineAtN{tag}",   fmt_f(row["p99_ms"], 1))
         m.add(f"QpsAtN{tag}",           fmt_int(row["throughput_samples_sec"]))
@@ -460,8 +460,8 @@ def build() -> None:
     p50_lo = float(n_main_rows[100]["p50_ms"])
     p50_hi = float(n_main_rows[47000]["p50_ms"])
     m.add("PFiftyDriftPctNHundredToFortySevenK",
-          fmt_f((p50_hi - p50_lo) / p50_lo * 100, 1),
-          comment="(p50_47k - p50_100) / p50_100 * 100")
+          fmt_f(abs(p50_hi - p50_lo) / p50_lo * 100, 1),
+          comment="|p50_47k - p50_100| / p50_100 * 100 (unsigned; prose says 'varies by <= X%')")
     m.add("SweepNumSeeds", n_main_rows[100].get("n_seeds", "1"),
           comment="seeded repeats per config in sweep_main/sweep_ranks")
     m.add("CustomerMultiplierHundredToFortySevenK",
@@ -530,11 +530,11 @@ def build() -> None:
         r_rows[r] = row
         m.add(f"PFiftyAtR{tag}",        fmt_f(row["p50_ms"], 1))
         m.add(f"PFiftyAtR{tag}Std",     std_or_todo(row, "p50_ms"),
-              comment="s.d. over seeds; TODO until multi-seed re-run")
+              comment="sample s.d. over seeds")
         m.add(f"PNinetyAtR{tag}",       fmt_f(row["p90_ms"], 1))
         m.add(f"PNinetyNineAtR{tag}",   fmt_f(row["p99_ms"], 1))
         m.add(f"PNinetyNineAtR{tag}Std", std_or_todo(row, "p99_ms"),
-              comment="s.d. over seeds; TODO until multi-seed re-run")
+              comment="sample s.d. over seeds")
         m.add(f"QpsAtR{tag}",           fmt_int(row["throughput_samples_sec"]))
         m.add(f"GpuGBAtR{tag}",         fmt_f(row["peak_gpu_mem_gb"], 2))
         m.add(f"FwdMsAtR{tag}",         fmt_f(row["forward_p50_ms"], 1))
@@ -659,10 +659,16 @@ def build() -> None:
           comment="max over ALL measured (N,B) grouped speedups")
 
     if peft_mixed is not None:
+        speedups_mixed = []
         for n, b in PEFT_NB:
             suf = f"N{N_SUFFIX[n]}B{B_SUFFIX[b]}"
-            m.add(f"SpeedupMixed{suf}",
-                  fmt_f(qps(sysname_ref, n, b) / qps(peft_mixed, n, b), 1))
+            sp = qps(sysname_ref, n, b) / qps(peft_mixed, n, b)
+            speedups_mixed.append(sp)
+            m.add(f"SpeedupMixed{suf}", fmt_f(sp, 1))
+        m.add("SpeedupMixedMin", fmt_f(min(speedups_mixed), 1),
+              comment="min over ALL measured (N,B) mixed speedups")
+        m.add("SpeedupMixedMax", fmt_f(max(speedups_mixed), 1),
+              comment="max over ALL measured (N,B) mixed speedups")
 
     # Cold-start: PEFT add_adapter loop seconds vs LateFuse AdapterStore preload.
     # The LateFuse side (column 'adapter_load_total_s' in sweep_main.csv) only
@@ -824,7 +830,7 @@ def build() -> None:
     (OUT / "table_main.tex").write_text(
         render_table_main(sweep_main, sweep_ranks))
     (OUT / "table_baselines.tex").write_text(
-        render_table_baselines(peft_grouped, peft_homog, sysname_ref))
+        render_table_baselines(peft_grouped, peft_mixed, peft_homog, sysname_ref))
     (OUT / "table_accuracy.tex").write_text(render_table_accuracy(
         setfit, MPNET_HIDDEN_SIZE, MPNET_NUM_LAYERS,
         MPNET_TARGET_MODULES, MPNET_VANILLA_TRAINABLE))
@@ -891,8 +897,8 @@ def render_table_main(sweep_main, sweep_ranks) -> str:
     return GEN_HEADER + "\n".join(lines) + "\n"
 
 
-def render_table_baselines(peft_grouped, peft_homog, sysname_ref) -> str:
-    """tab:baselines body: PEFT grouped, PEFT homog, LateFuse, speedups."""
+def render_table_baselines(peft_grouped, peft_mixed, peft_homog, sysname_ref) -> str:
+    """tab:baselines body: PEFT grouped/mixed/homog, LateFuse, speedups."""
     lines: list[str] = []
     lines.append(r"\begin{tabular}{lrrrr}")
     lines.append(r"\toprule")
@@ -921,6 +927,12 @@ def render_table_baselines(peft_grouped, peft_homog, sysname_ref) -> str:
         peft_grouped,
     )
     lines.append(r"\midrule")
+    if peft_mixed is not None:
+        emit_block(
+            lambda b: f"PEFT mixed ($\\mathcal{{B}}{{=}}{b}$)",
+            peft_mixed,
+        )
+        lines.append(r"\midrule")
     emit_block(
         lambda b: f"PEFT homog. ($\\mathcal{{B}}{{=}}{b}$)",
         peft_homog,
@@ -1056,12 +1068,14 @@ def print_summary(macros_defined, sweep_main, peft_grouped, sysname_ref,
           f"{fwd['ablation']['lora_cost_share_pct']:.2f}%")
     print()
 
-    print("== ITEMS NOT CAPTURED IN CURRENT CSVS ==")
-    print("  LateFuse cold-load wall time (column adapter_load_total_s):")
-    print("    src/lora_serving/benchmark/run.py is instrumented; the column")
-    print("    will appear once benchmarks/run_sxm80.sh is re-run. Until then,")
-    print("    \\ColdStartSpeedupNOneK and \\LateFuseColdLoadSecNOneK are TODO.")
-    print()
+    if not any(r.get("adapter_load_total_s", "").strip() not in ("", "0", "0.0")
+               for r in sweep_main):
+        print("== ITEMS NOT CAPTURED IN CURRENT CSVS ==")
+        print("  LateFuse cold-load wall time (column adapter_load_total_s):")
+        print("    src/lora_serving/benchmark/run.py is instrumented; the column")
+        print("    will appear once benchmarks/run_sxm80.sh is re-run. Until then,")
+        print("    \\ColdStartSpeedupNOneK and \\LateFuseColdLoadSecNOneK are TODO.")
+        print()
 
     print("== KNOWN DRIFT BETWEEN PAPER PROSE AND DATA ==")
     print("  - paper 'headline' QPS = 810; computed = "
