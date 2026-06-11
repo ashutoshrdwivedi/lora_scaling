@@ -10,9 +10,9 @@ from __future__ import annotations
 import math
 
 import torch
-import torch.nn.functional as F
 from torch import Tensor, nn
 from transformers import AutoModel, PretrainedConfig, PreTrainedModel
+from transformers.activations import ACT2FN
 
 from lora_serving.config import LoraServingConfig
 from lora_serving.ops.head import LRHeadOps
@@ -115,6 +115,10 @@ class EncoderLayerWithLora(nn.Module):
         self.intermediate = nn.ModuleDict({
             "dense": nn.Linear(H, config.intermediate_size),
         })
+        # FFN activation from the HF config (gelu for BERT/XLM-R, but e.g.
+        # gelu_new or relu elsewhere) — parameterless, so it doesn't affect
+        # the strict state-dict load.
+        self.intermediate_act = ACT2FN[config.hidden_act]
         self.output = nn.ModuleDict({
             "dense": nn.Linear(config.intermediate_size, H),
             "LayerNorm": nn.LayerNorm(H, eps=config.layer_norm_eps),
@@ -131,7 +135,7 @@ class EncoderLayerWithLora(nn.Module):
         attn_out = self.attention["output"]["dense"](attn_out)
         attn_out = self.attention["output"]["LayerNorm"](attn_out + hidden_states)
 
-        mid = F.gelu(self.intermediate["dense"](attn_out))
+        mid = self.intermediate_act(self.intermediate["dense"](attn_out))
         out = self.output["dense"](mid)
         out = self.output["LayerNorm"](out + attn_out)
         return out

@@ -35,6 +35,17 @@ class LoraOps:
         """
         assert x.is_cuda, "x must be on GPU"
         assert a_weights.is_cuda, "a_weights must be on GPU"
+        # bmm with a mismatched `out=` silently resizes the buffer, defeating
+        # the pre-allocation — inputs must match the init-time (B, S, H, R).
+        B, S, R = self._out_A.shape
+        H = self._out_B.shape[2]
+        assert x.shape == (B, S, H), (
+            f"x shape {tuple(x.shape)} != buffer shape {(B, S, H)}; "
+            "LoraOps buffers are sized from config at init"
+        )
+        assert a_weights.shape == (B, H, R), (
+            f"a_weights shape {tuple(a_weights.shape)} != expected {(B, H, R)}"
+        )
         torch.bmm(x, a_weights, out=self._out_A)
 
     def expand(self, b_weights: Tensor) -> None:
@@ -46,6 +57,11 @@ class LoraOps:
         Call shrink() before expand(). Result is available via .output.
         """
         assert b_weights.is_cuda, "b_weights must be on GPU"
+        B, S, R = self._out_A.shape
+        H = self._out_B.shape[2]
+        assert b_weights.shape == (B, R, H), (
+            f"b_weights shape {tuple(b_weights.shape)} != expected {(B, R, H)}"
+        )
         torch.bmm(self._out_A, b_weights, out=self._out_B)
 
     @property

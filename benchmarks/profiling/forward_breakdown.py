@@ -107,10 +107,14 @@ def setup(args) -> tuple:
 def analytic_flop_ratio(config: LoraServingConfig, batch_size: int, seq_len: int) -> dict:
     """Per-layer FLOP counts: base encoder vs LoRA shrink/expand."""
     B, S, H, r, L = batch_size, seq_len, config.hidden_size, config.lora_rank, config.num_layers
+    I = config.intermediate_size
     M = len(config.target_modules)
     # Base attention (Q, K, V, O linears): 4 * B*S*H^2
-    # Base FFN (2 linears, expansion 4): 2 * B*S*H*4H = 8 * B*S*H^2
-    base_per_layer = (4 + 8) * B * S * H * H
+    # Base FFN (2 linears): 2 * B*S*H*I
+    # The QK^T and PV attention matmuls are omitted, which understates base
+    # FLOPs — so base_to_lora_ratio is a lower bound (conservative for the
+    # "LoRA is a small fraction" claim).
+    base_per_layer = 4 * B * S * H * H + 2 * B * S * H * I
     # LoRA shrink: M * B*S*H*r   ; expand: M * B*S*r*H
     lora_per_layer = M * 2 * B * S * H * r
     return {

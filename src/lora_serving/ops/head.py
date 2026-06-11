@@ -24,7 +24,7 @@ class LRHeadOps:
         Args:
             pooled:    (B, 1, H)          — pooled encoder output (CLS token)
             coef:      (B, max_labels, H) — per-sample LR weight matrix
-            intercept: (B, 1, max_labels) — per-sample LR bias
+            intercept: (B, max_labels)    — per-sample LR bias
             out:       (B, 1, max_labels) — pre-allocated output buffer
 
         Returns:
