@@ -18,11 +18,16 @@ Run:
 from __future__ import annotations
 
 import csv
+import os
 import statistics
 from collections import defaultdict
 from pathlib import Path
 
-import matplotlib.pyplot as plt
+# Pin the PDF/PNG embedded creation date so output is byte-reproducible and
+# `make check` can diff committed figures against regenerated ones.
+os.environ.setdefault("SOURCE_DATE_EPOCH", "0")
+
+import matplotlib.pyplot as plt  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 RESULTS = REPO / "benchmarks" / "results"
