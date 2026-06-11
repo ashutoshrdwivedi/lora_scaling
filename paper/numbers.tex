@@ -96,7 +96,7 @@
 \newcommand{\GpuGBAtNFortySevenK}{76.18}
 \newcommand{\AssemblePctAtNFortySevenK}{35.6}
 \newcommand{\FwdMsAtNFortySevenK}{26.0}
-\newcommand{\PFiftyDriftPctNHundredToFortySevenK}{1.0}  % (p50_47k - p50_100) / p50_100 * 100
+\newcommand{\PFiftyDriftPctNHundredToFortySevenK}{1.0}  % |p50_47k - p50_100| / p50_100 * 100 (abs so prose reads '≤X%')
 \newcommand{\SweepNumSeeds}{1}  % seeded repeats per config in sweep_main/sweep_ranks
 \newcommand{\CustomerMultiplierHundredToFortySevenK}{470}  % = 47000 / 100
 \newcommand{\PNinetyNineCeilingNSweep}{45.5}  % max p99 over N at B=32 r=8
@@ -303,6 +303,49 @@
 \newcommand{\SetfitMaxDropPP}{5.1}  % largest per-task accuracy drop (pp)
 \newcommand{\MpnetLoraParams}{294{,}912}
 \newcommand{\MpnetParamReductionRankEight}{371}  % = MPNET_VANILLA_TRAINABLE / mpnet_lora_params
+
+% ===== SetFit accuracy (bge-m3, n=8 per class, 10-seed mean) =====
+% source: benchmarks/quality/setfit_bge_multiseed.csv (same protocol as the mpnet sweep, on the serving model)
+\newcommand{\SetfitBgeVanillaLR}{2\times10^{-5}}  % vanilla body LR (single LR in the sweep)
+\newcommand{\SetfitBgeLoraLR}{5\times10^{-4}}  % shared LoRA body LR = argmax across-dataset mean
+\newcommand{\SetfitBgeSSTTwoFrozen}{0.852}
+\newcommand{\SetfitBgeSSTTwoVanilla}{0.868}
+\newcommand{\SetfitBgeSSTTwoLora}{0.862}
+\newcommand{\SetfitBgeSSTTwoDelta}{-0.006}
+\newcommand{\SetfitBgeSSTFiveFrozen}{0.391}
+\newcommand{\SetfitBgeSSTFiveVanilla}{0.422}
+\newcommand{\SetfitBgeSSTFiveLora}{0.430}
+\newcommand{\SetfitBgeSSTFiveDelta}{0.008}
+\newcommand{\SetfitBgeCRFrozen}{0.878}
+\newcommand{\SetfitBgeCRVanilla}{0.895}
+\newcommand{\SetfitBgeCRLora}{0.886}
+\newcommand{\SetfitBgeCRDelta}{-0.010}
+\newcommand{\SetfitBgeAmazonCFFrozen}{0.241}
+\newcommand{\SetfitBgeAmazonCFVanilla}{0.304}
+\newcommand{\SetfitBgeAmazonCFLora}{0.248}
+\newcommand{\SetfitBgeAmazonCFDelta}{-0.056}
+\newcommand{\SetfitBgeEmotionFrozen}{0.420}
+\newcommand{\SetfitBgeEmotionVanilla}{0.469}
+\newcommand{\SetfitBgeEmotionLora}{0.447}
+\newcommand{\SetfitBgeEmotionDelta}{-0.022}
+\newcommand{\SetfitBgeEnronSpamFrozen}{0.901}
+\newcommand{\SetfitBgeEnronSpamVanilla}{0.909}
+\newcommand{\SetfitBgeEnronSpamLora}{0.902}
+\newcommand{\SetfitBgeEnronSpamDelta}{-0.007}
+\newcommand{\SetfitBgeAGNewsFrozen}{0.783}
+\newcommand{\SetfitBgeAGNewsVanilla}{0.824}
+\newcommand{\SetfitBgeAGNewsLora}{0.827}
+\newcommand{\SetfitBgeAGNewsDelta}{0.003}
+\newcommand{\SetfitBgeMeanFrozen}{0.638}
+\newcommand{\SetfitBgeLoraGainOverFrozenPP}{1.9}  % LoRA mean minus frozen-encoder mean (pp)
+\newcommand{\SetfitBgeMeanVanilla}{0.670}
+\newcommand{\SetfitBgeMeanLora}{0.657}
+\newcommand{\SetfitBgeMeanDelta}{-0.013}
+\newcommand{\SetfitBgeRetainsPct}{98.1}
+\newcommand{\SetfitBgeMeanDropPP}{1.27}
+\newcommand{\SetfitBgeMinDropPP}{-0.8}  % smallest per-task accuracy drop (pp)
+\newcommand{\SetfitBgeMaxDropPP}{5.6}  % largest per-task accuracy drop (pp)
+\newcommand{\BgeParamReductionRankEight}{722}  % = BGE_NUM_PARAMS / lora_params(r=8); vanilla SetFit trains the full encoder
 
 % ===== Benchmark protocol (warmup/iters from CSV rows) =====
 \newcommand{\SysWarmup}{50}  % from sweep_main.csv N=47000 row

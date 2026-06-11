@@ -7,6 +7,7 @@ Outputs (overwrites on every run):
     paper/table_main.tex          -- \\begin{tabular}...\\end{tabular} body
     paper/table_baselines.tex     -- ditto
     paper/table_accuracy.tex      -- ditto
+    paper/table_accuracy_bge.tex  -- ditto (only once the bge-m3 run exists)
 
 Run:
     uv run python paper/build_numbers.py
@@ -59,6 +60,13 @@ SOURCE-OF-TRUTH MAP (one entry per number that appears in main.tex)
       come from the 'score' column and respect the per-dataset 'metric'
       (e.g. AmazonCF = MCC), so the q+v adapter (294,912 params) matches the
       reported param count.
+
+  Per-task accuracy, serving model (SetfitBge* macros, table_accuracy_bge):
+      benchmarks/quality/setfit_bge_multiseed.csv
+      Same protocol and aggregation as the mpnet file, run on BAAI/bge-m3
+      (the model all serving benchmarks use). Optional until
+      benchmarks/quality/run_setfit.sh has been run on the GPU host;
+      macros and table are emitted only when the CSV exists.
 """
 
 from __future__ import annotations
@@ -172,6 +180,9 @@ def aggregate_setfit(rows: list[dict[str, str]]) -> tuple[list[dict[str, str]], 
     the 'score' column, so per-dataset metrics (AmazonCF = MCC) are respected.
     Returns (agg_rows, vanilla_lr_tex, lora_lr_tex); agg_rows carry an
     'accuracy' field so the downstream renderers stay unchanged.
+
+    If the sweep includes 'frozen' rows (head-only fit on pre-trained
+    embeddings, no body LR), they are aggregated too.
     """
     groups: dict[tuple, list[float]] = {}
     for r in rows:
@@ -192,8 +203,13 @@ def aggregate_setfit(rows: list[dict[str, str]]) -> tuple[list[dict[str, str]], 
         key=lambda lr: statistics.fmean([means[(d, "lora", lr)] for d in datasets]),
     )
 
+    frozen_lrs = sorted({k[2] for k in means if k[1] == "frozen"})
+
     agg: list[dict[str, str]] = []
     for d in datasets:
+        if frozen_lrs:
+            agg.append({"dataset": d, "method": "frozen", "lora_rank": "0",
+                        "accuracy": f"{means[(d, 'frozen', frozen_lrs[0])]:.6f}"})
         agg.append({"dataset": d, "method": "vanilla", "lora_rank": "0",
                     "accuracy": f"{means[(d, 'vanilla', vanilla_lr)]:.6f}"})
         agg.append({"dataset": d, "method": "lora", "lora_rank": "8",
@@ -318,6 +334,75 @@ class Macros:
         return header + "".join(self._chunks)
 
 
+# Macro-name tag per SetFit dataset; shared by the mpnet and bge-m3 blocks.
+SETFIT_TASKS = [
+    ("SSTTwo",      "SetFit/sst2"),
+    ("SSTFive",     "SetFit/sst5"),
+    ("CR",          "SetFit/CR"),
+    ("AmazonCF",    "SetFit/amazon_counterfactual_en"),
+    ("Emotion",     "SetFit/emotion"),
+    ("EnronSpam",   "SetFit/enron_spam"),
+    ("AGNews",      "SetFit/ag_news"),
+]
+
+
+def emit_setfit_macros(m: Macros, setfit: list[dict[str, str]],
+                       prefix: str) -> None:
+    """Per-task + mean accuracy macros from one aggregated SetFit sweep.
+
+    prefix="" emits the original mpnet names (Setfit<Task>Vanilla, ...);
+    prefix="Bge" emits SetfitBge<Task>Vanilla etc. for the serving model.
+    Frozen (no-adaptation baseline) macros are emitted when the sweep has
+    'frozen' rows.
+    """
+    have_frozen = any(r["method"] == "frozen" for r in setfit)
+    van_total = 0.0
+    lora_total = 0.0
+    frozen_total = 0.0
+    drops_pp: list[float] = []
+    for tag, key in SETFIT_TASKS:
+        van = float(next(r for r in setfit
+                         if r["dataset"] == key and r["method"] == "vanilla"
+                         )["accuracy"])
+        lora = float(next(r for r in setfit
+                          if r["dataset"] == key and r["method"] == "lora"
+                          )["accuracy"])
+        delta = lora - van
+        if have_frozen:
+            frozen = float(next(r for r in setfit
+                                if r["dataset"] == key and r["method"] == "frozen"
+                                )["accuracy"])
+            m.add(f"Setfit{prefix}{tag}Frozen", fmt_f(frozen, 3))
+            frozen_total += frozen
+        m.add(f"Setfit{prefix}{tag}Vanilla", fmt_f(van, 3))
+        m.add(f"Setfit{prefix}{tag}Lora",    fmt_f(lora, 3))
+        # Delta with explicit minus sign (paper writes it as -0.016)
+        m.add(f"Setfit{prefix}{tag}Delta",   fmt_f(delta, 3))
+        van_total += van
+        lora_total += lora
+        drops_pp.append((van - lora) * 100)
+
+    van_mean = van_total / len(SETFIT_TASKS)
+    lora_mean = lora_total / len(SETFIT_TASKS)
+    if have_frozen:
+        frozen_mean = frozen_total / len(SETFIT_TASKS)
+        m.add(f"Setfit{prefix}MeanFrozen", fmt_f(frozen_mean, 3))
+        m.add(f"Setfit{prefix}LoraGainOverFrozenPP",
+              fmt_f((lora_mean - frozen_mean) * 100, 1),
+              comment="LoRA mean minus frozen-encoder mean (pp)")
+    m.add(f"Setfit{prefix}MeanVanilla",     fmt_f(van_mean, 3))
+    m.add(f"Setfit{prefix}MeanLora",        fmt_f(lora_mean, 3))
+    m.add(f"Setfit{prefix}MeanDelta",       fmt_f(lora_mean - van_mean, 3))
+    m.add(f"Setfit{prefix}RetainsPct",
+          fmt_f(100 * lora_mean / van_mean, 1))
+    m.add(f"Setfit{prefix}MeanDropPP",
+          fmt_f((van_mean - lora_mean) * 100, 2))
+    m.add(f"Setfit{prefix}MinDropPP", fmt_f(min(drops_pp), 1),
+          comment="smallest per-task accuracy drop (pp)")
+    m.add(f"Setfit{prefix}MaxDropPP", fmt_f(max(drops_pp), 1),
+          comment="largest per-task accuracy drop (pp)")
+
+
 # ===========================================================================
 # Build
 # ===========================================================================
@@ -359,6 +444,13 @@ def build() -> None:
     fwd            = json.loads((RESULTS / "forward_breakdown.json").read_text())
     setfit_raw     = load_csv(QUALITY / "setfit_mpnet_multiseed.csv")
     setfit, setfit_vanilla_lr, setfit_lora_lr = aggregate_setfit(setfit_raw)
+    # BGE-m3 accuracy run (same protocol, serving model): optional until
+    # benchmarks/quality/run_setfit.sh has produced the CSV.
+    setfit_bge_path = QUALITY / "setfit_bge_multiseed.csv"
+    setfit_bge = setfit_bge_vanilla_lr = setfit_bge_lora_lr = None
+    if setfit_bge_path.exists():
+        setfit_bge, setfit_bge_vanilla_lr, setfit_bge_lora_lr = (
+            aggregate_setfit(load_csv(setfit_bge_path)))
 
     m = Macros()
 
@@ -460,8 +552,8 @@ def build() -> None:
     p50_lo = float(n_main_rows[100]["p50_ms"])
     p50_hi = float(n_main_rows[47000]["p50_ms"])
     m.add("PFiftyDriftPctNHundredToFortySevenK",
-          fmt_f((p50_hi - p50_lo) / p50_lo * 100, 1),
-          comment="(p50_47k - p50_100) / p50_100 * 100")
+          fmt_f(abs((p50_hi - p50_lo) / p50_lo * 100), 1),
+          comment="|p50_47k - p50_100| / p50_100 * 100 (abs so prose reads '≤X%')")
     m.add("SweepNumSeeds", n_main_rows[100].get("n_seeds", "1"),
           comment="seeded repeats per config in sweep_main/sweep_ranks")
     m.add("CustomerMultiplierHundredToFortySevenK",
@@ -733,47 +825,7 @@ def build() -> None:
           comment="vanilla body LR (single LR in the sweep)")
     m.add("SetfitLoraLR", setfit_lora_lr,
           comment="shared LoRA body LR = argmax across-dataset mean")
-    SETFIT_TASKS = [
-        ("SSTTwo",      "SetFit/sst2"),
-        ("SSTFive",     "SetFit/sst5"),
-        ("CR",          "SetFit/CR"),
-        ("AmazonCF",    "SetFit/amazon_counterfactual_en"),
-        ("Emotion",     "SetFit/emotion"),
-        ("EnronSpam",   "SetFit/enron_spam"),
-        ("AGNews",      "SetFit/ag_news"),
-    ]
-    van_total = 0.0
-    lora_total = 0.0
-    drops_pp: list[float] = []
-    for tag, key in SETFIT_TASKS:
-        van = float(next(r for r in setfit
-                         if r["dataset"] == key and r["method"] == "vanilla"
-                         )["accuracy"])
-        lora = float(next(r for r in setfit
-                          if r["dataset"] == key and r["method"] == "lora"
-                          )["accuracy"])
-        delta = lora - van
-        m.add(f"Setfit{tag}Vanilla", fmt_f(van, 3))
-        m.add(f"Setfit{tag}Lora",    fmt_f(lora, 3))
-        # Delta with explicit minus sign (paper writes it as -0.016)
-        m.add(f"Setfit{tag}Delta",   fmt_f(delta, 3))
-        van_total += van
-        lora_total += lora
-        drops_pp.append((van - lora) * 100)
-
-    van_mean = van_total / len(SETFIT_TASKS)
-    lora_mean = lora_total / len(SETFIT_TASKS)
-    m.add("SetfitMeanVanilla",     fmt_f(van_mean, 3))
-    m.add("SetfitMeanLora",        fmt_f(lora_mean, 3))
-    m.add("SetfitMeanDelta",       fmt_f(lora_mean - van_mean, 3))
-    m.add("SetfitRetainsPct",
-          fmt_f(100 * lora_mean / van_mean, 1))
-    m.add("SetfitMeanDropPP",
-          fmt_f((van_mean - lora_mean) * 100, 2))
-    m.add("SetfitMinDropPP", fmt_f(min(drops_pp), 1),
-          comment="smallest per-task accuracy drop (pp)")
-    m.add("SetfitMaxDropPP", fmt_f(max(drops_pp), 1),
-          comment="largest per-task accuracy drop (pp)")
+    emit_setfit_macros(m, setfit, prefix="")
 
     # MPNet-specific param counts (used in Table 1 footer + Appendix A)
     mpnet_lora_params = (2 * MPNET_TARGET_MODULES * MPNET_NUM_LAYERS
@@ -782,6 +834,24 @@ def build() -> None:
     m.add("MpnetParamReductionRankEight",
           round(MPNET_VANILLA_TRAINABLE / mpnet_lora_params),
           comment="= MPNET_VANILLA_TRAINABLE / mpnet_lora_params")
+
+    # =======================================================================
+    # 10b. SetFit accuracy on the serving model (BGE-m3) — optional until
+    #      benchmarks/quality/run_setfit.sh has been run on the GPU host
+    # =======================================================================
+    if setfit_bge is not None:
+        m.section("SetFit accuracy (bge-m3, n=8 per class, 10-seed mean)",
+                  "benchmarks/quality/setfit_bge_multiseed.csv "
+                  "(same protocol as the mpnet sweep, on the serving model)")
+        m.add("SetfitBgeVanillaLR", setfit_bge_vanilla_lr,
+              comment="vanilla body LR (single LR in the sweep)")
+        m.add("SetfitBgeLoraLR", setfit_bge_lora_lr,
+              comment="shared LoRA body LR = argmax across-dataset mean")
+        emit_setfit_macros(m, setfit_bge, prefix="Bge")
+        m.add("BgeParamReductionRankEight",
+              round(BGE_NUM_PARAMS / lora_params(8)),
+              comment="= BGE_NUM_PARAMS / lora_params(r=8); "
+                      "vanilla SetFit trains the full encoder")
 
     # =======================================================================
     # 11. Headline / abstract-friendly aliases
@@ -828,13 +898,18 @@ def build() -> None:
     (OUT / "table_accuracy.tex").write_text(render_table_accuracy(
         setfit, MPNET_HIDDEN_SIZE, MPNET_NUM_LAYERS,
         MPNET_TARGET_MODULES, MPNET_VANILLA_TRAINABLE))
+    if setfit_bge is not None:
+        (OUT / "table_accuracy_bge.tex").write_text(render_table_accuracy(
+            setfit_bge, BGE_HIDDEN_SIZE, BGE_NUM_LAYERS,
+            BGE_TARGET_MODULES, BGE_NUM_PARAMS))
 
     # Stdout summary
     storage_reduction_x = round(
         BGE_NUM_PARAMS * FP16_BYTES / lora_bytes(8)
     )
     print_summary(m._defined, sweep_main, peft_grouped, sysname_ref,
-                  fwd, setfit, env, storage_reduction_x)
+                  fwd, setfit, env, storage_reduction_x,
+                  have_setfit_bge=setfit_bge is not None)
 
 
 # ===========================================================================
@@ -959,10 +1034,16 @@ def render_table_baselines(peft_grouped, peft_homog, sysname_ref) -> str:
     return GEN_HEADER + "\n".join(lines) + "\n"
 
 
-def render_table_accuracy(setfit, mpnet_hidden: int, mpnet_layers: int,
-                          mpnet_target_modules: int,
-                          mpnet_vanilla_trainable: int) -> str:
-    """tab:accuracy body: per-task SetFit vanilla vs LoRA-r8."""
+def render_table_accuracy(setfit, hidden: int, layers: int,
+                          target_modules: int,
+                          vanilla_trainable: int) -> str:
+    """tab:accuracy body: per-task SetFit vanilla vs LoRA-r8.
+
+    Arch params select the model (mpnet for table_accuracy.tex, bge-m3 for
+    table_accuracy_bge.tex); they only affect the trainable-param footer row.
+    A leading 'Frozen' column (head-only fit, no body adaptation) is added
+    when the sweep includes frozen rows.
+    """
     DATASETS = [
         ("SST-2",      "SetFit/sst2"),
         ("SST-5",      "SetFit/sst5"),
@@ -972,13 +1053,19 @@ def render_table_accuracy(setfit, mpnet_hidden: int, mpnet_layers: int,
         ("EnronSpam",  "SetFit/enron_spam"),
         ("AG News",    "SetFit/ag_news"),
     ]
+    have_frozen = any(r["method"] == "frozen" for r in setfit)
     lines: list[str] = []
-    lines.append(r"\begin{tabular}{lrrr}")
-    lines.append(r"\toprule")
-    lines.append(r"Dataset & Vanilla & LoRA-$r$8 & $\Delta$ \\")
+    if have_frozen:
+        lines.append(r"\begin{tabular}{lrrrr}")
+        lines.append(r"\toprule")
+        lines.append(r"Dataset & Frozen & Vanilla & LoRA-$r$8 & $\Delta$ \\")
+    else:
+        lines.append(r"\begin{tabular}{lrrr}")
+        lines.append(r"\toprule")
+        lines.append(r"Dataset & Vanilla & LoRA-$r$8 & $\Delta$ \\")
     lines.append(r"\midrule")
 
-    van_sum = lora_sum = 0.0
+    van_sum = lora_sum = frozen_sum = 0.0
     for label, key in DATASETS:
         van = float(next(r for r in setfit
                          if r["dataset"] == key and r["method"] == "vanilla"
@@ -988,8 +1075,15 @@ def render_table_accuracy(setfit, mpnet_hidden: int, mpnet_layers: int,
                           )["accuracy"])
         delta = lora - van
         delta_str = f"$-${abs(delta):.3f}" if delta < 0 else f"{delta:.3f}"
+        frozen_cell = ""
+        if have_frozen:
+            frozen = float(next(r for r in setfit
+                                if r["dataset"] == key and r["method"] == "frozen"
+                                )["accuracy"])
+            frozen_cell = f"{frozen:.3f} & "
+            frozen_sum += frozen
         lines.append(
-            f"{label:<14s} & {van:.3f} & {lora:.3f} & {delta_str} \\\\"
+            f"{label:<14s} & {frozen_cell}{van:.3f} & {lora:.3f} & {delta_str} \\\\"
         )
         van_sum += van
         lora_sum += lora
@@ -999,20 +1093,23 @@ def render_table_accuracy(setfit, mpnet_hidden: int, mpnet_layers: int,
     mean_delta = lora_mean - van_mean
     mean_delta_str = (f"$-${abs(mean_delta):.3f}"
                       if mean_delta < 0 else f"{mean_delta:.3f}")
+    frozen_mean_cell = ""
+    if have_frozen:
+        frozen_mean_cell = rf"\textbf{{{frozen_sum / len(DATASETS):.3f}}} & "
     lines.append(r"\midrule")
     lines.append(
-        rf"\textbf{{Mean}}  & \textbf{{{van_mean:.3f}}} & "
+        rf"\textbf{{Mean}}  & {frozen_mean_cell}\textbf{{{van_mean:.3f}}} & "
         rf"\textbf{{{lora_mean:.3f}}} & {mean_delta_str} \\"
     )
 
     # Trainable-param footer row (sourced from model_metadata.csv)
-    mpnet_lora_params = (2 * mpnet_target_modules * mpnet_layers
-                         * mpnet_hidden * 8)
-    reduction = round(mpnet_vanilla_trainable / mpnet_lora_params)
-    van_M = round(mpnet_vanilla_trainable / 1e6)
-    lora_K = round(mpnet_lora_params / 1000)
+    lora_params_r8 = 2 * target_modules * layers * hidden * 8
+    reduction = round(vanilla_trainable / lora_params_r8)
+    van_M = round(vanilla_trainable / 1e6)
+    lora_K = round(lora_params_r8 / 1000)
+    frozen_params_cell = "0 & " if have_frozen else ""
     lines.append(
-        f"Trainable params & {van_M}M & {lora_K}K & "
+        f"Trainable params & {frozen_params_cell}{van_M}M & {lora_K}K & "
         rf"{reduction}$\times$ smaller \\"
     )
     lines.append(r"\bottomrule")
@@ -1025,10 +1122,14 @@ def render_table_accuracy(setfit, mpnet_hidden: int, mpnet_layers: int,
 # ===========================================================================
 
 def print_summary(macros_defined, sweep_main, peft_grouped, sysname_ref,
-                  fwd, setfit, env, storage_reduction) -> None:
+                  fwd, setfit, env, storage_reduction,
+                  have_setfit_bge: bool = False) -> None:
     print(f"Wrote {len(macros_defined)} macros to paper/numbers.tex")
-    print( "Wrote tabular bodies to paper/table_main.tex, "
-          "paper/table_baselines.tex, paper/table_accuracy.tex")
+    tables = ("paper/table_main.tex, paper/table_baselines.tex, "
+              "paper/table_accuracy.tex")
+    if have_setfit_bge:
+        tables += ", paper/table_accuracy_bge.tex"
+    print(f"Wrote tabular bodies to {tables}")
     print()
 
     print("== ENVIRONMENT (from env_metadata.csv) ==")
@@ -1061,6 +1162,12 @@ def print_summary(macros_defined, sweep_main, peft_grouped, sysname_ref,
     print("    src/lora_serving/benchmark/run.py is instrumented; the column")
     print("    will appear once benchmarks/run_sxm80.sh is re-run. Until then,")
     print("    \\ColdStartSpeedupNOneK and \\LateFuseColdLoadSecNOneK are TODO.")
+    if not have_setfit_bge:
+        print("  SetFit accuracy on bge-m3 (SetfitBge* macros, "
+              "table_accuracy_bge.tex):")
+        print("    run benchmarks/quality/run_setfit.sh on the GPU host to")
+        print("    produce benchmarks/quality/setfit_bge_multiseed.csv, then")
+        print("    re-run this script.")
     print()
 
     print("== KNOWN DRIFT BETWEEN PAPER PROSE AND DATA ==")

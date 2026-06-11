@@ -4,6 +4,9 @@ For each dataset, samples N label-balanced examples, trains both methods with
 identical hyperparameters and seed, and evaluates on the held-out test split.
 Supports multi-seed sweeps and per-method LR sweeps (LoRA only).
 
+A third method, "frozen", skips contrastive body training entirely and fits
+only the LR head on the pre-trained embeddings (no-adaptation baseline).
+
 Usage:
     uv run python benchmarks/quality/setfit_compare.py \\
         --base-model sentence-transformers/paraphrase-mpnet-base-v2 \\
@@ -131,6 +134,9 @@ def _train_and_evaluate(
         target_modules=target_modules,
         max_seq_length=max_seq_length,
     )
+    if method == "frozen":
+        for p in model.model_body.parameters():
+            p.requires_grad_(False)
     trainable = _count_trainable_body_params(model)
 
     args = TrainingArguments(
@@ -151,7 +157,11 @@ def _train_and_evaluate(
     )
 
     t0 = time.perf_counter()
-    trainer.train()
+    if method == "frozen":
+        # Head-only fit on pre-trained embeddings; no contrastive body pass.
+        trainer.train_classifier(train_ds["text"], train_ds["label"], args=args)
+    else:
+        trainer.train()
     train_seconds = time.perf_counter() - t0
 
     metrics = trainer.evaluate()
@@ -216,7 +226,7 @@ def run(
     body_lr: Annotated[float, typer.Option(help="Body LR for vanilla and 'paper-LR' LoRA. SetFit library default reproduces the paper.")] = 2e-5,
     lora_lrs: Annotated[list[float], typer.Option("--lora-lrs", help="Additional LoRA-specific LRs to sweep (in addition to body_lr).")] = [1e-4, 3e-4, 5e-4],
     eval_size: Annotated[Optional[int], typer.Option(help="Optional cap on test-split size for faster eval.")] = None,
-    methods: Annotated[list[str], typer.Option("--methods", "-m", help="Which methods to run: vanilla, lora.")] = ["vanilla", "lora"],
+    methods: Annotated[list[str], typer.Option("--methods", "-m", help="Which methods to run: vanilla, lora, frozen.")] = ["vanilla", "lora"],
     out: Annotated[Path, typer.Option(help="Output CSV path.")] = Path("quality_results.csv"),
     resume: Annotated[bool, typer.Option(help="Skip configs already present in the output CSV.")] = False,
 ) -> None:
@@ -225,6 +235,7 @@ def run(
     LR matrix:
       - vanilla runs only at body_lr (e.g. 2e-5).
       - lora runs at body_lr AND every value in --lora-lrs.
+      - frozen has no body LR (recorded as 0).
     """
     if torch.cuda.is_available():
         typer.echo(f"GPU: {torch.cuda.get_device_name(0)}")
@@ -237,6 +248,8 @@ def run(
 
     # (method, body_lr) pairs to evaluate
     configs: list[tuple[str, float]] = []
+    if "frozen" in methods:
+        configs.append(("frozen", 0.0))
     if "vanilla" in methods:
         configs.append(("vanilla", body_lr))
     if "lora" in methods:
@@ -272,7 +285,11 @@ def run(
         writer = csv.DictWriter(csv_handle, fieldnames=existing_rows[0].keys())
 
     total = len(datasets) * len(configs) * len(seeds)
-    pending = total - len(done)
+    done_in_grid = sum(
+        1 for d in datasets for mth, lr in configs for s in seeds
+        if (d, mth, lr, s) in done
+    )
+    pending = total - done_in_grid
     typer.echo(f"Total configs: {total}  Pending: {pending}  "
                f"(datasets={len(datasets)} × method-LR pairs={len(configs)} × seeds={len(seeds)})")
 
