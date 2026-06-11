@@ -1077,17 +1077,6 @@ def print_summary(macros_defined, sweep_main, peft_grouped, sysname_ref,
         print("    \\ColdStartSpeedupNOneK and \\LateFuseColdLoadSecNOneK are TODO.")
         print()
 
-    print("== KNOWN DRIFT BETWEEN PAPER PROSE AND DATA ==")
-    print("  - paper 'headline' QPS = 810; computed = "
-          f"{round(float(n47['throughput_samples_sec']))} (rounded)")
-    print("  - paper 'headline' p99 = 41 ms; computed = "
-          f"{round(float(n47['p99_ms']))} (rounded)")
-    print(f"  - paper 'storage reduction' = 700x; computed = {storage_reduction}x")
-    print("  - paper 'LoRA retains 97% of vanilla'; computed = "
-          f"{100 * sum(float(r['accuracy']) for r in setfit if r['method']=='lora') / sum(float(r['accuracy']) for r in setfit if r['method']=='vanilla'):.1f}%")
-    print("  - paper 'mean drop 2.2 pp'; computed = "
-          f"{(sum(float(r['accuracy']) for r in setfit if r['method']=='vanilla') - sum(float(r['accuracy']) for r in setfit if r['method']=='lora')) / 7 * 100:.2f} pp")
-
 
 if __name__ == "__main__":
     build()
