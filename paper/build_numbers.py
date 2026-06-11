@@ -473,9 +473,9 @@ def build() -> None:
     )
     m.add("PNinetyNineCeilingNSweep", fmt_f(p99_ceiling_n_sweep, 1),
           comment="max p99 over N at B=32 r=8")
-    fwd_mean_b32_r8 = sum(float(r["forward_p50_ms"]) for r in sweep_main
-                          if r["batch_size"] == "32" and r["lora_rank"] == "8"
-                          ) / len(N_SUFFIX)
+    fwd_mean_b32_r8 = statistics.fmean(
+        float(r["forward_p50_ms"]) for r in sweep_main
+        if r["batch_size"] == "32" and r["lora_rank"] == "8")
     m.add("ForwardMsConstantBThirtyTwo", fmt_f(fwd_mean_b32_r8, 1),
           comment="mean forward_p50 across N at B=32 r=8")
     asm_max_b32_r8 = max(float(r["assemble_share_pct"]) for r in sweep_main

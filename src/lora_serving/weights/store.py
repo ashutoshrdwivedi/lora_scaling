@@ -37,17 +37,23 @@ class LoraWeight:
         self,
         a_by_module: dict[str, Tensor],
         b_by_module: dict[str, Tensor],
+        scale: float = 1.0,
     ) -> None:
         """Load from column-major tensors (as stored in adapter .bin files).
 
         Args:
             a_by_module: module → (num_layers, lora_rank, hidden_size)  — A in column-major order
             b_by_module: module → (num_layers, hidden_size, lora_rank)  — B in column-major order
+            scale:       LoRA scaling factor alpha/rank, folded into B so the
+                         forward pass computes delta = (alpha/r)·B·A·x without
+                         a per-call multiply. Use 1.0 when alpha == rank.
         """
         for m, a in a_by_module.items():
             self.wa[m].copy_(a.to(self.wa[m].device, self.wa[m].dtype).transpose(1, 2))
         for m, b in b_by_module.items():
             self.wb[m].copy_(b.to(self.wb[m].device, self.wb[m].dtype).transpose(1, 2))
+            if scale != 1.0:
+                self.wb[m].mul_(scale)
 
 
 class AdapterStore:
@@ -72,6 +78,7 @@ class AdapterStore:
         adapter_id: str,
         path: str,
         key_fn: KeyResolverFn,
+        lora_alpha: float | None = None,
     ) -> None:
         """Load a LoRA adapter from a .bin file and cache it on GPU.
 
@@ -79,8 +86,16 @@ class AdapterStore:
             adapter_id: Unique identifier for this adapter (used in get()).
             path:       Path to the pytorch_adapter.bin file.
             key_fn:     Maps (layer_idx, module_name) → (key_A, key_B) in the state dict.
+            lora_alpha: The adapter's lora_alpha hyperparameter. The serving
+                        forward pass applies no scaling factor, so the standard
+                        delta = (alpha/r)·B·A·x is honored by folding alpha/r
+                        into B at load time. None assumes alpha == lora_rank
+                        (scale 1.0) — only correct if the adapter was trained
+                        that way; pass the real alpha for adapters where it
+                        differs from the rank.
         """
         cfg = self._config
+        scale = 1.0 if lora_alpha is None else lora_alpha / cfg.lora_rank
         state_dict = torch.load(path, map_location=cfg.device, weights_only=True)
         weight = LoraWeight(cfg)
 
@@ -95,7 +110,7 @@ class AdapterStore:
             a_by_module[module] = torch.stack(a_tensors)
             b_by_module[module] = torch.stack(b_tensors)
 
-        weight.copy_from_tensors(a_by_module, b_by_module)
+        weight.copy_from_tensors(a_by_module, b_by_module, scale=scale)
         self._store[adapter_id] = weight
 
     def load_synthetic(self, adapter_id: str, seed: int | None = None) -> None:

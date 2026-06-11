@@ -38,6 +38,7 @@ class LoraServingConfig:
     head_dim: int = field(init=False)
     intermediate_size: int = field(init=False)
     layer_norm_eps: float = field(init=False)
+    hidden_act: str = field(init=False)
 
     def __post_init__(self):
         hf = AutoConfig.from_pretrained(self.model_name)
@@ -47,3 +48,4 @@ class LoraServingConfig:
         self.head_dim = hf.hidden_size // hf.num_attention_heads
         self.intermediate_size = hf.intermediate_size
         self.layer_norm_eps = hf.layer_norm_eps
+        self.hidden_act = getattr(hf, "hidden_act", "gelu")
