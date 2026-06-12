@@ -101,11 +101,11 @@ via Late-Fusion Batched Matrix Multiplication}
 \label{sec:intro}
 
 Enterprise NLP features, such as intent detection, ticket routing,
-and text classification, demand low latency and predictable cost at
+and text classification, require low latency and predictable cost at
 high request volume \cite{arora2024intent}.
 These workloads are typically served by a shared bidirectional encoder
-with tenant-specific classification heads.
-Fine-tuning the encoder parameters alongside the classification head
+with tenant-specific task heads.
+Fine-tuning the encoder parameters alongside the task head
 yields consistent accuracy gains over a frozen shared encoder
 \cite{devlin2019bert,tunstall2022efficient,jain2026succeeding}.
 Serving an isolated, fully fine-tuned model per tenant, however, is
@@ -122,49 +122,51 @@ layers)—a \StorageReductionFullVsLoraRankEight$\times$ reduction.
 The remaining challenge is \textbf{batched serving} across these
 heterogeneous adapters on a shared GPU.
 
-Prior multi-tenant LoRA serving systems—including Punica
+Existing multi-tenant LoRA serving systems—including Punica
 \cite{chen2024punica}, S-LoRA \cite{sheng2024slora}, vLLM
 \cite{kwon2023vllm}, and LoRAX \cite{predibase2023lorax}—are tailored
 for autoregressive decoder workloads, where custom CUDA kernels and
 paged-memory pools optimize memory-bound, token-by-token generation
 over a KV cache.
-By contrast, encoder workloads exhibit fundamentally different
-dynamics: the bidirectional forward pass at sequence length $S \gg 1$
+Meanwhile, on the encoder side, runtimes do not support mixed-tenant
+LoRA serving: vLLM lacks a runtime LoRA path for encoder models, TEI
+serves encoders without adapters, and PEFT's mixed-batch API is
+restricted to sequential adapter sub-batching and cannot route
+per-tenant heads (\S\ref{sec:relwork}).
+
+Encoder workloads exhibit fundamentally different dynamics from
+decoder generation: the bidirectional forward pass at sequence length $S \gg 1$
 is compute-bound and dominated by the base model's projection weights.
 Consequently, the LoRA compute path accounts for only
 \ProfLoraBmmIsolatedPct{}\% of the total forward GPU time, meaning
-custom CUDA kernels yield negligible, single-digit performance gains
+custom CUDA kernels yield minimal, single-digit performance gains
 (\S\ref{sec:results_custom_kernels}, Finding~6).
 This structural difference makes standard batched matrix
-multiplication (BMM), rather than custom kernels, the appropriate
-primitive for encoder serving.
-Yet existing runtimes do not support this pattern: vLLM lacks a
-runtime LoRA path for encoder models, TEI serves encoders without
-adapters, and PEFT's mixed-batch API is restricted to sequential
-adapter sub-batching and cannot route per-tenant heads (\S\ref{sec:relwork}).
+multiplication (BMM) the appropriate primitive for encoder serving.
 
-We present \sysname, a serving system that fills this gap.
+We present \sysname, a serving system built on this primitive.
 Its design turns on \emph{where} the adapter is applied: merging
 $B_i A_i$ into $W_0$ yields a per-sample weight matrix $W'_i$ that must be
 applied serially, whereas keeping the base output $W_0 x$ and the delta
 $B_i A_i x$ as separate terms and summing them lets the per-sample work
-live inside a single batched matrix multiplication. We call this
+run as batched matrix multiplication. We call this
 \emph{activation-space} fusion, as opposed to parameter-space
 merging. \sysname{} runs the shared base path once over
 all $\mathcal{B}$ samples and dispatches the per-sample LoRA paths in
-parallel via one \texttt{torch.bmm} call per attention layer, so a
+parallel via \texttt{torch.bmm}, so a
 mixed-tenant batch completes in a single forward pass regardless of how
 many distinct adapters it references. Per-tenant task heads
 (variable-size classifiers, regressors, retrieval re-rankers) are
 batched analogously via zero-padded BMM.
+
 Our single-GPU evaluation characterizes this serving primitive; a
 minimal reference deployment for stateless scale-out is in
 Appendix~\ref{sec:deployment}.
 
 \paragraph{Contributions.}
 \begin{itemize}
-  \item We identify and formalize the \emph{encoder multi-tenant LoRA serving}
-    problem, and show that existing systems leave it unsolved
+  \item We identify and characterize the \emph{encoder multi-tenant LoRA
+    serving} problem, and show that existing systems leave it unsolved
     (\S\ref{sec:relwork}).
 
   \item We present late-fusion BMM serving, an architecture that batches
