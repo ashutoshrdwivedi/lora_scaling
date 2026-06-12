@@ -101,13 +101,13 @@ via Late-Fusion Batched Matrix Multiplication}
 \label{sec:intro}
 
 Enterprise NLP features, such as intent detection, ticket routing,
-and text classification, demand low-latency, deterministic outputs.
-For these workloads, bidirectional encoder architectures remain the preferred choice,
-typically deployed as a shared
-base encoder serving tenant-specific classification heads.
+and text classification, demand low latency and predictable cost at
+high request volume \cite{arora2024intent}.
+These workloads are typically served by a shared bidirectional encoder
+with tenant-specific classification heads.
 Fine-tuning the encoder parameters alongside the classification head
 yields consistent accuracy gains over a frozen shared encoder
-\cite{devlin2019bert,tunstall2022efficient}.
+\cite{devlin2019bert,tunstall2022efficient,jain2026succeeding}.
 Serving an isolated, fully fine-tuned model per tenant, however, is
 infeasible at scale.
 At \BgeFpSixteenGB{}~GB per copy in float16 precision, serving
@@ -138,7 +138,7 @@ custom CUDA kernels yield negligible, single-digit performance gains
 This structural difference makes standard batched matrix
 multiplication (BMM), rather than custom kernels, the appropriate
 primitive for encoder serving.
-Yet, existing runtimes fail to support this pattern: vLLM lacks a
+Yet existing runtimes do not support this pattern: vLLM lacks a
 runtime LoRA path for encoder models, TEI serves encoders without
 adapters, and PEFT's mixed-batch API is restricted to sequential
 adapter sub-batching and cannot route per-tenant heads (\S\ref{sec:relwork}).
@@ -157,8 +157,7 @@ mixed-tenant batch completes in a single forward pass regardless of how
 many distinct adapters it references. Per-tenant task heads
 (variable-size classifiers, regressors, retrieval re-rankers) are
 batched analogously via zero-padded BMM.
-
-Our single-GPU evaluation characterizes the serving primitive; a
+Our single-GPU evaluation characterizes this serving primitive; a
 minimal reference deployment for stateless scale-out is in
 Appendix~\ref{sec:deployment}.
 
@@ -170,32 +169,25 @@ Appendix~\ref{sec:deployment}.
 
   \item We present late-fusion BMM serving, an architecture that batches
     arbitrary mixed-tenant encoder requests without weight merging and
-    without custom CUDA kernels, in standard PyTorch (\S\ref{sec:system}).
+    without custom CUDA kernels, in standard PyTorch---removing the
+    custom-kernel build step that is the dominant deployment friction
+    on managed GPU platforms (\S\ref{sec:system},
+    Appendix~\ref{sec:deployment}).
 
   \item We empirically demonstrate that adapter count does not drive
     inference latency: scaling from 100 to \HeadlineCapacity{} adapters at batch
     size \HeadlineBatch{} on a single \HeadlineGPU{} leaves p50 latency flat
     (\PFiftyAtNHundred$\to$\PFiftyAtNFortySevenK~ms) and p99 bounded
-    ($\le$\PNinetyNineCeilingNSweep~ms), with serving throughput saturating
-    at \QpsAtBSixtyFourSatVal{}~samples/sec by batch size 64
     (\S\ref{sec:experiments}).
 
   \item We benchmark \sysname{} against a HuggingFace PEFT swap baseline
-    on identical hardware and show
+    on identical hardware:
     \textbf{\HeadlineSpeedupLow--\HeadlineSpeedupHigh$\times$}
-    throughput improvements under adapter-grouped batching and
-    \textbf{$>$\ColdStartSpeedupMin{}$\times$}
-    cold-start deployment improvements.
-    By holding batch composition fixed
-    and varying only $N$, we isolate \texttt{set\_adapter} as the
+    higher throughput under adapter-grouped batching,
+    \textbf{$>$\ColdStartSpeedupMin{}$\times$} faster cold-start
+    deployment, and \texttt{set\_adapter} isolated as the
     $\mathcal{O}(N)$ bottleneck in the state-of-the-practice baseline
     (\S\ref{sec:results_baselines}, Finding~7).
-
-  \item By staying in standard PyTorch, \sysname{} removes the custom-CUDA
-    build step that is the dominant deployment friction on managed GPU
-    platforms (Databricks, SageMaker, Modal), letting the same serving
-    primitive drop into a standard cluster scale-out
-    (Appendix~\ref{sec:deployment}).
 \end{itemize}
 
 % =============================================================================
@@ -815,6 +807,11 @@ HuggingFace TEI \cite{huggingface2023tei} serves encoder/embedding models at
 high throughput via Flash Attention and cuBLASLt but has no adapter support
 (an open feature request as of
 June~2026).\footnote{\url{https://github.com/huggingface/text-embeddings-inference/issues/788}}
+In production multi-tenant retrieval, Vishwanathan et
+al.~\cite{vishwanathan2022multitenant} serve a shared sentence
+bi-encoder with per-tenant fine-tuned final layers, switching
+tenant-specific weights at request time; weight switching cannot batch
+mixed-tenant requests---the limitation \sysname{} removes.
 PetS \cite{zhou2022pets}, the closest prior system, targets multi-adapter
 encoder serving for Adapter \cite{houlsby2019adapter}, BitFit
 \cite{benzaken2022bitfit}, and MaskBERT \cite{zhao2020masking} on

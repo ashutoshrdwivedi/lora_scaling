@@ -171,7 +171,7 @@
   author        = {Li, Suyi and Lu, Hanfeng and Wu, Tianyuan and Yu, Minchen and Weng, Qizhen and Chen, Xusheng and Shan, Yizhou and Yuan, Binhang and Wang, Wei},
   year          = {2024},
   eprint        = {2401.11240},
-  archivePrefix = {arXiv},
+  archiveprefix = {arXiv},
   url           = {https://arxiv.org/abs/2401.11240}
 }
 
@@ -189,4 +189,52 @@
   pages     = {3982--3992},
   year      = {2019},
   url       = {https://aclanthology.org/D19-1410/}
+}
+
+@inproceedings{arora2024intent,
+  title     = {Intent Detection in the Age of {LLM}s},
+  author    = {Arora, Gaurav  and
+               Jain, Shreya  and
+               Merugu, Srujana},
+  editor    = {Dernoncourt, Franck  and
+               Preo{\c{t}}iuc-Pietro, Daniel  and
+               Shimorina, Anastasia},
+  booktitle = {Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing: Industry Track},
+  month     = nov,
+  year      = {2024},
+  address   = {Miami, Florida, US},
+  publisher = {Association for Computational Linguistics},
+  url       = {https://aclanthology.org/2024.emnlp-industry.114/},
+  doi       = {10.18653/v1/2024.emnlp-industry.114},
+  pages     = {1559--1570},
+  abstract  = {Intent detection is a critical component of task-oriented dialogue systems (TODS) which enables the identification of suitable actions to address user utterances at each dialog turn. Traditional approaches relied on computationally efficient supervised sentence transformer encoder models, which require substantial training data and struggle with out-of-scope (OOS) detection. The emergence of generative large language models (LLMs) with intrinsic world knowledge presents new opportunities to address these challenges.In this work, we adapt SOTA LLMs using adaptive in-context learning and chain-of-thought prompting for intent detection, and compare their performance with contrastively fine-tuned sentence transformer (SetFit) models to highlight prediction quality and latency tradeoff. We propose a hybrid system using uncertainty based routing strategy to combine the two approaches that along with negative data augmentation results in achieving the best of both worlds ( i.e. within 2{\%} of native LLM accuracy with 50{\%} less latency). To better understand LLM OOS detection capabilities, we perform controlled experiments revealing that this capability is significantly influenced by the scope of intent labels and the size of the label space. We also introduce a two-step approach utilizing internal LLM representations, demonstrating empirical gains in OOS detection accuracy and F1-score by {\ensuremath{>}}5{\%} for the Mistral-7B model.}
+}
+
+@misc{jain2026succeeding,
+  title         = {Succeeding at Scale: Automated Dataset Construction and Query-Side Adaptation for Multi-Tenant Search},
+  author        = {Prateek Jain and Shabari S Nair and Ritesh Goru and Prakhar Agarwal and Ajay Yadav and Yoga Sri Varshan Varadharajan and Constantine Caramanis},
+  year          = {2026},
+  eprint        = {2601.04646},
+  archiveprefix = {arXiv},
+  primaryclass  = {cs.IR},
+  url           = {https://arxiv.org/abs/2601.04646}
+}
+
+@inproceedings{vishwanathan2022multitenant,
+  title     = {Multi-Tenant Optimization For Few-Shot Task-Oriented {FAQ} Retrieval},
+  author    = {Vishwanathan, Asha  and
+               Warrier, Rajeev  and
+               Vadakkekara Suresh, Gautham  and
+               Kandpal, Chandra Shekhar},
+  editor    = {Li, Yunyao  and
+               Lazaridou, Angeliki},
+  booktitle = {Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing: Industry Track},
+  month     = dec,
+  year      = {2022},
+  address   = {Abu Dhabi, UAE},
+  publisher = {Association for Computational Linguistics},
+  url       = {https://aclanthology.org/2022.emnlp-industry.19/},
+  doi       = {10.18653/v1/2022.emnlp-industry.19},
+  pages     = {188--197},
+  abstract  = {Business-specific Frequently Asked Questions (FAQ) retrieval in task-oriented dialog systems poses unique challenges vis {\`a} vis community based FAQs. Each FAQ question represents an intent which is usually an umbrella term for many related user queries. We evaluate performance for such Business FAQs both with standard FAQ retrieval techniques using query-Question (q-Q) similarity and few-shot intent detection techniques. Implementing a real-world solution for FAQ retrieval in order to support multiple tenants (FAQ sets) entails optimizing speed, accuracy and cost. We propose a novel approach to scale multi-tenant FAQ applications in real-world context by contrastive fine-tuning of the last layer in sentence Bi-Encoders along with tenant-specific weight switching.}
 }
