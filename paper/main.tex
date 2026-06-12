@@ -331,7 +331,7 @@ where $[A_0, \ldots, A_{\mathcal{B}-1}] \in \mathbb{R}^{\mathcal{B}
 \times H \times r}$ is the
 stack of per-sample shrink matrices, assembled from the adapter store at
 request time.
-Both \texttt{bmm} calls are a single GPU kernel launch, processing
+Each \texttt{bmm} call is a single GPU kernel launch, processing
 all $\mathcal{B}$
 samples simultaneously regardless of how many distinct adapters they reference.
 
@@ -482,8 +482,8 @@ adapter pool.
 
 \paragraph{Adapters and correctness.}
 Latency and throughput experiments use synthetic LoRA weights, isolating
-serving-system overhead from adapter-quality artefacts. We numerically
-verify that \sysname{}'s output is bit-equivalent to a reference
+serving-system overhead from adapter-quality artifacts. We verify
+that \sysname{}'s output is numerically equivalent to a reference
 PEFT-wrapped \texttt{AutoModel} with the same A/B weights to within
 \texttt{atol=rtol=1e-4} in fp32 across five scenarios---zero-LoRA, single
 shared adapter, per-sample distinct adapters with shared per-layer A/B,
@@ -873,7 +873,7 @@ pure-PyTorch deployability.
 All latency and throughput results are measured on one GPU. The architecture
 targets horizontal scale-out via stateless, tenant-sticky replicas, with a
 reference Kubernetes deployment provided (Appendix~\ref{sec:deployment});
-cluster-level throughput and behaviour under skewed (hot-tenant) traffic remain
+cluster-level throughput and behavior under skewed (hot-tenant) traffic remain
 to be evaluated.
 
 \paragraph{Evaluation scope.}
@@ -995,7 +995,7 @@ pod---simpler, and adequate when the population fits one node---leaving
 shard-aware placement as a configuration change.
 
 \paragraph{Elasticity and hot reload.}
-A horizontal pod autoscaler adds or removes replicas on utilisation metrics.
+A horizontal pod autoscaler adds or removes replicas on utilization metrics.
 Consistent hashing remaps only $\approx\!1/K$ of tenants on a scaling event, so
 disruption is bounded to those tenants, whose adapters are then (re)loaded on
 their new pod from object storage. Adapter retraining is propagated by a
@@ -1004,7 +1004,7 @@ restart.
 
 \paragraph{Routing caveat.}
 Sticky routing pins a tenant to one pod, so a single high-traffic tenant cannot
-be spread across nodes without sacrificing cache locality; cluster behaviour
+be spread across nodes without sacrificing cache locality; cluster behavior
 under skewed tenant traffic is left to future work.
 
 \end{document}
