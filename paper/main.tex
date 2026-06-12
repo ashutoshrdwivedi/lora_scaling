@@ -59,7 +59,7 @@
 
 % =============================================================================
 \title{Efficient Multi-Tenant LoRA Serving for Encoder Models\\
-       via Late-Fusion Batched Matrix Multiplication}
+via Late-Fusion Batched Matrix Multiplication}
 
 % Anonymized for double-blind review.
 \author{Anonymous}
@@ -69,39 +69,46 @@
 
 % =============================================================================
 \begin{abstract}
-Multi-tenant NLP services personalize a shared encoder---for
-classification, retrieval, or ranking---by giving each customer a
-LoRA adapter: a megabytes-per-tenant update that retains
-\SetfitRetainsPct\% of full fine-tuning accuracy. Serving these
-adapters efficiently, however, is unsolved: multi-tenant LoRA
-runtimes target autoregressive decoders, not encoders, so deployments
-fall back to per-request adapter swapping with HuggingFace PEFT,
-whose swap cost grows linearly with the number of registered
-adapters. We present \sysname,
-a serving system that runs a mixed-tenant batch of encoder requests
-in a single shared forward pass, with no custom CUDA kernels.
-\sysname{} fuses adapters late, in \emph{activation space} rather
-than parameter space: the shared base projection runs once over the
-batch, while per-sample low-rank deltas and per-tenant classification
-heads are applied as batched matrix multiplications---tenant weights
-are never merged into the shared base, ruling out cross-tenant
-contamination by construction. On a single \HeadlineGPU{} serving
-\texttt{BAAI/bge-m3}, \sysname{} sustains \HeadlineQps{}~samples/s
-across \HeadlineCapacity{} resident adapters at
-\HeadlinePNinetyNine{}~ms p99, with p50 latency varying by
-$\leq$\PFiftyDriftPctNHundredToFortySevenK\% from 100 adapters to the
-per-GPU memory ceiling. On identical hardware,
-\sysname{} outperforms HuggingFace PEFT by
-\HeadlineSpeedupLow--\HeadlineSpeedupHigh$\times$ under adapter-grouped
-batching of mixed-tenant traffic, by
-\SpeedupMixedMin--\SpeedupMixedMax$\times$ against PEFT's native
-mixed-batch API (measured without task heads, which that API cannot
-route), and---once the pool reaches 1{,}000 adapters---by
-\SpeedupHomogNOneKBOneTwentyEight--\SpeedupHomogNOneKBEight$\times$
-even in PEFT's best case of single-tenant batches; it registers new
-adapters over \ColdStartSpeedupMin{}$\times$ faster. Because the
-system is pure PyTorch, it deploys on managed GPU platforms with no
-custom-kernel build step.
+  To specialize encoder-based NLP features (such as classification,
+  retrieval, or ranking) for individual tenants in a multi-tenant
+  environment, adapting the base encoder is highly beneficial, and
+  Low-Rank Adaptation (LoRA) has become a practical way to do
+  so. However, serving a unique adapter per tenant a large number
+  of tenants concurrently remains a major infrastructure bottleneck: multi-tenant LoRA
+  runtimes target autoregressive decoders, not encoders, so deployments
+  fall back to per-request adapter swapping with HuggingFace PEFT,
+  whose swap cost grows linearly with the number of registered
+  adapters.
+
+  We present \sysname,
+  a serving system that runs a mixed-tenant batch of encoder requests
+  in a single shared forward pass, with no custom CUDA kernels.
+  \sysname{} fuses adapters late, in \emph{activation space} rather
+  than parameter space: the shared base projection runs once over the
+  batch, while per-sample low-rank deltas and per-tenant classification
+  heads are applied as batched matrix multiplications---tenant weights
+  are never merged into the shared base, ruling out cross-tenant
+  contamination by construction.
+
+  On a single \HeadlineGPU{} serving
+  \texttt{BAAI/bge-m3}, \sysname{} sustains \HeadlineQps{}~samples/s
+  across \HeadlineCapacity{} resident adapters at
+  \HeadlinePNinetyNine{}~ms p99, with p50 latency varying by
+  $\leq$\PFiftyDriftPctNHundredToFortySevenK\% from 100 adapters to the
+  per-GPU memory ceiling.
+
+  On identical hardware,
+  \sysname{} outperforms HuggingFace PEFT by
+  \HeadlineSpeedupLow--\HeadlineSpeedupHigh$\times$ under adapter-grouped
+  batching of mixed-tenant traffic, by
+  \SpeedupMixedMin--\SpeedupMixedMax$\times$ against PEFT's native
+  mixed-batch API (measured without task heads, which that API cannot
+  route), and---once the pool reaches 1{,}000 adapters---by
+  \SpeedupHomogNOneKBOneTwentyEight--\SpeedupHomogNOneKBEight$\times$
+  even in PEFT's best case of single-tenant batches; it registers new
+  adapters over \ColdStartSpeedupMin{}$\times$ faster. Because the
+  system is pure PyTorch, it deploys on managed GPU platforms with no
+  custom-kernel build step.
 \end{abstract}
 
 % =============================================================================
@@ -157,35 +164,35 @@ Appendix~\ref{sec:deployment}.
 \paragraph{Contributions.}
 \begin{itemize}
   \item We identify and formalize the \emph{encoder multi-tenant LoRA serving}
-  problem, and show that existing systems leave it unsolved
-  (\S\ref{sec:relwork}).
+    problem, and show that existing systems leave it unsolved
+    (\S\ref{sec:relwork}).
 
   \item We present late-fusion BMM serving, an architecture that batches
-  arbitrary mixed-tenant encoder requests without weight merging and
-  without custom CUDA kernels, in standard PyTorch (\S\ref{sec:system}).
+    arbitrary mixed-tenant encoder requests without weight merging and
+    without custom CUDA kernels, in standard PyTorch (\S\ref{sec:system}).
 
   \item We empirically demonstrate that adapter count does not drive
-  inference latency: scaling from 100 to \HeadlineCapacity{} adapters at batch
-  size \HeadlineBatch{} on a single \HeadlineGPU{} leaves p50 latency flat
-  (\PFiftyAtNHundred$\to$\PFiftyAtNFortySevenK~ms) and p99 bounded
-  ($\le$\PNinetyNineCeilingNSweep~ms), with serving throughput saturating
-  at \QpsAtBSixtyFourSatVal{}~samples/sec by batch size 64
-  (\S\ref{sec:experiments}).
+    inference latency: scaling from 100 to \HeadlineCapacity{} adapters at batch
+    size \HeadlineBatch{} on a single \HeadlineGPU{} leaves p50 latency flat
+    (\PFiftyAtNHundred$\to$\PFiftyAtNFortySevenK~ms) and p99 bounded
+    ($\le$\PNinetyNineCeilingNSweep~ms), with serving throughput saturating
+    at \QpsAtBSixtyFourSatVal{}~samples/sec by batch size 64
+    (\S\ref{sec:experiments}).
 
   \item We benchmark \sysname{} against a HuggingFace PEFT swap baseline
-  on identical hardware and show \textbf{\HeadlineSpeedupLow--\HeadlineSpeedupHigh$\times$}
-  throughput improvements under adapter-grouped batching and \textbf{$>$\ColdStartSpeedupMin{}$\times$}
-  cold-start deployment improvements.
-  By holding batch composition fixed
-  and varying only $N$, we isolate \texttt{set\_adapter} as the
-  $\mathcal{O}(N)$ bottleneck in the state-of-the-practice baseline
-  (\S\ref{sec:results_baselines}, Finding~7).
+    on identical hardware and show \textbf{\HeadlineSpeedupLow--\HeadlineSpeedupHigh$\times$}
+    throughput improvements under adapter-grouped batching and \textbf{$>$\ColdStartSpeedupMin{}$\times$}
+    cold-start deployment improvements.
+    By holding batch composition fixed
+    and varying only $N$, we isolate \texttt{set\_adapter} as the
+    $\mathcal{O}(N)$ bottleneck in the state-of-the-practice baseline
+    (\S\ref{sec:results_baselines}, Finding~7).
 
   \item By staying in standard PyTorch, \sysname{} removes the custom-CUDA
-  build step that is the dominant deployment friction on managed GPU
-  platforms (Databricks, SageMaker, Modal), letting the same serving
-  primitive drop into a standard cluster scale-out
-  (Appendix~\ref{sec:deployment}).
+    build step that is the dominant deployment friction on managed GPU
+    platforms (Databricks, SageMaker, Modal), letting the same serving
+    primitive drop into a standard cluster scale-out
+    (Appendix~\ref{sec:deployment}).
 \end{itemize}
 
 % =============================================================================
@@ -219,27 +226,27 @@ At rank \HeadlineRank, LoRA retains \SetfitRetainsPct\% of vanilla fine-tuning's
 accuracy across seven public text-classification benchmarks
 (Table~\ref{tab:accuracy}; per-task drop \SetfitMinDropPP--\SetfitMaxDropPP pp),
 at $1/\MpnetParamReductionRankEight$ the trainable-parameter cost.\footnote{Accuracy reported on
-\texttt{paraphrase-mpnet-base-v2} to match the SetFit literature
-\cite{tunstall2022efficient}. The same protocol on \texttt{BAAI/bge-m3}---the
-encoder all serving experiments (\S\ref{sec:experiments}) use---shows the
-same pattern: LoRA retains \SetfitBgeRetainsPct\% of vanilla accuracy and
-beats a frozen-encoder baseline on all seven tasks
+  \texttt{paraphrase-mpnet-base-v2} to match the SetFit literature
+  \cite{tunstall2022efficient}. The same protocol on \texttt{BAAI/bge-m3}---the
+  encoder all serving experiments (\S\ref{sec:experiments}) use---shows the
+  same pattern: LoRA retains \SetfitBgeRetainsPct\% of vanilla accuracy and
+  beats a frozen-encoder baseline on all seven tasks
 (Table~\ref{tab:accuracy_bge}, Appendix~\ref{app:accuracy}).} The remaining
 barrier is \emph{serving}: combining thousands of
 these adapters in a single forward pass.
 
 \begin{table}[h]
-\centering
-\small
-\caption{Per-task accuracy of LoRA adapters versus full encoder
-fine-tuning at $N{=}8$ examples per class, rank=8, mean over 10 seeds on
-\texttt{paraphrase-mpnet-base-v2}. LoRA uses body LR $\SetfitLoraLR$ and
-vanilla uses $\SetfitVanillaLR$ (adapters need the larger LR); scores are
-accuracy except Amazon-CF (MCC). LoRA retains $\SetfitRetainsPct\%$ of vanilla
-mean accuracy at $1/\MpnetParamReductionRankEight$ of the trainable parameter
-count. See Appendix~\ref{app:accuracy} for per-task details.}
-\label{tab:accuracy}
-\input{table_accuracy.tex}
+  \centering
+  \small
+  \caption{Per-task accuracy of LoRA adapters versus full encoder
+    fine-tuning at $N{=}8$ examples per class, rank=8, mean over 10 seeds on
+    \texttt{paraphrase-mpnet-base-v2}. LoRA uses body LR $\SetfitLoraLR$ and
+    vanilla uses $\SetfitVanillaLR$ (adapters need the larger LR); scores are
+    accuracy except Amazon-CF (MCC). LoRA retains $\SetfitRetainsPct\%$ of vanilla
+    mean accuracy at $1/\MpnetParamReductionRankEight$ of the trainable parameter
+  count. See Appendix~\ref{app:accuracy} for per-task details.}
+  \label{tab:accuracy}
+  \input{table_accuracy.tex}
 \end{table}
 
 \subsection{The Multi-Tenant Serving Problem}
@@ -306,9 +313,9 @@ Equation~\ref{eq:fuse} is a zero-allocation element-wise addition.
 For a batch of $\mathcal{B}$ samples with hidden size $H$ and sequence length $S$:
 \begin{align}
   h_{\text{shrink}} &= \texttt{bmm}(x,\; [A_0,\ldots,A_{\mathcal{B}-1}])
-    \in \mathbb{R}^{\mathcal{B} \times S \times r} \label{eq:shrink} \\
+  \in \mathbb{R}^{\mathcal{B} \times S \times r} \label{eq:shrink} \\
   h_{\text{delta}} &= \texttt{bmm}(h_{\text{shrink}},\; [B_0,\ldots,B_{\mathcal{B}-1}])
-    \in \mathbb{R}^{\mathcal{B} \times S \times H} \label{eq:expand}
+  \in \mathbb{R}^{\mathcal{B} \times S \times H} \label{eq:expand}
 \end{align}
 
 \noindent
@@ -500,24 +507,24 @@ and $r$ in turn around the $N{=}1{,}000$, $\mathcal{B}{=}32$, $r{=}8$
 operating point.
 
 \begin{table}[t]
-\centering
-\small
-\setlength{\tabcolsep}{4.5pt}
-\renewcommand{\arraystretch}{0.92}
-\caption{Serving latency, throughput, and peak GPU memory
-(\texttt{BAAI/bge-m3}, \HeadlineGPU; full setup in \S\ref{sec:setup}).
-Adapters are pre-loaded; latency includes batch assembly and the
-classification head. The top block sweeps adapter count, the middle
-batch size, and the bottom LoRA rank.}
-\label{tab:main_results}
-\input{table_main.tex}
+  \centering
+  \small
+  \setlength{\tabcolsep}{4.5pt}
+  \renewcommand{\arraystretch}{0.92}
+  \caption{Serving latency, throughput, and peak GPU memory
+    (\texttt{BAAI/bge-m3}, \HeadlineGPU; full setup in \S\ref{sec:setup}).
+    Adapters are pre-loaded; latency includes batch assembly and the
+    classification head. The top block sweeps adapter count, the middle
+  batch size, and the bottom LoRA rank.}
+  \label{tab:main_results}
+  \input{table_main.tex}
 \end{table}
 
 \paragraph{Finding 1: Adapter count does not drive latency.}
 Scaling from 100 to \CapacityRankEight{} adapters at $\mathcal{B}{=}\HeadlineBatch$, $r{=}\HeadlineRank$ shifts p50 latency
 by only \PFiftyDriftPctNHundredToFortySevenK\%
 (\PFiftyAtNHundred$\pm$\PFiftyAtNHundredStd{} vs.\
-\PFiftyAtNFortySevenK$\pm$\PFiftyAtNFortySevenKStd~ms, mean$\pm$s.d.\ over
+  \PFiftyAtNFortySevenK$\pm$\PFiftyAtNFortySevenKStd~ms, mean$\pm$s.d.\ over
 \SweepNumSeeds{} seeded runs; the shift is within one s.d.)---a \CustomerMultiplierHundredToFortySevenK$\times$ increase in
 served customers at negligible latency cost, sustained to the per-GPU memory ceiling
 (Finding~4).
@@ -533,7 +540,7 @@ $\mathcal{B}{=}64$, then plateaus---$\mathcal{B}{=}128$ delivers no further gain
 The shared-base encoder forward becomes GPU-bound at $\mathcal{B}{=}64$;
 beyond $\mathcal{B}{=}32$, larger batches mainly widen tail latency
 (p99/p50 grows from \PNinetyNineOverPFiftyAtBThirtyTwo$\times$ at
-$\mathcal{B}{=}32$ to \PNinetyNineOverPFiftyAtBSixtyFour$\times$ at
+  $\mathcal{B}{=}32$ to \PNinetyNineOverPFiftyAtBSixtyFour$\times$ at
 $\mathcal{B}{=}64$; Finding~5), making $\mathcal{B}{=}32$ the operating
 point under strict p99 SLAs and $\mathcal{B}{=}64$ the
 throughput-optimal choice when tails are tolerable.
@@ -602,9 +609,9 @@ custom kernels yield the multiplicative gains reported in that literature.
   \centering
   \includegraphics[width=0.52\linewidth]{figures/latency_adapters.pdf}
   \caption{p50 latency as a function of pre-loaded adapter count at five
-  batch sizes (rank = \HeadlineRank, sequence length = 128, \HeadlineGPU,
-  \texttt{BAAI/bge-m3}).
-  Curves are flat across $N \in [100, \CapacityRankEight]$, empirically confirming the
+    batch sizes (rank = \HeadlineRank, sequence length = 128, \HeadlineGPU,
+    \texttt{BAAI/bge-m3}).
+    Curves are flat across $N \in [100, \CapacityRankEight]$, empirically confirming the
   $\mathcal{O}(1)$-in-$N$ scaling property of \sysname.}
   \label{fig:latency_adapters}
 \end{figure}
@@ -641,21 +648,21 @@ $N$-adapter registration cost, which we replace with a constant-time
 \texttt{AdapterStore} insert.
 
 \begin{table}[h]
-\centering
-\footnotesize
-\setlength{\tabcolsep}{2.5pt}
-\renewcommand{\arraystretch}{0.95}
-\caption{Latency and throughput vs.\ the PEFT swap baseline in its
-\emph{grouped} (batch-by-adapter), \emph{mixed} (native
-\texttt{adapter\_names} API), and \emph{homogeneous} (single-tenant
-batches, the friendliest case for PEFT) configurations (\texttt{BAAI/bge-m3},
-\HeadlineGPU, rank=\HeadlineRank; setup in \S\ref{sec:setup}). Grouped and \sysname{}
-draw uniform mixed-tenant batches; the $N$-independent no-adapter base ceiling
-is reported in-text. PEFT rows time the bare encoder (no classification
-head); \sysname{} rows include batch assembly and per-tenant heads.
-Speedup is \sysname{} over PEFT grouped.}
-\label{tab:baselines}
-\input{table_baselines.tex}
+  \centering
+  \footnotesize
+  \setlength{\tabcolsep}{2.5pt}
+  \renewcommand{\arraystretch}{0.95}
+  \caption{Latency and throughput vs.\ the PEFT swap baseline in its
+    \emph{grouped} (batch-by-adapter), \emph{mixed} (native
+    \texttt{adapter\_names} API), and \emph{homogeneous} (single-tenant
+    batches, the friendliest case for PEFT) configurations (\texttt{BAAI/bge-m3},
+    \HeadlineGPU, rank=\HeadlineRank; setup in \S\ref{sec:setup}). Grouped and \sysname{}
+    draw uniform mixed-tenant batches; the $N$-independent no-adapter base ceiling
+    is reported in-text. PEFT rows time the bare encoder (no classification
+    head); \sysname{} rows include batch assembly and per-tenant heads.
+  Speedup is \sysname{} over PEFT grouped.}
+  \label{tab:baselines}
+  \input{table_baselines.tex}
 \end{table}
 
 \paragraph{Finding 7: PEFT's per-swap cost is $\mathcal{O}(N)$ in the tenant pool.}
@@ -671,9 +678,9 @@ batches rarely share an adapter, so \sysname{} leads by
 $\mathcal{B}{=}\HeadlineBatch$. PEFT's native \emph{mixed} API sits between
 the two: it shares the base forward, but loops over the batch's adapters at
 every LoRA layer and its per-call validation scales with $N$ (at
-$\mathcal{B}{=}8$, where the expected number of distinct adapters per batch
-is essentially unchanged, p50 still grows from
-\PeftMixedPFiftyNHundredBEight{} to \PeftMixedPFiftyNOneKBEight~ms as $N$
+  $\mathcal{B}{=}8$, where the expected number of distinct adapters per batch
+  is essentially unchanged, p50 still grows from
+  \PeftMixedPFiftyNHundredBEight{} to \PeftMixedPFiftyNOneKBEight~ms as $N$
 grows $100\to1{,}000$), leaving \sysname{}
 \SpeedupMixedMin--\SpeedupMixedMax$\times$ faster across the measured grid.
 
@@ -880,16 +887,16 @@ trains \LoraParamsREight{} parameters, $1/\BgeParamReductionRankEight$ of
 the \BgeParamsM{}M-parameter encoder.
 
 \begin{table}[h]
-\centering
-\small
-\caption{Per-task accuracy on \texttt{BAAI/bge-m3}, the serving model, under
-the protocol of Table~\ref{tab:accuracy} ($N{=}8$ per class, rank=8, mean
-over 10 seeds; scores are accuracy except Amazon-CF, MCC). \emph{Frozen}
-fits only the classification head on pre-trained embeddings; $\Delta$ is
-LoRA minus vanilla. LoRA beats frozen on all seven tasks and retains
-$\SetfitBgeRetainsPct\%$ of vanilla mean accuracy.}
-\label{tab:accuracy_bge}
-\input{table_accuracy_bge.tex}
+  \centering
+  \small
+  \caption{Per-task accuracy on \texttt{BAAI/bge-m3}, the serving model, under
+    the protocol of Table~\ref{tab:accuracy} ($N{=}8$ per class, rank=8, mean
+    over 10 seeds; scores are accuracy except Amazon-CF, MCC). \emph{Frozen}
+    fits only the classification head on pre-trained embeddings; $\Delta$ is
+    LoRA minus vanilla. LoRA beats frozen on all seven tasks and retains
+  $\SetfitBgeRetainsPct\%$ of vanilla mean accuracy.}
+  \label{tab:accuracy_bge}
+  \input{table_accuracy_bge.tex}
 \end{table}
 
 % =============================================================================
