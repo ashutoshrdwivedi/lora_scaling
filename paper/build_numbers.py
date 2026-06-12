@@ -929,20 +929,26 @@ GEN_HEADER = (
 
 
 def render_table_main(sweep_main, sweep_ranks) -> str:
-    """tab:main_results body: N sweep + B sweep + r sweep, all at the same op-point."""
+    """tab:main_results body: N sweep + B sweep + r sweep, all at the same op-point.
+
+    p50/p99 cells are mean +/- s.d. over the seeded repeats (p90 dropped:
+    never discussed in prose, and the column width pays for the +/- cells).
+    """
     lines: list[str] = []
-    lines.append(r"\begin{tabular}{rrr rrr r r}")
+    lines.append(r"\begin{tabular}{rrr rr r r}")
     lines.append(r"\toprule")
-    lines.append(r"$N$ & $\mathcal{B}$ & $r$ & p50 & p90 & p99 & QPS & GPU \\")
-    lines.append(r"    &     &     & (ms)& (ms)& (ms)& (s/s) & (GB) \\")
+    lines.append(r"$N$ & $\mathcal{B}$ & $r$ & p50 (ms) & p99 (ms) & QPS & GPU \\")
+    lines.append(r"    &     &     &     &     & (s/s) & (GB) \\")
     lines.append(r"\midrule")
+
+    def pm(row, col, dp=1):
+        return f"{fmt_f(row[col], dp)}$\\pm${std_or_todo(row, col, dp)}"
 
     def row_line(row, n, b, r):
         return (
             f"{num_comma(n)} & {b} & {r} & "
-            f"{fmt_f(row['p50_ms'], 1)} & "
-            f"{fmt_f(row['p90_ms'], 1)} & "
-            f"{fmt_f(row['p99_ms'], 1)} & "
+            f"{pm(row, 'p50_ms')} & "
+            f"{pm(row, 'p99_ms')} & "
             f"{fmt_int(row['throughput_samples_sec'])} & "
             f"{fmt_f(row['peak_gpu_mem_gb'], 2)} \\\\"
         )
@@ -1121,8 +1127,8 @@ def render_table_accuracy(setfit, hidden: int, layers: int,
     lora_K = round(lora_params_r8 / 1000)
     frozen_params_cell = "0 & " if have_frozen else ""
     lines.append(
-        f"Trainable params & {frozen_params_cell}{van_M}M & {lora_K}K & "
-        rf"{reduction}$\times$ smaller \\"
+        f"Params & {frozen_params_cell}{van_M}M & {lora_K}K & "
+        rf"$1/{reduction}$ \\"
     )
     lines.append(r"\bottomrule")
     lines.append(r"\end{tabular}")

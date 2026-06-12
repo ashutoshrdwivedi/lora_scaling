@@ -352,8 +352,6 @@ every batch item on the dense $(S, H)$ encoder forward pass
 \label{sec:lr_head}
 
 In the multi-tenant classification setting, each tenant trains a
-% * <Ashutosh Dwivedi> 18:21:21 26 May 2026 UTC+0530:
-% Kehsav : 1.⁠ ⁠Should we talk about Logistic Regression head or avoid it ?
 logistic-regression (LR) head on top of the encoder's pooled
 \texttt{[CLS]} representation.
 Tenants differ in the number of output classes: tenant $i$ may have $c_i$
@@ -433,11 +431,8 @@ The adapter count affects only CPU-side batch assembly time, which is
 $\mathcal{O}(\mathcal{B} \cdot L \cdot |\mathcal{M}|)$ where
 $|\mathcal{M}|$ is the
 number of target modules.
-Empirically, increasing $N$ from 100 to \CapacityRankEight{} at batch
-size \HeadlineBatch{}
-leaves p50 latency effectively unchanged (\PFiftyAtNHundred{}
-  vs.\ \PFiftyAtNFortySevenK~ms;
-\S\ref{sec:results_latency}).
+We validate both properties empirically in \S\ref{sec:results_latency}
+(Findings~1 and~5).
 
 % =============================================================================
 \section{Experiments}
@@ -512,7 +507,7 @@ conservative in PEFT's favor.
 \subsection{Latency and Throughput Scaling}
 \label{sec:results_latency}
 
-Table~\ref{tab:main_results} reports p50/p90/p99 latency and throughput
+Table~\ref{tab:main_results} reports p50/p99 latency and throughput
 across a one-factor-at-a-time sweep of this space, varying $N$, $\mathcal{B}$,
 and $r$ in turn around the $N{=}1{,}000$, $\mathcal{B}{=}32$, $r{=}8$
 operating point.
@@ -520,11 +515,12 @@ operating point.
 \begin{table}[t]
   \centering
   \small
-  \setlength{\tabcolsep}{4.5pt}
+  \setlength{\tabcolsep}{3.4pt}
   \renewcommand{\arraystretch}{0.92}
-  \caption{Serving latency, throughput, and peak GPU memory
-    (setup in \S\ref{sec:setup}). The top block sweeps adapter count,
-  the middle batch size, and the bottom LoRA rank.}
+  \caption{Serving latency (mean$\pm$s.d.\ over \SweepNumSeeds{} seeded
+    runs), throughput, and peak GPU memory (setup in \S\ref{sec:setup}).
+    The top block sweeps adapter count, the middle batch size, and the
+  bottom LoRA rank.}
   \label{tab:main_results}
   \input{table_main.tex}
 \end{table}
@@ -532,10 +528,8 @@ operating point.
 \paragraph{Finding 1: Adapter count does not drive latency.}
 Scaling from 100 to \CapacityRankEight{} adapters at
 $\mathcal{B}{=}\HeadlineBatch$, $r{=}\HeadlineRank$ shifts p50 latency
-by only \PFiftyDriftPctNHundredToFortySevenK\%
-(\PFiftyAtNHundred$\pm$\PFiftyAtNHundredStd{} vs.\
-  \PFiftyAtNFortySevenK$\pm$\PFiftyAtNFortySevenKStd~ms, mean$\pm$s.d.\ over
-\SweepNumSeeds{} seeded runs; the shift is within one s.d.)---a
+by only \PFiftyDriftPctNHundredToFortySevenK\%---within one
+between-seed s.d.\ (Table~\ref{tab:main_results})---a
 \CustomerMultiplierHundredToFortySevenK$\times$ increase in
 served customers at negligible latency cost, sustained to the per-GPU
 memory ceiling
@@ -556,25 +550,16 @@ $\mathcal{B}{=}64$, then plateaus---$\mathcal{B}{=}128$ delivers no
 further gain (\QpsAtBOneTwentyEight~samples/sec).
 The shared-base encoder forward becomes GPU-bound at $\mathcal{B}{=}64$;
 beyond $\mathcal{B}{=}32$, larger batches mainly widen tail latency
-(p99/p50 grows from \PNinetyNineOverPFiftyAtBThirtyTwo$\times$ at
-  $\mathcal{B}{=}32$ to \PNinetyNineOverPFiftyAtBSixtyFour$\times$ at
-$\mathcal{B}{=}64$; Finding~5), making $\mathcal{B}{=}32$ the operating
+(Finding~5), making $\mathcal{B}{=}32$ the operating
 point under strict p99 SLAs and $\mathcal{B}{=}64$ the
 throughput-optimal choice when tails are tolerable.
 
 \paragraph{Finding 3: LoRA rank is a free latency knob in the
 small-rank regime.}
 At $N{=}1{,}000$, $\mathcal{B}{=}\HeadlineBatch$, p50 latency is flat
-across $r \in \{4, 8, 16, 32\}$
-(\PFiftyAtRFour, \PFiftyAtREight, \PFiftyAtRSixteen,
-  \PFiftyAtRThirtyTwo~ms respectively, each $\pm$\PFiftyAtREightStd~ms
-over \SweepNumSeeds{} seeds), while tail latency shows no resolvable rank trend
-(p99 = \PNinetyNineAtRFour$\pm$\PNinetyNineAtRFourStd,
-  \PNinetyNineAtREight$\pm$\PNinetyNineAtREightStd,
-  \PNinetyNineAtRSixteen$\pm$\PNinetyNineAtRSixteenStd,
-  \PNinetyNineAtRThirtyTwo$\pm$\PNinetyNineAtRThirtyTwoStd~ms: the
-  \PNinetyNineRankSpreadPct\%
-spread is comparable to the between-seed s.d.). While $r \ll H$, the
+across $r \in \{4, 8, 16, 32\}$, and tail latency shows no resolvable
+rank trend (the \PNinetyNineRankSpreadPct\% p99 spread is comparable to
+the between-seed s.d.; Table~\ref{tab:main_results}). While $r \ll H$, the
 low-rank path adds only
 $2r/H$ of a base projection's arithmetic ($\approx$1\% of the full encoder
 forward), so the per-batch GPU forward stays at
@@ -588,8 +573,7 @@ per-GPU tenant ceiling (\CapacityRankEight{} adapters at
 
 \paragraph{Finding 4: Predictable memory footprint and per-GPU ceiling.}
 Per-adapter cache memory measures \LoraBytesREightMB~MB at
-$r{=}\HeadlineRank$ in fp16
-(\BgeLayers{} layers, hidden size \BgeHidden, two target modules), matching the
+$r{=}\HeadlineRank$ in fp16, matching the
 analytic formula $2 \cdot M \cdot L \cdot d \cdot r \cdot \text{dtype}$ exactly.
 On an 80~GB A100, after reserving \BaseActivationOverheadGB~GB for base-model
 parameters and activation buffers, this yields a clean empirical ceiling of
@@ -776,7 +760,8 @@ never expose the encoder operations---bidirectional attention, pooling,
 classification heads---that classification workloads require. vLLM
 \cite{kwon2023vllm} adopts these kernels as its multi-LoRA backend, but its
 encoder model classes do not implement them---v0.22.1 rejects
-\texttt{enable\_lora} for \texttt{BAAI/bge-m3} at initialization---and multi-adapter
+\texttt{enable\_lora} for \texttt{BAAI/bge-m3} at
+initialization---and multi-adapter
 classification serving remains an unmerged draft (PR~\#24596). LoRAX
 \cite{predibase2023lorax}, CaraServe \cite{li2024caraserve}, and dLoRA
 \cite{wu2024dlora} likewise optimize decoder-only serving and do not address
@@ -938,7 +923,8 @@ the \BgeParamsM{}M-parameter encoder.
 
 \begin{table}[h]
   \centering
-  \small
+  \footnotesize
+  \setlength{\tabcolsep}{4pt}
   \caption{Per-task accuracy on \texttt{BAAI/bge-m3}, the serving model, under
     the protocol of Table~\ref{tab:accuracy} ($N{=}8$ per class, rank=8, mean
     over 10 seeds; scores are accuracy except Amazon-CF, MCC). \emph{Frozen}
