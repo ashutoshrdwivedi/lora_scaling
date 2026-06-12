@@ -69,46 +69,27 @@ via Late-Fusion Batched Matrix Multiplication}
 
 % =============================================================================
 \begin{abstract}
-  To specialize encoder-based NLP features (such as classification,
-  retrieval, or ranking) for individual tenants in a multi-tenant
-  environment, adapting the base encoder is highly beneficial, and
-  Low-Rank Adaptation (LoRA) has become a practical way to do
-  so. However, serving a unique adapter per tenant a large number
-  of tenants concurrently remains a major infrastructure bottleneck: multi-tenant LoRA
-  runtimes target autoregressive decoders, not encoders, so deployments
-  fall back to per-request adapter swapping with HuggingFace PEFT,
-  whose swap cost grows linearly with the number of registered
-  adapters.
-
-  We present \sysname,
-  a serving system that runs a mixed-tenant batch of encoder requests
-  in a single shared forward pass, with no custom CUDA kernels.
-  \sysname{} fuses adapters late, in \emph{activation space} rather
-  than parameter space: the shared base projection runs once over the
-  batch, while per-sample low-rank deltas and per-tenant classification
-  heads are applied as batched matrix multiplications---tenant weights
-  are never merged into the shared base, ruling out cross-tenant
-  contamination by construction.
-
-  On a single \HeadlineGPU{} serving
-  \texttt{BAAI/bge-m3}, \sysname{} sustains \HeadlineQps{}~samples/s
-  across \HeadlineCapacity{} resident adapters at
-  \HeadlinePNinetyNine{}~ms p99, with p50 latency varying by
-  $\leq$\PFiftyDriftPctNHundredToFortySevenK\% from 100 adapters to the
-  per-GPU memory ceiling.
-
-  On identical hardware,
-  \sysname{} outperforms HuggingFace PEFT by
-  \HeadlineSpeedupLow--\HeadlineSpeedupHigh$\times$ under adapter-grouped
-  batching of mixed-tenant traffic, by
-  \SpeedupMixedMin--\SpeedupMixedMax$\times$ against PEFT's native
-  mixed-batch API (measured without task heads, which that API cannot
-  route), and---once the pool reaches 1{,}000 adapters---by
-  \SpeedupHomogNOneKBOneTwentyEight--\SpeedupHomogNOneKBEight$\times$
-  even in PEFT's best case of single-tenant batches; it registers new
-  adapters over \ColdStartSpeedupMin{}$\times$ faster. Because the
-  system is pure PyTorch, it deploys on managed GPU platforms with no
-  custom-kernel build step.
+  Low-Rank Adaptation (LoRA) has become a popular method to adapt
+  pre-trained models to specific domains. Applied to encoders in a
+  multi-tenant service, it lets each tenant specialize a shared model
+  for classification, retrieval, or ranking---but existing
+  multi-tenant LoRA serving systems target autoregressive decoders,
+  and for encoders the available tooling supports only per-request
+  adapter swapping, whose cost grows with the number of registered
+  adapters. We present \sysname, a system that
+  serves many different LoRA-adapted encoders in a single shared
+  forward pass on one GPU. \sysname{} fuses adapters late, in
+  activation space: the base projections run once over the
+  mixed-tenant batch, while per-sample low-rank deltas and per-tenant
+  classification heads are applied as batched matrix
+  multiplications---in pure PyTorch, with no custom CUDA kernels.
+  Tenant weights are never merged into the shared base, ruling out
+  cross-tenant contamination by construction. Our evaluation shows
+  that \sysname's serving latency stays flat as the adapter pool
+  grows to tens of thousands on a single GPU, and that it achieves
+  \HeadlineSpeedupLow--\HeadlineSpeedupHigh$\times$ higher throughput
+  than HuggingFace PEFT on mixed-tenant traffic while registering
+  new adapters over \ColdStartSpeedupMin{}$\times$ faster.
 \end{abstract}
 
 % =============================================================================
