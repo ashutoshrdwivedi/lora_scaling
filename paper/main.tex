@@ -187,7 +187,7 @@ Appendix~\ref{sec:deployment}.
 
   \item We empirically demonstrate that adapter count does not drive
     inference latency: scaling from 100 to \HeadlineCapacity{} adapters at batch
-    size \HeadlineBatch{} on a single \HeadlineGPU{} leaves p50 latency flat
+    size \HeadlineBatch{} on a single A100 leaves p50 latency flat
     (\PFiftyAtNHundred$\to$\PFiftyAtNFortySevenK~ms) and p99 bounded
     (\S\ref{sec:experiments}).
 
@@ -248,14 +248,10 @@ these adapters in a single forward pass.
   \centering
   \small
   \caption{Per-task accuracy of LoRA adapters versus full encoder
-    fine-tuning at $N{=}8$ examples per class, rank=8, mean over 10 seeds on
-    \texttt{paraphrase-mpnet-base-v2}. LoRA uses body LR $\SetfitLoraLR$ and
-    vanilla uses $\SetfitVanillaLR$ (adapters need the larger LR); scores are
-    accuracy except Amazon-CF (MCC). LoRA retains
-    $\SetfitRetainsPct\%$ of vanilla
-    mean accuracy at $1/\MpnetParamReductionRankEight$ of the
-    trainable parameter
-  count. See Appendix~\ref{app:accuracy} for per-task details.}
+    fine-tuning on \texttt{paraphrase-mpnet-base-v2} ($N{=}8$ examples
+    per class, rank=8, mean over 10 seeds; protocol in
+    Appendix~\ref{app:accuracy}). Scores are accuracy except
+  Amazon-CF (MCC).}
   \label{tab:accuracy}
   \input{table_accuracy.tex}
 \end{table}
@@ -382,9 +378,8 @@ probability distribution of any tenant.
 \paragraph{Pre-allocated buffers.}
 A naive implementation lets \texttt{torch.bmm} allocate a fresh output
 tensor on every call, producing $2 \times |\mathcal{M}| \times L$
-allocations per forward pass (96 for $L{=}24$, $|\mathcal{M}|{=}2$). Each
-invokes the CUDA caching allocator at microsecond cost, adding several
-hundred microseconds of pure allocator overhead per batch.
+allocations per forward pass, adding several hundred microseconds of
+pure CUDA-allocator overhead per batch.
 \sysname{} instead pre-allocates two fixed-size buffers at initialization,
 $\mathtt{out\_A} \in \mathbb{R}^{\mathcal{B}_{\max} \times S_{\max} \times r}$
 and $\mathtt{out\_B} \in \mathbb{R}^{\mathcal{B}_{\max} \times
@@ -420,7 +415,7 @@ Each adapter requires $\mathcal{O}(r d L)$ memory.
 For $N$ tenants: total GPU memory $= \mathcal{O}(d^2 L + N r d L)$.
 At $d=\BgeHidden$, $L=\BgeLayers$, $r=\HeadlineRank$: 100 adapters occupy
 \CacheNHundredMB~MB; 20{,}000 adapters occupy \CacheNTwentyKGB~GB.
-A \HeadlineGPU{} can hold \CapacityRankEight{} adapters at rank \HeadlineRank{}
+An A100-80GB can hold \CapacityRankEight{} adapters at rank \HeadlineRank{}
 before exhausting memory.
 
 \paragraph{Inference time.}
@@ -620,9 +615,7 @@ merge) saves \textbf{\AblationLoraCostMs~ms of \AblationLoraOnMs~ms}
 not the \texttt{bmm}, dominate the gap above the
 \ProfLoraBmmIsolatedPct\% kernel cost. Custom fused
 kernels target only this path, so \AblationLoraCostPct\% is the hard
-ceiling here---unlike
-memory-bound decoder decode, where LoRA carries far higher relative weight and
-custom kernels yield the multiplicative gains reported in that literature.
+ceiling here.
 
 \begin{figure}[t]
   \centering
@@ -888,6 +881,9 @@ trainable parameters) and a
 \emph{LoRA} variant at rank~\HeadlineRank{} (\MpnetLoraParams{}
   trainable parameters---a
 $\MpnetParamReductionRankEight\times$ reduction).
+LoRA trains with body learning rate $\SetfitLoraLR$ and vanilla with
+$\SetfitVanillaLR$: adapters need the larger learning rate, and applying
+either model's best rate to the other understates that model's accuracy.
 
 LoRA loses \SetfitMeanDropPP{}~percentage points of average accuracy
 in exchange for
