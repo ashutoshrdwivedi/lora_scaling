@@ -343,15 +343,12 @@ Each \texttt{bmm} call is a single GPU kernel launch, processing
 all $\mathcal{B}$
 samples simultaneously regardless of how many distinct adapters they reference.
 
-This decomposition contrasts with the SGMV kernel used in Punica
-\cite{chen2024punica}: SGMV groups inputs by LoRA model ID and dispatches
-per-group thread-blocks, whereas \texttt{torch.bmm} applies a distinct
-$(A_i, B_i)$ to every batch item with no grouping; and SGMV operates on
-vector inputs $(1, H)$ optimized for autoregressive decode, whereas
-\texttt{bmm} operates on the $(S, H)$ matrix shape native to encoder
-prefill. The concurrent S-LoRA \cite{sheng2024slora} introduces
-prefill-shaped variants (MBGMM/MBGMV) over a paged adapter pool, but
-still targets autoregressive LLM serving with a KV cache.
+Unlike the custom kernels of Punica \cite{chen2024punica} and
+S-LoRA \cite{sheng2024slora}, which group or gather inputs by
+adapter id and target the autoregressive prefill$\to$decode
+pipeline, \texttt{torch.bmm} applies a distinct $(A_i, B_i)$ to
+every batch item on the dense $(S, H)$ encoder forward pass
+(\S\ref{sec:relwork}).
 
 \subsection{Batched Classification Heads}
 \label{sec:lr_head}
@@ -500,23 +497,15 @@ the \texttt{bge-m3} positional scheme---each enforced as a unit test, covering
 both the BERT and XLM-RoBERTa position-id conventions.
 
 \paragraph{Baselines.}
-We compare against \texttt{HuggingFace PEFT}~\cite{mangrulkar2022peft} in an
-adapter-grouped configuration (\S\ref{sec:results_baselines}). PEFT also
-offers a native mixed-batch API (\texttt{adapter\_names}) that shares the
-base forward but loops over the distinct adapters in the batch at every
-LoRA layer; it does not route per-request classification
-heads correctly,\footnote{\url{https://github.com/huggingface/peft/issues/1960}}
-which our workload requires. We nevertheless benchmark it, timing the bare
-encoder forward as with the other PEFT modes
-(\S\ref{sec:results_baselines}).
+We compare against \texttt{HuggingFace PEFT}~\cite{mangrulkar2022peft} in
+four configurations described in \S\ref{sec:results_baselines}, including
+its native mixed-batch API (\texttt{adapter\_names}), which does not route
+per-request classification
+heads,\footnote{\url{https://github.com/huggingface/peft/issues/1960}}
+a requirement of our workload.
 \texttt{vLLM} \cite{kwon2023vllm} has no runtime LoRA path for encoder
-models: v0.22.1 rejects \texttt{enable\_lora} for \texttt{BAAI/bge-m3} at
-initialization (``\texttt{RobertaEmbeddingModel does not support LoRA
-yet}''), and multi-adapter classification serving remains an unmerged
-draft (PR~\#24596, last active May~2026);
-\texttt{LoRAX} \cite{predibase2023lorax} is decoder-oriented.
-We therefore omit these from quantitative comparison; see
-\S\ref{sec:relwork} for a detailed discussion.
+models and \texttt{LoRAX} \cite{predibase2023lorax} is decoder-oriented;
+we omit both from quantitative comparison (\S\ref{sec:relwork}).
 All PEFT configurations time the bare encoder forward with no
 classification head, whereas \sysname{} latencies include batch
 assembly and the per-tenant head; the comparison is therefore
@@ -796,8 +785,8 @@ both scope their designs to the autoregressive prefill$\to$decode pipeline and
 never expose the encoder operations---bidirectional attention, pooling,
 classification heads---that classification workloads require. vLLM
 \cite{kwon2023vllm} adopts these kernels as its multi-LoRA backend, but its
-encoder model classes do not implement them---encoder LoRA is rejected at
-initialization as of v0.22.1 (\S\ref{sec:setup})---and multi-adapter
+encoder model classes do not implement them---v0.22.1 rejects
+\texttt{enable\_lora} for \texttt{BAAI/bge-m3} at initialization---and multi-adapter
 classification serving remains an unmerged draft (PR~\#24596). LoRAX
 \cite{predibase2023lorax}, CaraServe \cite{li2024caraserve}, and dLoRA
 \cite{wu2024dlora} likewise optimize decoder-only serving and do not address
