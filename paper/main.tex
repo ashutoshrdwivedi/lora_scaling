@@ -112,7 +112,8 @@ Serving an isolated, fully fine-tuned model per tenant, however, is
 infeasible at scale.
 At \BgeFpSixteenGB{}~GB per copy in float16 precision, serving
 20{,}000 tenants would require \StorageTwentyKTB{}~TB of model
-weights and eliminate any opportunity for cross-tenant request batching.
+weights---\StorageTwentyKGPUs{} A100-80GBs---and eliminate any
+opportunity for cross-tenant request batching.
 Low-Rank Adaptation (LoRA) \cite{hu2022lora} removes the storage barrier
 by expressing tenant-specific adaptations as low-rank updates to the
 shared base encoder: it retains \SetfitBgeRetainsPct{}\% of full
@@ -263,20 +264,18 @@ these adapters in a single forward pass.
 \subsection{The Multi-Tenant Serving Problem}
 \label{sec:background_serving}
 
-Consider a service that exposes a single classification feature to $N$
-customers, where each customer gets a fine-tuned
-\texttt{BAAI/bge-m3} \cite{chen2024bge} on their own labeled
-data to specialize the feature to their domain.
+Consider a service that exposes a classification feature to $N$
+customers, each with a \texttt{BAAI/bge-m3} \cite{chen2024bge}
+fine-tuned on their own labeled data.
 Three naive serving strategies all fail at scale.
-\emph{One model per tenant} requires $N \times \BgeFpSixteenGB$~GB in float16
-(\StorageTwentyKTB~TB at $N{=}20{,}000$, or \StorageTwentyKGPUs{} A100-80GBs of
-weight storage) and admits no cross-tenant batching.
+\emph{One model per tenant} requires a full model copy per customer
+(\S\ref{sec:intro}) and admits no cross-tenant batching.
 \emph{Weight merging per request}---compute $W' = W_0 + B_i A_i$ in-place,
 run inference, then restore $W_0$---serializes requests behind the
-merge--restore cycle, fragments GPU memory under in-place mutation, and
-risks cross-tenant contamination if a crash interleaves with restore.
-\emph{Sequential single-tenant batching} (one tenant per batch) drives
-average GPU utilization toward $1/N$.
+merge--restore cycle, fragments GPU memory, and risks cross-tenant
+contamination if a crash interleaves with restore.
+\emph{Sequential single-tenant batching} drives average GPU
+utilization toward $1/N$.
 The right solution batches \emph{heterogeneous} adapters in a single forward
 pass, which requires a decomposition where different linear operations can be
 applied per sample without serialization.
