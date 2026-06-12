@@ -237,10 +237,9 @@ accuracy across seven public text-classification benchmarks
 at $1/\MpnetParamReductionRankEight$ the trainable-parameter
 cost.\footnote{Accuracy reported on
   \texttt{paraphrase-mpnet-base-v2} to match the SetFit literature
-  \cite{tunstall2022efficient}. The same protocol on \texttt{BAAI/bge-m3}---the
-  encoder all serving experiments (\S\ref{sec:experiments}) use---shows the
-  same pattern: LoRA retains \SetfitBgeRetainsPct\% of vanilla accuracy and
-  beats a frozen-encoder baseline on all seven tasks
+  \cite{tunstall2022efficient}; on \texttt{BAAI/bge-m3}, the serving
+  encoder, LoRA shows the same pattern and beats a frozen-encoder
+  baseline on all seven tasks
 (Table~\ref{tab:accuracy_bge}, Appendix~\ref{app:accuracy}).} The remaining
 barrier is \emph{serving}: combining thousands of
 these adapters in a single forward pass.
@@ -524,10 +523,8 @@ operating point.
   \setlength{\tabcolsep}{4.5pt}
   \renewcommand{\arraystretch}{0.92}
   \caption{Serving latency, throughput, and peak GPU memory
-    (\texttt{BAAI/bge-m3}, \HeadlineGPU; full setup in \S\ref{sec:setup}).
-    Adapters are pre-loaded; latency includes batch assembly and the
-    classification head. The top block sweeps adapter count, the middle
-  batch size, and the bottom LoRA rank.}
+    (setup in \S\ref{sec:setup}). The top block sweeps adapter count,
+  the middle batch size, and the bottom LoRA rank.}
   \label{tab:main_results}
   \input{table_main.tex}
 \end{table}
@@ -647,8 +644,8 @@ custom kernels yield the multiplicative gains reported in that literature.
   \centering
   \includegraphics[width=0.52\linewidth]{figures/latency_adapters.pdf}
   \caption{p50 latency as a function of pre-loaded adapter count at five
-    batch sizes (rank = \HeadlineRank, sequence length = 128, \HeadlineGPU,
-    \texttt{BAAI/bge-m3}).
+    batch sizes (rank = \HeadlineRank, sequence length = 128; setup in
+    \S\ref{sec:setup}).
     Curves are flat across $N \in [100, \CapacityRankEight]$,
     empirically confirming the
   $\mathcal{O}(1)$-in-$N$ scaling property of \sysname.}
@@ -691,18 +688,12 @@ $N$-adapter registration cost, which we replace with a constant-time
   \footnotesize
   \setlength{\tabcolsep}{2.5pt}
   \renewcommand{\arraystretch}{0.95}
-  \caption{Latency and throughput vs.\ the PEFT swap baseline in its
-    \emph{grouped} (batch-by-adapter), \emph{mixed} (native
-    \texttt{adapter\_names} API), and \emph{homogeneous} (single-tenant
-    batches, the friendliest case for PEFT) configurations
-    (\texttt{BAAI/bge-m3},
-    \HeadlineGPU, rank=\HeadlineRank; setup in \S\ref{sec:setup}).
-    Grouped and \sysname{}
-    draw uniform mixed-tenant batches; the $N$-independent no-adapter
-    base ceiling
-    is reported in-text. PEFT rows time the bare encoder (no classification
-    head); \sysname{} rows include batch assembly and per-tenant heads.
-  Speedup is \sysname{} over PEFT grouped.}
+  \caption{Latency and throughput vs.\ the PEFT swap baseline in the
+    \emph{grouped}, \emph{mixed}, and \emph{homogeneous} configurations
+    defined in the text (rank=\HeadlineRank; setup in \S\ref{sec:setup}).
+    PEFT rows time the bare encoder; \sysname{} rows include batch
+    assembly and per-tenant heads. Speedup is \sysname{} over PEFT
+  grouped.}
   \label{tab:baselines}
   \input{table_baselines.tex}
 \end{table}
