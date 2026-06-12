@@ -276,10 +276,47 @@ pass, which requires a decomposition where different linear operations can be
 applied per sample without serialization.
 
 % =============================================================================
+\section{Related Work}
+\label{sec:relwork}
+
+\paragraph{Multi-tenant LoRA serving for decoder LLMs.}
+Punica \cite{chen2024punica} (SGMV, a custom CUDA kernel grouping a batch by
+LoRA id for per-group matrix-vector products) and S-LoRA \cite{sheng2024slora}
+(a paged memory pool with Triton MBGMM/MBGMV kernels for heterogeneous ranks)
+both scope their designs to the autoregressive prefill$\to$decode pipeline and
+never expose the encoder operations---bidirectional attention, pooling,
+classification heads---that classification workloads require. vLLM
+\cite{kwon2023vllm} adopts these kernels as its multi-LoRA backend, but its
+encoder model classes do not implement them---v0.22.1 rejects
+\texttt{enable\_lora} for \texttt{BAAI/bge-m3} at
+initialization---and multi-adapter
+classification serving remains an unmerged draft (PR~\#24596). LoRAX
+\cite{predibase2023lorax}, CaraServe \cite{li2024caraserve}, and dLoRA
+\cite{wu2024dlora} likewise optimize decoder-only serving and do not address
+encoder classifiers, variable-size classification heads, or deployment without
+custom CUDA compilation.
+
+\paragraph{Encoder and multi-adapter serving.}
+HuggingFace TEI \cite{huggingface2023tei} serves encoder/embedding models at
+high throughput via Flash Attention and cuBLASLt but has no adapter support
+(an open feature request as of
+June~2026).\footnote{\url{https://github.com/huggingface/text-embeddings-inference/issues/788}}
+In production multi-tenant retrieval, Vishwanathan et
+al.~\cite{vishwanathan2022multitenant} serve a shared sentence
+bi-encoder with per-tenant fine-tuned final layers, switching
+tenant-specific weights at request time; weight switching cannot batch
+mixed-tenant requests---the limitation \sysname{} removes.
+PetS \cite{zhou2022pets}, the closest prior system, targets multi-adapter
+encoder serving for Adapter \cite{houlsby2019adapter}, BitFit
+\cite{benzaken2022bitfit}, and MaskBERT \cite{zhao2020masking} on
+BERT/DistilBERT, but predates LoRA and handles neither low-rank decompositions
+nor per-tenant classification heads.
+\sysname{} is a LoRA-native framework that batches arbitrary external
+adapters---with variable classification heads and a pre-loaded cache---without
+modifying the base model.
+
+% =============================================================================
 \section{\sysname: System Design}
-% * <Ashutosh Dwivedi> 18:25:09 26 May 2026 UTC+0530:
-% Keshav : Section 5: Related work should be section 3. Section 3 :
-% System Design should be section 5.
 \label{sec:system}
 
 % TODO (Task #14): Figure 1 — architecture diagram of the late-fusion
@@ -739,54 +776,6 @@ grows $100\to1{,}000$), leaving \sysname{}
 % \bottomrule
 % \end{tabular}
 % \end{table}
-
-% =============================================================================
-\section{Related Work}
-\label{sec:relwork}
-
-\paragraph{Multi-tenant LoRA serving for decoder LLMs.}
-Punica \cite{chen2024punica} (SGMV, a custom CUDA kernel grouping a batch by
-LoRA id for per-group matrix-vector products) and S-LoRA \cite{sheng2024slora}
-(a paged memory pool with Triton MBGMM/MBGMV kernels for heterogeneous ranks)
-both scope their designs to the autoregressive prefill$\to$decode pipeline and
-never expose the encoder operations---bidirectional attention, pooling,
-classification heads---that classification workloads require. vLLM
-\cite{kwon2023vllm} adopts these kernels as its multi-LoRA backend, but its
-encoder model classes do not implement them---v0.22.1 rejects
-\texttt{enable\_lora} for \texttt{BAAI/bge-m3} at
-initialization---and multi-adapter
-classification serving remains an unmerged draft (PR~\#24596). LoRAX
-\cite{predibase2023lorax}, CaraServe \cite{li2024caraserve}, and dLoRA
-\cite{wu2024dlora} likewise optimize decoder-only serving and do not address
-encoder classifiers, variable-size classification heads, or deployment without
-custom CUDA compilation.
-fLoRA \cite{wen2024flora} batches per-example adapters in the
-bandwidth-bound decode regime, where gathering per-sample $A_i, B_i$
-matrices for a batched matrix multiplication is itself costly; it
-therefore replaces LoRA's additive update with a multiplicative one
-served by element-wise scaling---a parameterization that cannot serve
-existing LoRA checkpoints. In the compute-bound encoder regime the
-additive path costs only \ProfLoraBmmIsolatedPct\% of forward GPU time
-(Finding~6), so \sysname{} serves stock adapters unchanged.
-
-\paragraph{Encoder and multi-adapter serving.}
-HuggingFace TEI \cite{huggingface2023tei} serves encoder/embedding models at
-high throughput via Flash Attention and cuBLASLt but has no adapter support
-(an open feature request as of
-June~2026).\footnote{\url{https://github.com/huggingface/text-embeddings-inference/issues/788}}
-In production multi-tenant retrieval, Vishwanathan et
-al.~\cite{vishwanathan2022multitenant} serve a shared sentence
-bi-encoder with per-tenant fine-tuned final layers, switching
-tenant-specific weights at request time; weight switching cannot batch
-mixed-tenant requests---the limitation \sysname{} removes.
-PetS \cite{zhou2022pets}, the closest prior system, targets multi-adapter
-encoder serving for Adapter \cite{houlsby2019adapter}, BitFit
-\cite{benzaken2022bitfit}, and MaskBERT \cite{zhao2020masking} on
-BERT/DistilBERT, but predates LoRA and handles neither low-rank decompositions
-nor per-tenant classification heads.
-\sysname{} is a LoRA-native framework that batches arbitrary external
-adapters---with variable classification heads and a pre-loaded cache---without
-modifying the base model.
 
 % =============================================================================
 \section{Conclusion}
