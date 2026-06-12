@@ -176,6 +176,14 @@ Appendix~\ref{sec:deployment}.
     on managed GPU platforms (\S\ref{sec:system},
     Appendix~\ref{sec:deployment}).
 
+  \item We quantify the accuracy cost of the adapters this system
+    serves: under the SetFit few-shot protocol on seven public
+    classification benchmarks, rank-\HeadlineRank{} LoRA retains
+    \SetfitRetainsPct\% of full fine-tuning's mean accuracy on
+    \texttt{paraphrase-mpnet-base-v2} and \SetfitBgeRetainsPct\% on
+    \texttt{BAAI/bge-m3}, the serving model
+    (\S\ref{sec:background_lora}, Appendix~\ref{app:accuracy}).
+
   \item We empirically demonstrate that adapter count does not drive
     inference latency: scaling from 100 to \HeadlineCapacity{} adapters at batch
     size \HeadlineBatch{} on a single \HeadlineGPU{} leaves p50 latency flat
