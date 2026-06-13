@@ -123,9 +123,9 @@ layers)—a \StorageReductionFullVsLoraRankEight$\times$ reduction.
 The remaining challenge is \textbf{batched serving} across these
 heterogeneous adapters on a shared GPU.
 
-Existing multi-tenant LoRA serving systems—including Punica
+Existing multi-tenant LoRA serving systems like Punica
 \cite{chen2024punica}, S-LoRA \cite{sheng2024slora}, vLLM
-\cite{kwon2023vllm}, and LoRAX \cite{predibase2023lorax}—are tailored
+\cite{kwon2023vllm}, and LoRAX \cite{predibase2023lorax} are tailored
 for autoregressive decoder workloads, where custom CUDA kernels and
 paged-memory pools optimize memory-bound, token-by-token generation
 over a KV cache.
@@ -222,7 +222,7 @@ hyperparameter typically set equal to $r$.
 For an encoder of hidden size $d = \BgeHidden$ with $L = \BgeLayers$
 layers, applying LoRA
 at rank $r = \HeadlineRank$ to the query and value projections yields
-$2 L \cdot (d r + r d) = \LoraParamsREight$ trainable parameters per adapter---a
+$2 L \cdot (d r + r d) = \LoraParamsREight$ trainable parameters per adapter, representing a
 $\LoraReductionVsQVRankEight\times$ reduction over full fine-tuning
 of those layers.
 
@@ -264,9 +264,9 @@ fine-tuned on their own labeled data.
 Three naive serving strategies all fail at scale.
 \emph{One model per tenant} requires a full model copy per customer
 (\S\ref{sec:intro}) and admits no cross-tenant batching.
-\emph{Weight merging per request}---compute $W' = W_0 + B_i A_i$ in-place,
-run inference, then restore $W_0$---serializes requests behind the
-merge--restore cycle, fragments GPU memory, and risks cross-tenant
+\emph{Weight merging per request} (computing $W' = W_0 + B_i A_i$ in-place,
+running inference, then restoring $W_0$) serializes requests behind the
+merge-restore cycle, fragments GPU memory, and risks cross-tenant
 contamination if a crash interleaves with restore.
 \emph{Sequential single-tenant batching} drives average GPU
 utilization toward $1/N$.
@@ -285,8 +285,8 @@ Punica \cite{chen2024punica} (SGMV, a custom CUDA kernel grouping a batch by
 LoRA id for per-group matrix-vector products) and S-LoRA \cite{sheng2024slora}
 (a paged memory pool with Triton MBGMM/MBGMV kernels for heterogeneous ranks)
 both scope their designs to the autoregressive prefill$\to$decode pipeline and
-never expose the encoder operations---bidirectional attention, pooling,
-classification heads---that classification workloads require. vLLM
+never expose the encoder operations (bidirectional attention, pooling, and
+classification heads) that classification workloads require. vLLM
 \cite{kwon2023vllm} adopts these kernels as its multi-LoRA backend, but its
 encoder model classes do not implement them---v0.22.1 rejects
 \texttt{enable\_lora} for \texttt{BAAI/bge-m3} at
@@ -306,14 +306,14 @@ In production multi-tenant retrieval, Vishwanathan et
 al.~\cite{vishwanathan2022multitenant} serve a shared sentence
 bi-encoder with per-tenant fine-tuned final layers, switching
 tenant-specific weights at request time; weight switching cannot batch
-mixed-tenant requests---the limitation \sysname{} removes.
+mixed-tenant requests, a limitation that \sysname{} removes.
 PetS \cite{zhou2022pets}, the closest prior system, targets multi-adapter
 encoder serving for Adapter \cite{houlsby2019adapter}, BitFit
 \cite{benzaken2022bitfit}, and MaskBERT \cite{zhao2020masking} on
 BERT/DistilBERT, but predates LoRA and handles neither low-rank decompositions
 nor per-tenant classification heads.
 \sysname{} is a LoRA-native framework that batches arbitrary external
-adapters---with variable classification heads and a pre-loaded cache---without
+adapters (with variable classification heads and a pre-loaded cache) without
 modifying the base model.
 
 % =============================================================================
