@@ -73,7 +73,7 @@ via Late-Fusion Batched Matrix Multiplication}
   Low-Rank Adaptation (LoRA) has become a popular method to adapt
   pre-trained models to specific domains. Applied to encoders in a
   multi-tenant service, it lets each tenant specialize a shared model
-  for classification, retrieval, or ranking---but existing
+  for classification, retrieval, or ranking. Existing
   multi-tenant LoRA serving systems target autoregressive decoders,
   and for encoders the available tooling supports only per-request
   adapter swapping, whose cost grows with the number of registered
@@ -103,8 +103,8 @@ via Late-Fusion Batched Matrix Multiplication}
 Enterprise NLP features, such as intent detection, ticket routing,
 and text classification, require low latency and predictable cost at
 high request volume \cite{arora2024intent}.
-These workloads are typically served by a shared bidirectional encoder
-with tenant-specific task heads.
+In multi-tenant environments, these workloads are typically served by a
+shared bidirectional encoder with tenant-specific task heads.
 Fine-tuning the encoder parameters alongside the task head
 yields consistent accuracy gains over a frozen shared encoder
 \cite{devlin2019bert,tunstall2022efficient,jain2026succeeding}.
@@ -112,7 +112,7 @@ Serving an isolated, fully fine-tuned model per tenant, however, is
 infeasible at scale.
 At \BgeFpSixteenGB{}~GB per copy in float16 precision, serving
 20{,}000 tenants would require \StorageTwentyKTB{}~TB of model
-weights---\StorageTwentyKGPUs{} A100-80GBs---and eliminate any
+weights (requiring \StorageTwentyKGPUs{} A100-80GB GPUs) and eliminate any
 opportunity for cross-tenant request batching.
 Low-Rank Adaptation (LoRA) \cite{hu2022lora} removes the storage barrier
 by expressing tenant-specific adaptations as low-rank updates to the
@@ -146,16 +146,15 @@ This structural difference makes standard batched matrix
 multiplication (BMM) the appropriate primitive for encoder serving.
 
 We present \sysname, a serving system built on this primitive.
-Its design turns on \emph{where} the adapter is applied: merging
+Its design hinges on \emph{where} the adapter is applied: merging
 $B_i A_i$ into $W_0$ yields a per-sample weight matrix $W'_i$ that must be
 applied serially, whereas keeping the base output $W_0 x$ and the delta
 $B_i A_i x$ as separate terms and summing them lets the per-sample work
 run as batched matrix multiplication. We call this
 \emph{activation-space} fusion, as opposed to parameter-space
 merging. \sysname{} runs the shared base path once over
-all $\mathcal{B}$ samples and dispatches the per-sample LoRA paths in
-parallel via \texttt{torch.bmm}, so a
-mixed-tenant batch completes in a single forward pass regardless of how
+a mixed-tenant batch of size $\mathcal{B}$ and dispatches the per-sample LoRA paths in
+parallel via \texttt{torch.bmm}, so the batch completes in a single forward pass regardless of how
 many distinct adapters it references. Per-tenant task heads
 (variable-size classifiers, regressors, retrieval re-rankers) are
 batched analogously via zero-padded BMM.
@@ -172,17 +171,17 @@ Appendix~\ref{sec:deployment}.
 
   \item We present late-fusion BMM serving, an architecture that batches
     arbitrary mixed-tenant encoder requests without weight merging and
-    without custom CUDA kernels, in standard PyTorch---removing the
-    custom-kernel build step that is the dominant deployment friction
+    without custom CUDA kernels, in standard PyTorch, removing the
+    custom-kernel build step, a common source of deployment friction
     on managed GPU platforms (\S\ref{sec:system},
     Appendix~\ref{sec:deployment}).
 
-  \item We quantify the accuracy cost of the adapters this system
-    serves: under the SetFit few-shot protocol on seven public
-    classification benchmarks, rank-\HeadlineRank{} LoRA retains
-    \SetfitRetainsPct\% of full fine-tuning's mean accuracy on
-    \texttt{paraphrase-mpnet-base-v2} and \SetfitBgeRetainsPct\% on
-    \texttt{BAAI/bge-m3}, the serving model
+  \item We show that low-rank adaptation preserves task accuracy: under the SetFit
+    few-shot protocol on seven classification benchmarks,
+    rank-\HeadlineRank{} LoRA retains \SetfitRetainsPct\% and
+    \SetfitBgeRetainsPct\% of full fine-tuning's mean accuracy on
+    \texttt{paraphrase-mpnet-base-v2} and \texttt{BAAI/bge-m3} (the primary
+    serving model), respectively
     (\S\ref{sec:background_lora}, Appendix~\ref{app:accuracy}).
 
   \item We empirically demonstrate that adapter count does not drive
@@ -197,7 +196,7 @@ Appendix~\ref{sec:deployment}.
     higher throughput under adapter-grouped batching,
     \textbf{$>$\ColdStartSpeedupMin{}$\times$} faster cold-start
     deployment, and \texttt{set\_adapter} isolated as the
-    $\mathcal{O}(N)$ bottleneck in the state-of-the-practice baseline
+    $\mathcal{O}(N)$ bottleneck in the standard PEFT baseline
     (\S\ref{sec:results_baselines}, Finding~7).
 \end{itemize}
 
@@ -272,7 +271,9 @@ contamination if a crash interleaves with restore.
 \emph{Sequential single-tenant batching} drives average GPU
 utilization toward $1/N$.
 The right solution batches \emph{heterogeneous} adapters in a single forward
-pass, which requires a decomposition where different linear operations can be
+pass (where ``heterogeneous'' refers to distinct tenant-specific weights, as
+their ranks and shapes are otherwise identical), which requires a decomposition
+where different linear operations can be
 applied per sample without serialization.
 
 % =============================================================================
@@ -406,8 +407,8 @@ The logit computation is:
 \end{equation}
 
 Callers slice $[:, :, :c_i]$ per sample before applying softmax.
-The zero-padded columns contribute zero gradient and do not affect the
-probability distribution of any tenant.
+Because these padded dimensions are discarded prior to softmax, they
+have no effect on the resulting probability distribution of any tenant.
 
 \subsection{Implementation}
 \label{sec:impl}
