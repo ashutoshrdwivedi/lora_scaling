@@ -229,7 +229,7 @@ of those layers.
 In this work, $B$ is initialized to zero so that $\Delta W = 0$ at the start
 of training, leaving the pre-trained representations intact.
 
-At rank \HeadlineRank, LoRA retains \SetfitRetainsPct\% of vanilla
+Our evaluation shows that at rank \HeadlineRank, LoRA retains \SetfitRetainsPct\% of vanilla
 fine-tuning's mean
 accuracy across seven public text-classification benchmarks
 (Table~\ref{tab:accuracy}; per-task drop \SetfitMinDropPP--\SetfitMaxDropPP pp),
@@ -258,23 +258,18 @@ these adapters in a single forward pass.
 \subsection{The Multi-Tenant Serving Problem}
 \label{sec:background_serving}
 
-Consider a service that exposes a classification feature to $N$
-customers, each with a \texttt{BAAI/bge-m3} \cite{chen2024bge}
-fine-tuned on their own labeled data.
-Three naive serving strategies all fail at scale.
-\emph{One model per tenant} requires a full model copy per customer
-(\S\ref{sec:intro}) and admits no cross-tenant batching.
-\emph{Weight merging per request} (computing $W' = W_0 + B_i A_i$ in-place,
-running inference, then restoring $W_0$) serializes requests behind the
-merge-restore cycle, fragments GPU memory, and risks cross-tenant
-contamination if a crash interleaves with restore.
-\emph{Sequential single-tenant batching} drives average GPU
+Consider a classification service for $N$ customers, each with a custom
+\texttt{BAAI/bge-m3} \cite{chen2024bge} adapter. Three naive serving strategies
+fail at scale:
+(1)~\emph{One model per tenant} requires a full base model copy per customer
+and lacks cross-tenant batching;
+(2)~\emph{Dynamic weight merging} ($W' = W_0 + B_i A_i$ in-place) serializes requests,
+fragments memory, and introduces concurrency risks;
+(3)~\emph{Sequential batching} processes tenants one-by-one, driving average GPU
 utilization toward $1/N$.
-The right solution batches \emph{heterogeneous} adapters in a single forward
-pass (where ``heterogeneous'' refers to distinct tenant-specific weights, as
-their ranks and shapes are otherwise identical), which requires a decomposition
-where different linear operations can be
-applied per sample without serialization.
+An effective solution must batch \emph{heterogeneous} adapters (distinct weights,
+identical shapes) in a single forward pass, applying sample-specific linear
+operations concurrently without serialization.
 
 % =============================================================================
 \section{Related Work}
@@ -512,15 +507,11 @@ Each configuration samples mixed-tenant batches uniformly at random from the
 adapter pool.
 
 \paragraph{Adapters and correctness.}
-Latency and throughput experiments use synthetic LoRA weights, isolating
-serving-system overhead from adapter-quality artifacts. We verify
-that \sysname{}'s output is numerically equivalent to a reference
-PEFT-wrapped \texttt{AutoModel} with the same A/B weights to within
-\texttt{atol=rtol=1e-4} in fp32 across five scenarios---zero-LoRA, single
-shared adapter, per-sample distinct adapters with shared per-layer A/B,
-per-target-module distinct A/B, and a padded XLM-RoBERTa batch exercising
-the \texttt{bge-m3} positional scheme---each enforced as a unit test, covering
-both the BERT and XLM-RoBERTa position-id conventions.
+Benchmarks use synthetic LoRA weights to isolate system overhead. We enforce
+numerical equivalence to reference HuggingFace and PEFT models to within
+$\text{atol}=\text{rtol}=10^{-4}$ in fp32. This is verified via unit tests
+across five routing and padding scenarios under both BERT and XLM-RoBERTa
+position-id conventions.
 
 \paragraph{Baselines.}
 We compare against \texttt{HuggingFace PEFT}~\cite{mangrulkar2022peft} in
