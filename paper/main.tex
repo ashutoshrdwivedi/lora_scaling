@@ -91,9 +91,10 @@ via Late-Fusion Batched Matrix Multiplication}
   cross-tenant contamination by construction. Our evaluation shows
   that \sysname's serving latency stays flat as the adapter pool
   grows to tens of thousands on a single GPU, and that it achieves
-  \HeadlineSpeedupLow--\HeadlineSpeedupHigh$\times$ higher throughput
-  than HuggingFace PEFT on mixed-tenant traffic while registering
-  new adapters over \ColdStartSpeedupMin{}$\times$ faster.
+  \SpeedupMixedMin--\SpeedupMixedMax$\times$ higher throughput than
+  HuggingFace PEFT's native mixed-batch API and up to
+  \HeadlineSpeedupHigh$\times$ over per-adapter swapping, while
+  registering new adapters over \ColdStartSpeedupMin{}$\times$ faster.
 \end{abstract}
 
 % =============================================================================
@@ -110,7 +111,7 @@ yields consistent accuracy gains over a frozen shared encoder
 \cite{devlin2019bert,tunstall2022efficient,jain2026succeeding}.
 Serving an isolated, fully fine-tuned model per tenant, however, is
 infeasible at scale.
-At \BgeFpSixteenGB{}~GB per copy in float16 precision, serving
+At $\approx$\BgeFpSixteenGB{}~GB per copy in float16 precision, serving
 20{,}000 tenants would require \StorageTwentyKTB{}~TB of model
 weights (requiring \StorageTwentyKGPUs{} A100-80GB GPUs) and eliminate any
 opportunity for cross-tenant request batching.
@@ -190,10 +191,11 @@ Appendix~\ref{sec:deployment}.
     (\PFiftyAtNHundred$\to$\PFiftyAtNFortySevenK~ms) and p99 bounded
     (\S\ref{sec:experiments}).
 
-  \item We benchmark \sysname{} against a HuggingFace PEFT swap baseline
-    on identical hardware:
-    \textbf{\HeadlineSpeedupLow--\HeadlineSpeedupHigh$\times$}
-    higher throughput under adapter-grouped batching,
+  \item We benchmark \sysname{} against HuggingFace PEFT on identical
+    hardware:
+    \textbf{\SpeedupMixedMin--\SpeedupMixedMax$\times$} higher throughput
+    than PEFT's native mixed-batch API and up to
+    \textbf{\HeadlineSpeedupHigh$\times$} over per-adapter swapping,
     \textbf{$>$\ColdStartSpeedupMin{}$\times$} faster cold-start
     deployment, and \texttt{set\_adapter} isolated as the
     $\mathcal{O}(N)$ bottleneck in the standard PEFT baseline

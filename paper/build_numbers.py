@@ -46,8 +46,10 @@ SOURCE-OF-TRUTH MAP (one entry per number that appears in main.tex)
       benchmarks/results/peft_homogeneous_sxm80.csv
       benchmarks/results/peft_base_sxm80.csv
 
-  LateFuse reference for Table 3:
-      benchmarks/results/sysname_sxm80_ref.csv
+  LateFuse rows for Table 3 (and speedup multipliers):
+      benchmarks/results/sweep_main.csv, filtered to r=8 (5-seed mean).
+      Same run as Table 2, so the two tables agree on overlapping configs.
+      (Formerly a separate single run, sysname_sxm80_ref.csv.)
 
   Forward-pass FLOP / profiler / ablation (Finding 6):
       benchmarks/results/forward_breakdown.json
@@ -367,7 +369,10 @@ def emit_setfit_macros(m: Macros, setfit: list[dict[str, str]],
         lora = float(next(r for r in setfit
                           if r["dataset"] == key and r["method"] == "lora"
                           )["accuracy"])
-        delta = lora - van
+        # Delta from the rounded cells, so it equals the column subtraction a
+        # reader does in the table (CR's true mean diff otherwise rounds to a
+        # different last digit than 0.xxx-rounded(vanilla) - 0.xxx-rounded(lora)).
+        delta = round(lora, 3) - round(van, 3)
         if have_frozen:
             frozen = float(next(r for r in setfit
                                 if r["dataset"] == key and r["method"] == "frozen"
@@ -380,7 +385,7 @@ def emit_setfit_macros(m: Macros, setfit: list[dict[str, str]],
         m.add(f"Setfit{prefix}{tag}Delta",   fmt_f(delta, 3))
         van_total += van
         lora_total += lora
-        drops_pp.append((van - lora) * 100)
+        drops_pp.append(-delta * 100)
 
     van_mean = van_total / len(SETFIT_TASKS)
     lora_mean = lora_total / len(SETFIT_TASKS)
@@ -440,7 +445,11 @@ def build() -> None:
     peft_mixed_path = RESULTS / "peft_mixed_sxm80.csv"
     peft_mixed     = (load_csv(peft_mixed_path)
                       if peft_mixed_path.exists() else None)
-    sysname_ref    = load_csv(RESULTS / "sysname_sxm80_ref.csv")
+    # LateFuse rows for Table 3 / the speedup multipliers come from the same
+    # 5-seed sweep_main run as Table 2, filtered to the headline rank (r=8), so
+    # the two tables report identical numbers for overlapping configs. (Was a
+    # separate single run, sysname_sxm80_ref.csv, which drifted ~5% in QPS.)
+    sysname_ref    = [r for r in sweep_main if r["lora_rank"] == "8"]
     fwd            = json.loads((RESULTS / "forward_breakdown.json").read_text())
     setfit_raw     = load_csv(QUALITY / "setfit_mpnet_multiseed.csv")
     setfit, setfit_vanilla_lr, setfit_lora_lr = aggregate_setfit(setfit_raw)
@@ -464,8 +473,9 @@ def build() -> None:
     m.add("BgeHeads",  BGE_NUM_HEADS)
     m.add("BgeParamsM", round(BGE_NUM_PARAMS / 1e6),
           comment=f"= round({BGE_NUM_PARAMS} / 1e6)")
+    bge_fp16_gb = round(BGE_NUM_PARAMS * FP16_BYTES / 1e9, 2)  # 1.14: displayed per-copy size
     m.add("BgeFpSixteenGB",
-          fmt_f(BGE_NUM_PARAMS * FP16_BYTES / 1e9, 2),
+          fmt_f(bge_fp16_gb, 2),
           comment="per-model fp16 size, decimal GB")
 
     m.add("MpnetHidden", MPNET_HIDDEN_SIZE)
@@ -510,7 +520,11 @@ def build() -> None:
     m.section("Aggregate storage / per-GPU capacity",
               "derived from arch constants and sweep_main.csv")
 
-    storage_20k_bytes = BGE_NUM_PARAMS * FP16_BYTES * 20_000
+    # Derived from the *displayed* per-copy size (1.14 GB) so the intro arithmetic
+    # reproduces exactly: 1.14 GB x 20,000 = 22.8 TB; / 80 GB = 285 A100s. Using
+    # full-precision bytes here gave 22.7 TB / 284 GPUs, which 1.14 x 20,000 cannot
+    # reproduce -- the 2-dp per-copy figure rounds up from 1.1355.
+    storage_20k_bytes = bge_fp16_gb * 1e9 * 20_000
     m.add("StorageTwentyKTB",     fmt_f(storage_20k_bytes / 1e12, 1))
     m.add("StorageTwentyKGPUs",   math.ceil(storage_20k_bytes / A100_80GB_BYTES))
 
@@ -717,7 +731,7 @@ def build() -> None:
               fmt_f(row["add_adapter_total_s"], 1))
 
     m.section("LateFuse reference for Table 3",
-              "benchmarks/results/sysname_sxm80_ref.csv")
+              "benchmarks/results/sweep_main.csv (5-seed mean, r=8)")
     for n, b in PEFT_NB:
         row = find_row(sysname_ref, num_adapters=str(n), batch_size=str(b))
         suf = f"N{N_SUFFIX[n]}B{B_SUFFIX[b]}"
@@ -728,7 +742,7 @@ def build() -> None:
     # 9. Speedup multipliers (paper uses QPS ratios)
     # =======================================================================
     m.section("Speedup multipliers (LateFuse QPS / PEFT QPS)",
-              "derived from sysname_sxm80_ref vs peft_grouped/homog")
+              "derived from sweep_main (5-seed, r=8) vs peft_grouped/homog")
 
     def qps(rows, n: int, b: int) -> float:
         return float(find_row(rows, num_adapters=str(n),
@@ -1091,7 +1105,7 @@ def render_table_accuracy(setfit, hidden: int, layers: int,
         lora = float(next(r for r in setfit
                           if r["dataset"] == key and r["method"] == "lora"
                           )["accuracy"])
-        delta = lora - van
+        delta = round(lora, 3) - round(van, 3)  # match the table's column subtraction
         delta_str = f"$-${abs(delta):.3f}" if delta < 0 else f"{delta:.3f}"
         frozen_cell = ""
         if have_frozen:

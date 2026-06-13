@@ -16,12 +16,9 @@ uv run python -m benchmarks.profiling.model_metadata \
   > "$R/model_metadata.log" 2>&1
 echo "  metadata rc=$?"
 
-echo "=== [1/10] sysname Table-4 reference ==="
-uv run python -m lora_serving.benchmark.run \
-  --model "$M" --dtype fp16 --adapters 100 1000 --batch-sizes 8 32 128 \
-  --lora-ranks 8 --seq-len 128 --warmup 50 --iters 200 \
-  --out "$R/sysname_sxm80_ref.csv" > "$R/sysname_sxm80_ref.log" 2>&1
-echo "  sysname ref rc=$?"
+# (Removed: a separate single-run LateFuse reference. Table 3 and the
+# throughput figure now read LateFuse from sweep_main below, filtered to r=8,
+# so they share one run with Table 2 and cannot drift.)
 
 # The two sweeps that back the paper's statistical claims (Finding 1: p50 vs
 # adapter count; Finding 2: throughput vs batch; Finding 3: p50/p99 vs rank)

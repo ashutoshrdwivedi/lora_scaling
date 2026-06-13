@@ -8,7 +8,9 @@ Produces:
         mixed / homogeneous vs LateFuse) at B=32, N=100 and N=1,000.
 
 Data sources are the same CSVs that feed Tables 2-3 (sweep_main.csv,
-peft_*_sxm80.csv, sysname_sxm80_ref.csv), so figures and tables can't drift.
+peft_*_sxm80.csv), so figures and tables can't drift. The LateFuse curve
+uses sweep_main.csv at r=8 (averaged over seeds), the same source
+paper/build_numbers.py uses for Table 3.
 Multi-seed CSVs (a 'seed' column) are aggregated to mean +/- sample s.d.
 
 Run:
@@ -37,6 +39,20 @@ FIG_DIR = REPO / "paper" / "figures"
 def load_csv(name: str) -> list[dict[str, str]]:
     with (RESULTS / name).open() as f:
         return list(csv.DictReader(f))
+
+
+def load_sysname() -> list[dict[str, str]]:
+    """LateFuse rows from the 5-seed sweep (r=8), averaged over seeds, so the
+    figure matches Table 3 (same source as paper/build_numbers.py)."""
+    by_cfg: dict[tuple[str, str], list[float]] = defaultdict(list)
+    for r in load_csv("sweep_main.csv"):
+        if r["lora_rank"] != "8":
+            continue
+        by_cfg[(r["num_adapters"], r["batch_size"])].append(
+            float(r["throughput_samples_sec"]))
+    return [{"num_adapters": n, "batch_size": b,
+             "throughput_samples_sec": str(statistics.fmean(v))}
+            for (n, b), v in by_cfg.items()]
 
 
 def latency_adapters() -> Path:
@@ -81,7 +97,7 @@ def throughput_baselines() -> Path:
         ("PEFT grouped", load_csv("peft_grouped_sxm80.csv")),
         ("PEFT mixed", load_csv("peft_mixed_sxm80.csv")),
         ("PEFT homog.", load_csv("peft_homogeneous_sxm80.csv")),
-        ("LateFuse", load_csv("sysname_sxm80_ref.csv")),
+        ("LateFuse", load_sysname()),
     ]
 
     def qps(rows: list[dict[str, str]], n: int) -> float:

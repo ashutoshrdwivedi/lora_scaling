@@ -30,8 +30,8 @@
 
 % ===== Aggregate storage / per-GPU capacity =====
 % source: derived from arch constants and sweep_main.csv
-\newcommand{\StorageTwentyKTB}{22.7}
-\newcommand{\StorageTwentyKGPUs}{284}
+\newcommand{\StorageTwentyKTB}{22.8}
+\newcommand{\StorageTwentyKGPUs}{285}
 \newcommand{\CacheNHundredMB}{157}  % 100 adapters at r=8 fp16
 \newcommand{\CacheNTwentyKGB}{31.5}  % 20k adapters at r=8 fp16
 \newcommand{\CapacityRankEight}{47{,}000}
@@ -248,44 +248,44 @@
 \newcommand{\PeftHomogAddAdapterSecNOneK}{1173.4}
 
 % ===== LateFuse reference for Table 3 =====
-% source: benchmarks/results/sysname_sxm80_ref.csv
-\newcommand{\SysRefPFiftyNHundredBEight}{21.0}
-\newcommand{\SysRefQpsNHundredBEight}{378}
+% source: benchmarks/results/sweep_main.csv (5-seed mean, r=8)
+\newcommand{\SysRefPFiftyNHundredBEight}{20.4}
+\newcommand{\SysRefQpsNHundredBEight}{389}
 \newcommand{\SysRefPFiftyNHundredBThirtyTwo}{39.2}
-\newcommand{\SysRefQpsNHundredBThirtyTwo}{791}
-\newcommand{\SysRefPFiftyNHundredBOneTwentyEight}{144.8}
-\newcommand{\SysRefQpsNHundredBOneTwentyEight}{825}
-\newcommand{\SysRefPFiftyNOneKBEight}{21.0}
-\newcommand{\SysRefQpsNOneKBEight}{368}
-\newcommand{\SysRefPFiftyNOneKBThirtyTwo}{39.3}
-\newcommand{\SysRefQpsNOneKBThirtyTwo}{776}
-\newcommand{\SysRefPFiftyNOneKBOneTwentyEight}{146.0}
-\newcommand{\SysRefQpsNOneKBOneTwentyEight}{778}
+\newcommand{\SysRefQpsNHundredBThirtyTwo}{772}
+\newcommand{\SysRefPFiftyNHundredBOneTwentyEight}{148.1}
+\newcommand{\SysRefQpsNHundredBOneTwentyEight}{783}
+\newcommand{\SysRefPFiftyNOneKBEight}{20.5}
+\newcommand{\SysRefQpsNOneKBEight}{388}
+\newcommand{\SysRefPFiftyNOneKBThirtyTwo}{39.1}
+\newcommand{\SysRefQpsNOneKBThirtyTwo}{782}
+\newcommand{\SysRefPFiftyNOneKBOneTwentyEight}{146.8}
+\newcommand{\SysRefQpsNOneKBOneTwentyEight}{780}
 
 % ===== Speedup multipliers (LateFuse QPS / PEFT QPS) =====
-% source: derived from sysname_sxm80_ref vs peft_grouped/homog
-\newcommand{\SpeedupGroupedNHundredBEight}{28}
-\newcommand{\SpeedupHomogNHundredBEight}{3.7}
-\newcommand{\SpeedupGroupedNHundredBThirtyTwo}{52}
+% source: derived from sweep_main (5-seed, r=8) vs peft_grouped/homog
+\newcommand{\SpeedupGroupedNHundredBEight}{29}
+\newcommand{\SpeedupHomogNHundredBEight}{3.8}
+\newcommand{\SpeedupGroupedNHundredBThirtyTwo}{51}
 \newcommand{\SpeedupHomogNHundredBThirtyTwo}{2.0}
-\newcommand{\SpeedupGroupedNHundredBOneTwentyEight}{36}
+\newcommand{\SpeedupGroupedNHundredBOneTwentyEight}{34}
 \newcommand{\SpeedupHomogNHundredBOneTwentyEight}{0.8}
-\newcommand{\SpeedupGroupedNOneKBEight}{246}
-\newcommand{\SpeedupHomogNOneKBEight}{30.4}
-\newcommand{\SpeedupGroupedNOneKBThirtyTwo}{517}
-\newcommand{\SpeedupHomogNOneKBThirtyTwo}{16.0}
-\newcommand{\SpeedupGroupedNOneKBOneTwentyEight}{486}
+\newcommand{\SpeedupGroupedNOneKBEight}{258}
+\newcommand{\SpeedupHomogNOneKBEight}{32.0}
+\newcommand{\SpeedupGroupedNOneKBThirtyTwo}{521}
+\newcommand{\SpeedupHomogNOneKBThirtyTwo}{16.1}
+\newcommand{\SpeedupGroupedNOneKBOneTwentyEight}{487}
 \newcommand{\SpeedupHomogNOneKBOneTwentyEight}{4.3}
-\newcommand{\SpeedupGroupedMin}{28}  % min over ALL measured (N,B) grouped speedups
-\newcommand{\SpeedupGroupedMax}{517}  % max over ALL measured (N,B) grouped speedups
-\newcommand{\SpeedupMixedNHundredBEight}{6.7}
-\newcommand{\SpeedupMixedNHundredBThirtyTwo}{9.1}
-\newcommand{\SpeedupMixedNHundredBOneTwentyEight}{6.0}
-\newcommand{\SpeedupMixedNOneKBEight}{21.9}
-\newcommand{\SpeedupMixedNOneKBThirtyTwo}{18.5}
+\newcommand{\SpeedupGroupedMin}{29}  % min over ALL measured (N,B) grouped speedups
+\newcommand{\SpeedupGroupedMax}{521}  % max over ALL measured (N,B) grouped speedups
+\newcommand{\SpeedupMixedNHundredBEight}{6.9}
+\newcommand{\SpeedupMixedNHundredBThirtyTwo}{8.9}
+\newcommand{\SpeedupMixedNHundredBOneTwentyEight}{5.7}
+\newcommand{\SpeedupMixedNOneKBEight}{23.1}
+\newcommand{\SpeedupMixedNOneKBThirtyTwo}{18.7}
 \newcommand{\SpeedupMixedNOneKBOneTwentyEight}{11.2}
-\newcommand{\SpeedupMixedMin}{6.0}  % min over ALL measured (N,B) mixed speedups
-\newcommand{\SpeedupMixedMax}{21.9}  % max over ALL measured (N,B) mixed speedups
+\newcommand{\SpeedupMixedMin}{5.7}  % min over ALL measured (N,B) mixed speedups
+\newcommand{\SpeedupMixedMax}{23.1}  % max over ALL measured (N,B) mixed speedups
 \newcommand{\LateFuseColdLoadSecNOneK}{0.29}  % AdapterStore preload time, N=1000 from sweep_main.csv
 \newcommand{\ColdStartSpeedupNOneK}{4071}  % PEFT add_adapter (1180.7s) / LateFuse preload (0.29s)
 \newcommand{\ColdStartSpeedupMin}{479}  % min across [100, 1000]; min at N=100
@@ -304,7 +304,7 @@
 \newcommand{\SetfitSSTFiveDelta}{-0.023}
 \newcommand{\SetfitCRVanilla}{0.871}
 \newcommand{\SetfitCRLora}{0.829}
-\newcommand{\SetfitCRDelta}{-0.041}
+\newcommand{\SetfitCRDelta}{-0.042}
 \newcommand{\SetfitAmazonCFVanilla}{0.272}
 \newcommand{\SetfitAmazonCFLora}{0.221}
 \newcommand{\SetfitAmazonCFDelta}{-0.051}
@@ -342,7 +342,7 @@
 \newcommand{\SetfitBgeCRFrozen}{0.878}
 \newcommand{\SetfitBgeCRVanilla}{0.895}
 \newcommand{\SetfitBgeCRLora}{0.886}
-\newcommand{\SetfitBgeCRDelta}{-0.010}
+\newcommand{\SetfitBgeCRDelta}{-0.009}
 \newcommand{\SetfitBgeAmazonCFFrozen}{0.241}
 \newcommand{\SetfitBgeAmazonCFVanilla}{0.304}
 \newcommand{\SetfitBgeAmazonCFLora}{0.248}
@@ -388,5 +388,5 @@
 \newcommand{\EnvCudaVersion}{12.8}
 \newcommand{\EnvTransformersVersion}{4.57.6}
 \newcommand{\EnvPeftVersion}{0.19.1}
-\newcommand{\HeadlineSpeedupLow}{28}
-\newcommand{\HeadlineSpeedupHigh}{517}
+\newcommand{\HeadlineSpeedupLow}{29}
+\newcommand{\HeadlineSpeedupHigh}{521}
