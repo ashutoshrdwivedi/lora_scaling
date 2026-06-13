@@ -249,7 +249,7 @@ these adapters in a single forward pass.
   \small
   \caption{Per-task accuracy of LoRA adapters versus full encoder
     fine-tuning on \texttt{paraphrase-mpnet-base-v2} ($N{=}8$ examples
-    per class, rank=8, mean over 10 seeds; protocol in
+      per class, rank=8, mean over 10 seeds; protocol in
     Appendix~\ref{app:accuracy}). Scores are accuracy except
   Amazon-CF (MCC).}
   \label{tab:accuracy}
@@ -821,7 +821,11 @@ For very high request rates ($>$10{,}000 requests/sec), this becomes the
 throughput bottleneck.
 A custom CUDA or C++ gather kernel that indexes directly into the adapter
 store would eliminate this overhead, at the cost of departing from
-pure-PyTorch deployability.
+pure-PyTorch deployability. Alternatively, moving the adapter cache into a
+single contiguous GPU tensor and performing batch assembly via GPU-resident
+index selection (e.g., \texttt{torch.index\_select}) represents a promising path to
+eliminate this CPU bottleneck while retaining pure-PyTorch compatibility, which
+can be optimized further via \texttt{torch.compile}.
 
 \paragraph{Single-node evaluation.}
 All latency and throughput results are measured on one GPU. The architecture
