@@ -1,4 +1,4 @@
-model,dtype,num_adapters,batch_size,lora_rank,seq_len,p50_ms,p90_ms,p95_ms,p99_ms,mean_ms,assemble_p50_ms,assemble_mean_ms,forward_p50_ms,forward_mean_ms,assemble_share_pct,throughput_samples_sec,peak_gpu_mem_gb,adapter_cache_gb,adapter_load_total_s,warmup,iters
-BAAI/bge-m3,float16,20000,32,8,128,39.65,40.03,40.14,41.96,40.6,13.562,14.465,26.029,26.132,35.6,788.2,33.15,31.457,14.48,50,200
-BAAI/bge-m3,float16,40000,32,8,128,39.65,39.9,40.11,42.1,40.63,13.598,14.558,26.004,26.077,35.8,787.5,65.027,62.915,20.43,50,200
-BAAI/bge-m3,float16,47000,32,8,128,39.59,39.99,40.11,42.79,40.56,13.518,14.437,26.003,26.124,35.6,788.9,76.184,73.925,16.58,50,200
+model,dtype,num_adapters,batch_size,lora_rank,seq_len,p50_ms,p90_ms,p95_ms,p99_ms,mean_ms,assemble_p50_ms,assemble_mean_ms,forward_p50_ms,forward_mean_ms,assemble_share_pct,throughput_samples_sec,peak_gpu_mem_gb,adapter_cache_gb,adapter_load_total_s,warmup,iters,seed
+BAAI/bge-m3,float16,20000,32,8,128,39.91,40.18,40.34,42.92,40.83,13.924,14.818,25.963,26.017,36.3,783.7,33.15,31.457,33.51,50,200,
+BAAI/bge-m3,float16,40000,32,8,128,39.96,40.24,40.31,46.13,40.95,14.021,14.979,25.919,25.969,36.6,781.5,65.027,62.915,43.04,50,200,
+BAAI/bge-m3,float16,47000,32,8,128,39.95,40.21,40.38,47.69,41.48,14.021,15.516,25.901,25.966,37.4,771.4,76.184,73.925,27.19,50,200,
