@@ -228,6 +228,16 @@ def main():
     )
     parser.add_argument("--batch-sizes", nargs="+", type=int, default=[8, 16, 32, 64, 128])
     parser.add_argument("--lora-ranks", nargs="+", type=int, default=[8])
+    parser.add_argument(
+        "--extra-configs", nargs="*", default=None, metavar="N:B:r",
+        help="Additional explicit num_adapters:batch_size:lora_rank configs to "
+             "measure in the SAME run as the --adapters x --batch-sizes x "
+             "--lora-ranks grid. Folds the rank sweep's off-axis points (e.g. "
+             "the r!=8 operating-point cells) into the main sweep so the shared "
+             "r=8 cell is measured exactly once and all ranks at an operating "
+             "point share one thermal envelope. Example: "
+             "--extra-configs 1000:32:4 1000:32:16 1000:32:32",
+    )
     parser.add_argument("--seq-len", type=int, default=128)
     parser.add_argument("--warmup", type=int, default=50)
     parser.add_argument("--iters", type=int, default=200)
@@ -254,46 +264,61 @@ def main():
     print_memory_ceiling(args.model, dtype, vram_gb)
 
     seeds: list[int | None] = args.seeds if args.seeds else [None]
-    print(f"Sweep: {len(args.adapters)} adapter counts × {len(args.batch_sizes)} batch sizes "
-          f"× {len(args.lora_ranks)} lora ranks × {len(seeds)} seed(s)\n")
+
+    # Build the explicit (N, B, r) config list: the cross product of the sweep
+    # axes plus any --extra-configs, de-duplicated and sorted by (N, B, r).
+    # Sorting groups every rank measured at a given (N, B) consecutively, so the
+    # rank variations at an operating point are timed back-to-back within each
+    # seed pass (one thermal envelope) rather than in a separate, later run.
+    configs = {
+        (n, b, r)
+        for n in args.adapters
+        for b in args.batch_sizes
+        for r in args.lora_ranks
+    }
+    for spec in args.extra_configs or []:
+        parts = spec.split(":")
+        if len(parts) != 3 or not all(p.isdigit() for p in parts):
+            parser.error(f"--extra-configs entry must be N:B:r integers, got {spec!r}")
+        configs.add(tuple(int(p) for p in parts))
+    configs = sorted(configs)
+
+    print(f"Sweep: {len(configs)} unique (N, B, r) configs × {len(seeds)} seed(s)\n")
 
     results = []
-    total = (len(args.adapters) * len(args.batch_sizes)
-             * len(args.lora_ranks) * len(seeds))
+    total = len(configs) * len(seeds)
     done = 0
 
     # Seed is the outermost loop: each repeat is a full pass over the sweep,
     # so between-seed variance also captures slow drift (thermal, clocks).
     for seed in seeds:
-        for num_adapters in args.adapters:
-            for batch_size in args.batch_sizes:
-                for lora_rank in args.lora_ranks:
-                    done += 1
-                    print(f"[{done}/{total}] adapters={num_adapters} batch={batch_size} "
-                          f"rank={lora_rank} seed={seed}")
-                    try:
-                        row = run_single_config(
-                            model_name=args.model,
-                            num_adapters=num_adapters,
-                            batch_size=batch_size,
-                            lora_rank=lora_rank,
-                            seq_len=args.seq_len,
-                            warmup=args.warmup,
-                            iters=args.iters,
-                            dtype=dtype,
-                            num_labels=args.num_labels,
-                            seed=seed,
-                        )
-                    except torch.cuda.OutOfMemoryError as e:
-                        print(f"  OOM at adapters={num_adapters} batch={batch_size} rank={lora_rank}: {e}")
-                        torch.cuda.empty_cache()
-                        continue
-                    results.append(row)
-                    print(f"  p50={row['p50_ms']}ms  p95={row['p95_ms']}ms  p99={row['p99_ms']}ms  "
-                          f"asm={row['assemble_mean_ms']}ms ({row['assemble_share_pct']}%)  "
-                          f"fwd={row['forward_mean_ms']}ms  "
-                          f"tput={row['throughput_samples_sec']} samples/s  "
-                          f"peak_gpu={row['peak_gpu_mem_gb']}GB\n")
+        for num_adapters, batch_size, lora_rank in configs:
+            done += 1
+            print(f"[{done}/{total}] adapters={num_adapters} batch={batch_size} "
+                  f"rank={lora_rank} seed={seed}")
+            try:
+                row = run_single_config(
+                    model_name=args.model,
+                    num_adapters=num_adapters,
+                    batch_size=batch_size,
+                    lora_rank=lora_rank,
+                    seq_len=args.seq_len,
+                    warmup=args.warmup,
+                    iters=args.iters,
+                    dtype=dtype,
+                    num_labels=args.num_labels,
+                    seed=seed,
+                )
+            except torch.cuda.OutOfMemoryError as e:
+                print(f"  OOM at adapters={num_adapters} batch={batch_size} rank={lora_rank}: {e}")
+                torch.cuda.empty_cache()
+                continue
+            results.append(row)
+            print(f"  p50={row['p50_ms']}ms  p95={row['p95_ms']}ms  p99={row['p99_ms']}ms  "
+                  f"asm={row['assemble_mean_ms']}ms ({row['assemble_share_pct']}%)  "
+                  f"fwd={row['forward_mean_ms']}ms  "
+                  f"tput={row['throughput_samples_sec']} samples/s  "
+                  f"peak_gpu={row['peak_gpu_mem_gb']}GB\n")
 
     if not results:
         print("No results collected (all configs OOM'd?)")
