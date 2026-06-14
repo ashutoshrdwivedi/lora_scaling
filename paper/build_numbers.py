@@ -1124,11 +1124,11 @@ def render_table_accuracy(setfit, hidden: int, layers: int,
     if have_frozen:
         lines.append(r"\begin{tabular}{lrrrr}")
         lines.append(r"\toprule")
-        lines.append(r"Dataset & Frozen & Vanilla & LoRA-$r$8 & $\Delta$ \\")
+        lines.append(r"Dataset & Frozen & Full FT & LoRA-$r$8 & $\Delta$ \\")
     else:
         lines.append(r"\begin{tabular}{lrrr}")
         lines.append(r"\toprule")
-        lines.append(r"Dataset & Vanilla & LoRA-$r$8 & $\Delta$ \\")
+        lines.append(r"Dataset & Full FT & LoRA-$r$8 & $\Delta$ \\")
     lines.append(r"\midrule")
 
     van_sum = lora_sum = frozen_sum = 0.0

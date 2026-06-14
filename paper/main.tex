@@ -175,13 +175,14 @@ Appendix~\ref{sec:deployment}.
 
   \item We validate the served workload: under the SetFit few-shot
     protocol on seven classification benchmarks, rank-\HeadlineRank{}
-    LoRA retains \SetfitRetainsPct\% and \SetfitBgeRetainsPct\% of full
-    fine-tuning's mean accuracy on \texttt{paraphrase-mpnet-base-v2}
-    (Table~\ref{tab:accuracy}, \S\ref{sec:background_lora}) and the
-    \texttt{BAAI/bge-m3} serving model (Table~\ref{tab:accuracy_bge},
-    Appendix~\ref{app:accuracy}), where it also improves over a shared
-    frozen encoder, justifying per-tenant adaptation over a single
-    shared model.
+    LoRA on the \texttt{BAAI/bge-m3} serving model retains
+    \SetfitBgeRetainsPct\% of full fine-tuning's mean accuracy and
+    improves over a frozen encoder on every task, justifying
+    per-tenant adaptation over a single shared model
+    (Table~\ref{tab:accuracy_bge}, \S\ref{sec:background_lora}); the
+    standard \texttt{paraphrase-mpnet-base-v2} backbone shows the same
+    pattern (\SetfitRetainsPct\% retained), validating the protocol
+    against the SetFit literature (Appendix~\ref{app:accuracy}).
 
   \item We empirically demonstrate that adapter count does not drive
     inference latency: scaling from 100 to \HeadlineCapacity{} adapters at batch
@@ -229,30 +230,34 @@ of those layers.
 In this work, $B$ is initialized to zero so that $\Delta W = 0$ at the start
 of training, leaving the pre-trained representations intact.
 
-Our evaluation shows that at rank \HeadlineRank, LoRA retains \SetfitRetainsPct\% of vanilla
-fine-tuning's mean
-accuracy across seven public text-classification benchmarks
-(Table~\ref{tab:accuracy}; per-task drop \SetfitMinDropPP--\SetfitMaxDropPP pp),
-at $1/\MpnetParamReductionRankEight$ the trainable-parameter
-cost.\footnote{Accuracy reported on
-  \texttt{paraphrase-mpnet-base-v2} to match the SetFit literature
-  \cite{tunstall2022efficient}; on \texttt{BAAI/bge-m3}, the serving
-  encoder, LoRA shows the same pattern and beats a frozen-encoder
-  baseline on all seven tasks
-(Table~\ref{tab:accuracy_bge}, Appendix~\ref{app:accuracy}).} The remaining
-barrier is \emph{serving}: combining thousands of
-these adapters in a single forward pass.
+Our evaluation shows that on \texttt{BAAI/bge-m3} \cite{chen2024bge}, the
+encoder used by every serving experiment in this paper, rank-\HeadlineRank{}
+LoRA retains \SetfitBgeRetainsPct\% of full fine-tuning's mean accuracy and
+beats a frozen encoder baseline on all seven public
+text-classification benchmarks (Table~\ref{tab:accuracy_bge}; mean
+  \SetfitBgeMeanLora{} vs.\ \SetfitBgeMeanFrozen{}, a
+\SetfitBgeLoraGainOverFrozenPP~pp gain over frozen), at
+$1/\BgeParamReductionRankEight$ the trainable-parameter cost.\footnote{We
+  replicate the protocol on the standard SetFit backbone
+  \texttt{paraphrase-mpnet-base-v2} \cite{tunstall2022efficient}, which
+  reproduces SetFit-comparable accuracy and shows the same
+  low-rank-vs-full-fine-tuning pattern (\SetfitRetainsPct\% retained;
+Table~\ref{tab:accuracy}, Appendix~\ref{app:accuracy}).} The frozen
+baseline confirms per-tenant adaptation is worth serving; the remaining
+barrier is \emph{serving}: combining thousands of these adapters in a single
+forward pass.
 
 \begin{table}[h]
   \centering
-  \small
-  \caption{Per-task accuracy of LoRA adapters versus full encoder
-    fine-tuning on \texttt{paraphrase-mpnet-base-v2} ($N{=}8$ examples
-      per class, rank=8, mean over 10 seeds; protocol in
-    Appendix~\ref{app:accuracy}). Scores are accuracy except
-  Amazon-CF (MCC).}
-  \label{tab:accuracy}
-  \input{table_accuracy.tex}
+  \footnotesize
+  \setlength{\tabcolsep}{4pt}
+  \caption{Per-task accuracy on \texttt{BAAI/bge-m3}, the serving model
+    ($N{=}8$ examples per class, rank=8, mean over 10 seeds; protocol in
+    Appendix~\ref{app:accuracy}). \emph{Frozen} fits only the classification
+    head on the pre-trained encoder's embeddings; $\Delta$ is LoRA minus
+  Full~FT. Scores are accuracy except Amazon-CF (MCC).}
+  \label{tab:accuracy_bge}
+  \input{table_accuracy_bge.tex}
 \end{table}
 
 \subsection{The Multi-Tenant Serving Problem}
@@ -859,68 +864,44 @@ present in weight-merging approaches.
 \appendix
 
 % =============================================================================
-\section{Per-Task Accuracy Details}
+\section{Protocol Validation on the SetFit Backbone}
 \label{app:accuracy}
 
-Table~\ref{tab:accuracy} (\S\ref{sec:background_lora}) summarizes
-LoRA-vs-vanilla classification accuracy across seven public benchmarks
-used by the SetFit literature \cite{tunstall2022efficient}: SST-2,
-SST-5, CR, Amazon-Counterfactual, Emotion, EnronSpam, and AG News. For
-each dataset we train two variants of \texttt{paraphrase-mpnet-base-v2}
-\cite{reimers2019sentencebert} at $N{=}8$ labeled examples per class: a
-\emph{vanilla} full-encoder fine-tune (\MpnetVanillaParamsM{}M
-trainable parameters) and a
-\emph{LoRA} variant at rank~\HeadlineRank{} (\MpnetLoraParams{}
-  trainable parameters---a
-$\MpnetParamReductionRankEight\times$ reduction).
-LoRA trains with body learning rate $\SetfitLoraLR$ and vanilla with
-$\SetfitVanillaLR$: adapters need the larger learning rate, and applying
-either model's best rate to the other understates that model's accuracy.
+To confirm that our few-shot protocol reproduces results comparable to the
+SetFit literature, we replicate it on \texttt{paraphrase-mpnet-base-v2}
+\cite{reimers2019sentencebert}, the standard SetFit backbone
+\cite{tunstall2022efficient}, across the same seven public benchmarks used in
+that work: SST-2, SST-5, CR, Amazon-Counterfactual, Emotion, EnronSpam, and AG
+News. For each dataset we train two variants at $N{=}8$ labeled examples per
+class: a full fine-tune of the encoder (\MpnetVanillaParamsM{}M trainable
+parameters) and a \emph{LoRA} variant at rank~\HeadlineRank{}
+(\MpnetLoraParams{} trainable parameters, a
+$\MpnetParamReductionRankEight\times$ reduction). LoRA trains with body
+learning rate $\SetfitLoraLR$ and full fine-tuning with $\SetfitVanillaLR$:
+adapters need the larger learning rate, and applying either model's best rate
+to the other understates that model's accuracy.
 
-LoRA loses \SetfitMeanDropPP{}~percentage points of average accuracy
-in exchange for
-the $\MpnetParamReductionRankEight\times$ reduction in trainable
-parameters per tenant, which
-translates directly into the per-adapter storage and GPU-cache footprint
-reported in \S\ref{sec:results_latency}. The gap is smallest on EnronSpam
-(a \SetfitMinDropPP pp drop) and largest on Amazon-CF (\SetfitMaxDropPP pp,
-reported as MCC, where the low absolute scores magnify the difference). For
-deployments where this gap is unacceptable, rank can be increased at zero
-latency cost
-(Finding~3); the only price is GPU memory.
-
-\paragraph{Serving model.}
-Table~\ref{tab:accuracy_bge} repeats the protocol on \texttt{BAAI/bge-m3}
-\cite{chen2024bge}, the encoder used by every serving experiment in
-\S\ref{sec:experiments}, and adds a \emph{frozen} baseline: the pre-trained
-encoder with no body adaptation at all, only the logistic-regression head
-fit on its embeddings. The frozen column answers whether per-tenant
-adaptation is worth serving in the first place: LoRA improves on the frozen
-encoder on all seven tasks (mean \SetfitBgeMeanLora{} vs.\
-\SetfitBgeMeanFrozen, a \SetfitBgeLoraGainOverFrozenPP~pp gain), with the
-largest gains on AG~News, SST-5, and Emotion. The corresponding mpnet
-comparison is reported by \citet{tunstall2022efficient} and is not repeated
-here.
-
-Relative to vanilla fine-tuning, the bge-m3 results mirror the mpnet
-pattern: LoRA retains \SetfitBgeRetainsPct\% of vanilla mean accuracy (a
-\SetfitBgeMeanDropPP~pp mean drop), again with the largest gap on Amazon-CF
-(\SetfitBgeMaxDropPP~pp) and small gains on SST-5 and AG~News. Each adapter
-trains \LoraParamsREight{} parameters, $1/\BgeParamReductionRankEight$ of
-the \BgeParamsM{}M-parameter encoder.
+On mpnet, LoRA retains \SetfitRetainsPct\% of full fine-tuning's mean accuracy,
+losing \SetfitMeanDropPP{}~percentage points (Table~\ref{tab:accuracy}); the
+gap is smallest on EnronSpam (\SetfitMinDropPP pp) and largest on Amazon-CF
+(\SetfitMaxDropPP pp, reported as MCC, where the low absolute scores magnify
+the difference). These numbers track the SetFit-reported accuracies,
+confirming that the protocol we apply to the serving model in
+\S\ref{sec:background_lora} is sound. We report a frozen-encoder baseline only
+for the serving model (\S\ref{sec:background_lora}); the corresponding mpnet
+comparison is given by \citet{tunstall2022efficient}. Where the
+LoRA--full-fine-tuning gap is unacceptable, rank can be increased at zero
+latency cost (Finding~3); the only price is GPU memory.
 
 \begin{table}[h]
   \centering
-  \footnotesize
-  \setlength{\tabcolsep}{4pt}
-  \caption{Per-task accuracy on \texttt{BAAI/bge-m3}, the serving model, under
-    the protocol of Table~\ref{tab:accuracy} ($N{=}8$ per class, rank=8, mean
-    over 10 seeds; scores are accuracy except Amazon-CF, MCC). \emph{Frozen}
-    fits only the classification head on pre-trained embeddings; $\Delta$ is
-    LoRA minus vanilla. LoRA beats frozen on all seven tasks and retains
-  $\SetfitBgeRetainsPct\%$ of vanilla mean accuracy.}
-  \label{tab:accuracy_bge}
-  \input{table_accuracy_bge.tex}
+  \small
+  \caption{Per-task accuracy of LoRA adapters versus full encoder fine-tuning
+    on \texttt{paraphrase-mpnet-base-v2}, the standard SetFit backbone
+    ($N{=}8$ examples per class, rank=8, mean over 10 seeds). Scores are
+  accuracy except Amazon-CF (MCC); $\Delta$ is LoRA minus Full~FT.}
+  \label{tab:accuracy}
+  \input{table_accuracy.tex}
 \end{table}
 
 % =============================================================================
