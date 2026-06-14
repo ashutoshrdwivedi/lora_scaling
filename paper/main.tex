@@ -97,9 +97,9 @@ via Late-Fusion Batched Matrix Multiplication}
 \section{Introduction}
 \label{sec:intro}
 
-Enterprise NLP features, such as intent detection, ticket routing,
+Enterprise NLP features, such as intent detection \cite{arora2024intent}, ticket routing,
 and text classification, require low latency and predictable cost at
-high request volume \cite{arora2024intent}.
+high request volume.
 In multi-tenant environments, these workloads are typically served by a
 shared bidirectional encoder with tenant-specific task heads.
 Fine-tuning the encoder parameters alongside the task head
@@ -173,13 +173,15 @@ Appendix~\ref{sec:deployment}.
     on managed GPU platforms (\S\ref{sec:system},
     Appendix~\ref{sec:deployment}).
 
-  \item We show that low-rank adaptation preserves task accuracy: under the SetFit
-    few-shot protocol on seven classification benchmarks,
-    rank-\HeadlineRank{} LoRA retains \SetfitRetainsPct\% and
-    \SetfitBgeRetainsPct\% of full fine-tuning's mean accuracy on
-    \texttt{paraphrase-mpnet-base-v2} and \texttt{BAAI/bge-m3} (the primary
-    serving model), respectively
-    (\S\ref{sec:background_lora}, Appendix~\ref{app:accuracy}).
+  \item We validate the served workload: under the SetFit few-shot
+    protocol on seven classification benchmarks, rank-\HeadlineRank{}
+    LoRA retains \SetfitRetainsPct\% and \SetfitBgeRetainsPct\% of full
+    fine-tuning's mean accuracy on \texttt{paraphrase-mpnet-base-v2}
+    (Table~\ref{tab:accuracy}, \S\ref{sec:background_lora}) and the
+    \texttt{BAAI/bge-m3} serving model (Table~\ref{tab:accuracy_bge},
+    Appendix~\ref{app:accuracy}), where it also improves over a shared
+    frozen encoder, justifying per-tenant adaptation over a single
+    shared model.
 
   \item We empirically demonstrate that adapter count does not drive
     inference latency: scaling from 100 to \HeadlineCapacity{} adapters at batch
@@ -297,9 +299,9 @@ high throughput via Flash Attention and cuBLASLt but has no adapter support
 June~2026).\footnote{\url{https://github.com/huggingface/text-embeddings-inference/issues/788}}
 In production multi-tenant retrieval, Vishwanathan et
 al.~\cite{vishwanathan2022multitenant} serve a shared sentence
-bi-encoder with per-tenant fine-tuned final layers, switching
-tenant-specific weights at request time; weight switching cannot batch
-mixed-tenant requests, a limitation that \sysname{} removes.
+bi-encoder with per-tenant fine-tuned final-layer weights, switching
+tenant-specific weights per request, which forces each request to be
+single-tenant, a limitation that \sysname{} removes.
 PetS \cite{zhou2022pets}, the closest prior system, targets multi-adapter
 encoder serving for Adapter \cite{houlsby2019adapter}, BitFit
 \cite{benzaken2022bitfit}, and MaskBERT \cite{zhao2020masking} on
