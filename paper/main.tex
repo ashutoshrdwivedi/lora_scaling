@@ -285,7 +285,7 @@ both scope their designs to the autoregressive prefill$\to$decode pipeline and
 never expose the encoder operations (bidirectional attention, pooling, and
 classification heads) that classification workloads require. vLLM
 \cite{kwon2023vllm} adopts these kernels as its multi-LoRA backend, but its
-encoder model classes do not implement them---v0.22.1 rejects
+encoder model classes do not implement them---v0.23.0 rejects
 \texttt{enable\_lora} for \texttt{BAAI/bge-m3} at
 initialization---and multi-adapter
 classification serving remains an unmerged draft (PR~\#24596). LoRAX
