@@ -687,21 +687,28 @@ the adapters present in the batch (\S\ref{sec:setup}).
 single-tenant batches---one \texttt{set\_adapter} and one batched forward each.
 \emph{Base} is the bare model with no adapters
 (\PeftBaseQpsAtBEight/\PeftBaseQpsAtBThirtyTwo/\PeftBaseQpsAtBOneTwentyEight{}~samples/sec
-at $\mathcal{B}{=}8/32/128$, $N$-independent). We also report PEFT's
-$N$-adapter registration cost, which we replace with a constant-time
-\texttt{AdapterStore} insert.
+at $\mathcal{B}{=}8/32/128$, $N$-independent).
+We also report PEFT's $N$-adapter registration cost: \texttt{add\_adapter}
+re-validates the growing adapter set on each call, so loading the pool takes
+\PeftGroupedAddAdapterSecNHundred~s at $N{=}100$ and
+\PeftGroupedAddAdapterSecNOneK~s at $N{=}1{,}000$, versus
+\LateFuseColdLoadSecNHundred~s and \LateFuseColdLoadSecNOneK~s for \sysname{}'s
+constant-time \texttt{AdapterStore} preload---a
+\ColdStartSpeedupMin--\ColdStartSpeedupNOneK$\times$ reduction.
 
 \begin{table}[h]
   \centering
   \footnotesize
   \setlength{\tabcolsep}{2.5pt}
   \renewcommand{\arraystretch}{0.95}
-  \caption{Latency and throughput vs.\ the PEFT swap baseline in the
-    \emph{grouped}, \emph{mixed}, and \emph{homogeneous} configurations
-    defined in the text (rank=\HeadlineRank; setup in \S\ref{sec:setup}).
+  \caption{Latency and throughput vs.\ the PEFT baseline in the
+    \emph{base}, \emph{grouped}, \emph{mixed}, and \emph{homogeneous}
+    configurations defined in the text (rank=\HeadlineRank; setup in
+    \S\ref{sec:setup}).
     PEFT rows time the bare encoder; \sysname{} rows include batch
-    assembly and per-tenant heads. Speedup is \sysname{} over PEFT
-  grouped.}
+    assembly and per-tenant heads. \emph{Base} (no adapters) is
+    $N$-independent, so its two $N$ blocks are identical. Speedup is
+  \sysname{} over PEFT grouped.}
   \label{tab:baselines}
   \input{table_baselines.tex}
 \end{table}

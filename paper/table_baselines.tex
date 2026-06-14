@@ -6,6 +6,10 @@
 \cmidrule(lr){2-3} \cmidrule(lr){4-5}
 System & p50 (ms) & QPS & p50 (ms) & QPS \\
 \midrule
+Base ($\mathcal{B}{=}8$) &    11 &  717.8 &    11 & 717.8 \\
+Base ($\mathcal{B}{=}32$) &    17 & 1837.0 &    17 & 1837.0 \\
+Base ($\mathcal{B}{=}128$) &    61 & 2077.5 &    61 & 2077.5 \\
+\midrule
 PEFT grouped ($\mathcal{B}{=}8$) &   605 &   13.6 & 5{,}287 &   1.5 \\
 PEFT grouped ($\mathcal{B}{=}32$) &  2107 &   15.2 & 21{,}225 &   1.5 \\
 PEFT grouped ($\mathcal{B}{=}128$) &  5550 &   23.1 & 79{,}979 &   1.6 \\

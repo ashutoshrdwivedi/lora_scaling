@@ -794,6 +794,17 @@ def build() -> None:
         m.add("LateFuseColdLoadSecNOneK",
               fmt_f(sys_load_s, 2),
               comment="AdapterStore preload time, N=1000 from sweep_main.csv")
+        sys_load_row_100 = next(
+            (r for r in sweep_main
+             if r["num_adapters"] == "100" and r["batch_size"] == "32"
+             and r["lora_rank"] == "8"
+             and r.get("adapter_load_total_s", "").strip() not in ("", "0", "0.0")),
+            None,
+        )
+        if sys_load_row_100 is not None:
+            m.add("LateFuseColdLoadSecNHundred",
+                  fmt_f(float(sys_load_row_100["adapter_load_total_s"]), 2),
+                  comment="AdapterStore preload time, N=100 from sweep_main.csv")
         m.add("ColdStartSpeedupNOneK",
               round(peft_add_s / sys_load_s),
               comment=f"PEFT add_adapter ({peft_add_s:.1f}s) / "
@@ -914,7 +925,8 @@ def build() -> None:
     (OUT / "table_main.tex").write_text(
         render_table_main(sweep_main, sweep_ranks))
     (OUT / "table_baselines.tex").write_text(
-        render_table_baselines(peft_grouped, peft_mixed, peft_homog, sysname_ref))
+        render_table_baselines(peft_grouped, peft_mixed, peft_homog, peft_base,
+                               sysname_ref))
     (OUT / "table_accuracy.tex").write_text(render_table_accuracy(
         setfit, MPNET_HIDDEN_SIZE, MPNET_NUM_LAYERS,
         MPNET_TARGET_MODULES, MPNET_VANILLA_TRAINABLE))
@@ -992,8 +1004,9 @@ def render_table_main(sweep_main, sweep_ranks) -> str:
     return GEN_HEADER + "\n".join(lines) + "\n"
 
 
-def render_table_baselines(peft_grouped, peft_mixed, peft_homog, sysname_ref) -> str:
-    """tab:baselines body: PEFT grouped/mixed/homog, LateFuse, speedups."""
+def render_table_baselines(peft_grouped, peft_mixed, peft_homog, peft_base,
+                           sysname_ref) -> str:
+    """tab:baselines body: PEFT base/grouped/mixed/homog, LateFuse, speedups."""
     lines: list[str] = []
     lines.append(r"\begin{tabular}{lrrrr}")
     lines.append(r"\toprule")
@@ -1016,6 +1029,18 @@ def render_table_baselines(peft_grouped, peft_mixed, peft_homog, sysname_ref) ->
                 f"{num_comma(round(float(n1k['p50_ms']))) if p50_dp == 0 else fmt_f(n1k['p50_ms'], p50_dp):>5} & "
                 f"{fmt_f(n1k['throughput_samples_sec'], 1):>5} \\\\"
             )
+
+    # PEFT base: bare model, no adapters -- the N-independent throughput ceiling.
+    # Reported in both N blocks identically since it registers no adapters.
+    for b in BATCHES:
+        row = find_row(peft_base, num_adapters="1", batch_size=str(b))
+        p50 = fmt_int(row["p50_ms"])
+        qps = fmt_f(row["throughput_samples_sec"], 1)
+        lines.append(
+            f"Base ($\\mathcal{{B}}{{=}}{b}$) & "
+            f"{p50:>5} & {qps:>6} & {p50:>5} & {qps:>5} \\\\"
+        )
+    lines.append(r"\midrule")
 
     emit_block(
         lambda b: f"PEFT grouped ($\\mathcal{{B}}{{=}}{b}$)",
