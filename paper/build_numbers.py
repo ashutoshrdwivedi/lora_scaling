@@ -36,7 +36,10 @@ SOURCE-OF-TRUTH MAP (one entry per number that appears in main.tex)
       benchmarks/results/sweep_main.csv
 
   Rank sweep (Table 2 bottom block, Finding 3):
-      benchmarks/results/sweep_ranks.csv
+      benchmarks/results/sweep_main.csv, rows at N=1000, B=32, r in {4,8,16,32}.
+      Folded into the main sweep (run.py --extra-configs) so r=8 is measured
+      exactly once and shared with the top/middle blocks.
+      (Formerly a separate run, sweep_ranks.csv.)
 
   Capacity sweep (Finding 4 ceiling claim):
       benchmarks/results/sweep_capacity.csv  +  sweep_main.csv
@@ -435,7 +438,6 @@ def build() -> None:
 
     # ---- Load benchmark CSVs / JSON ----------------------------------------
     sweep_main     = aggregate_seeds(load_csv(RESULTS / "sweep_main.csv"))
-    sweep_ranks    = aggregate_seeds(load_csv(RESULTS / "sweep_ranks.csv"))
     sweep_capacity = aggregate_seeds(load_csv(RESULTS / "sweep_capacity.csv"))
     peft_grouped   = load_csv(RESULTS / "peft_grouped_sxm80.csv")
     peft_homog     = load_csv(RESULTS / "peft_homogeneous_sxm80.csv")
@@ -569,7 +571,7 @@ def build() -> None:
           fmt_f(abs(p50_hi - p50_lo) / p50_lo * 100, 1),
           comment="|p50_47k - p50_100| / p50_100 * 100 (unsigned; prose says 'varies by <= X%')")
     m.add("SweepNumSeeds", n_main_rows[100].get("n_seeds", "1"),
-          comment="seeded repeats per config in sweep_main/sweep_ranks")
+          comment="seeded repeats per config in sweep_main")
     m.add("CustomerMultiplierHundredToFortySevenK",
           round(47000 / 100), comment="= 47000 / 100")
 
@@ -628,10 +630,10 @@ def build() -> None:
     # 6. Rank sweep (N=1000, B=32) — Table 2 bottom, Finding 3
     # =======================================================================
     m.section("Rank sweep (N=1000, B=32)",
-              "benchmarks/results/sweep_ranks.csv")
+              "benchmarks/results/sweep_main.csv (--extra-configs rank cells)")
     r_rows: dict[int, dict[str, str]] = {}
     for r, tag in R_SUFFIX.items():
-        row = find_row(sweep_ranks,
+        row = find_row(sweep_main,
                        num_adapters="1000", batch_size="32", lora_rank=str(r))
         r_rows[r] = row
         m.add(f"PFiftyAtR{tag}",        fmt_f(row["p50_ms"], 1))
@@ -923,7 +925,7 @@ def build() -> None:
     # =======================================================================
     (OUT / "numbers.tex").write_text(m.render())
     (OUT / "table_main.tex").write_text(
-        render_table_main(sweep_main, sweep_ranks))
+        render_table_main(sweep_main))
     (OUT / "table_baselines.tex").write_text(
         render_table_baselines(peft_grouped, peft_mixed, peft_homog, peft_base,
                                sysname_ref))
@@ -954,8 +956,13 @@ GEN_HEADER = (
 )
 
 
-def render_table_main(sweep_main, sweep_ranks) -> str:
+def render_table_main(sweep_main) -> str:
     """tab:main_results body: N sweep + B sweep + r sweep, all at the same op-point.
+
+    All three blocks read from sweep_main, including the rank cells (folded in
+    via run.py --extra-configs), so the shared N=1000/B=32/r=8 operating point is
+    measured exactly once and the rank block cannot read slower than that anchor
+    from cross-run thermal drift.
 
     p50/p99 cells are mean +/- s.d. over the seeded repeats (p90 dropped:
     never discussed in prose, and the column width pays for the +/- cells).
@@ -993,9 +1000,11 @@ def render_table_main(sweep_main, sweep_ranks) -> str:
         lines.append(row_line(row, 1000, b, 8))
     lines.append(r"\midrule")
 
-    # rank sweep (N=1000, B=32); skip r=8 (in top block already)
+    # rank sweep (N=1000, B=32); skip r=8 (in top block already).
+    # These rows come from the same sweep_main run as r=8 (run.py
+    # --extra-configs), measured back-to-back at the operating point.
     for r in (4, 16, 32):
-        row = find_row(sweep_ranks, num_adapters="1000",
+        row = find_row(sweep_main, num_adapters="1000",
                        batch_size="32", lora_rank=str(r))
         lines.append(row_line(row, 1000, 32, r))
 
