@@ -275,8 +275,8 @@ operations concurrently without serialization.
 Punica \cite{chen2024punica} and S-LoRA \cite{sheng2024slora} build custom
 CUDA/Triton kernels for the autoregressive prefill$\to$decode pipeline, as do
 LoRAX \cite{predibase2023lorax}, CaraServe \cite{li2024caraserve}, and dLoRA
-\cite{wu2024dlora}; none expose the bidirectional-encoder operations---attention,
-pooling, and task heads---that classification serving requires. vLLM
+\cite{wu2024dlora}; none expose the bidirectional-encoder operations (attention,
+pooling, and task heads) that classification serving requires. vLLM
 \cite{kwon2023vllm} adopts these kernels but its encoder classes do not:
 v0.23.0 rejects \texttt{enable\_lora} for \texttt{BAAI/bge-m3} at
 initialization, and multi-adapter classification serving remains an unmerged
@@ -415,7 +415,7 @@ $W_B \in \mathbb{R}^{L \times r \times H}$, stored in inference-transposed
 layout so \texttt{bmm} requires no runtime transpose.
 For a batch of adapter IDs, the \texttt{BatchAssembler} gathers each
 adapter's per-layer $W_A$/$W_B$ slices into per-layer Python lists. This
-CPU-side gather---a loop over samples, layers, and target modules---is the
+CPU-side gather (a loop over samples, layers, and target modules) is the
 dominant per-request overhead before the GPU forward pass
 (\S\ref{sec:results_latency}). The per-layer lists are concatenated into
 $(\mathcal{B}, H, r)$ and $(\mathcal{B}, r, H)$ tensors lazily inside the
@@ -537,8 +537,8 @@ operating point.
 \paragraph{Finding 1: Adapter count does not drive latency.}
 Scaling from 100 to \CapacityRankEight{} adapters at
 $\mathcal{B}{=}\HeadlineBatch$, $r{=}\HeadlineRank$ shifts p50 latency
-by only \PFiftyDriftPctNHundredToFortySevenK\%---within one
-between-seed s.d.\ (Table~\ref{tab:main_results})---a
+by only \PFiftyDriftPctNHundredToFortySevenK\%, within one
+between-seed s.d.\ (Table~\ref{tab:main_results}), a
 \CustomerMultiplierHundredToFortySevenK$\times$ increase in
 served customers at negligible latency cost, sustained to the per-GPU
 memory ceiling
@@ -548,14 +548,14 @@ The GPU-side forward pass time is constant at
 entire sweep, and the only $N$-dependent component is the CPU-side batch
 assembler, whose share stays at or below
 \AssemblePctCeilingBThirtyTwo\% of total
-latency---empirically validating the $\mathcal{O}(1)$-in-$N$ scaling of
+latency, empirically validating the $\mathcal{O}(1)$-in-$N$ scaling of
 \S\ref{sec:complexity}.
 
 \paragraph{Finding 2: Batch size drives throughput up to saturation
 at $\mathcal{B}{=}64$.}
 Throughput scales from \QpsAtBEight~samples/sec at $\mathcal{B}{=}8$
 to \QpsAtBSixtyFour~samples/sec at
-$\mathcal{B}{=}64$, then plateaus---$\mathcal{B}{=}128$ delivers no
+$\mathcal{B}{=}64$, then plateaus: $\mathcal{B}{=}128$ delivers no
 further gain (\QpsAtBOneTwentyEight~samples/sec).
 The shared-base encoder forward becomes GPU-bound at $\mathcal{B}{=}64$;
 beyond $\mathcal{B}{=}32$, larger batches mainly widen tail latency
@@ -667,7 +667,7 @@ configurations, all attaching $N$ adapters via \texttt{add\_adapter}.
 (\texttt{adapter\_names}): one shared base forward with a per-layer loop over
 the adapters present in the batch (\S\ref{sec:setup}).
 \emph{Homogeneous}, PEFT's friendliest case, uses
-single-tenant batches---one \texttt{set\_adapter} and one batched forward each.
+single-tenant batches: one \texttt{set\_adapter} and one batched forward each.
 \emph{Base} is the bare model with no adapters
 (\PeftBaseQpsAtBEight/\PeftBaseQpsAtBThirtyTwo/\PeftBaseQpsAtBOneTwentyEight{}~samples/sec
 at $\mathcal{B}{=}8/32/128$, $N$-independent).
@@ -676,7 +676,7 @@ re-validates the growing adapter set on each call, so loading the pool takes
 \PeftGroupedAddAdapterSecNHundred~s at $N{=}100$ and
 \PeftGroupedAddAdapterSecNOneK~s at $N{=}1{,}000$, versus
 \LateFuseColdLoadSecNHundred~s and \LateFuseColdLoadSecNOneK~s for \sysname{}'s
-constant-time \texttt{AdapterStore} preload---a
+constant-time \texttt{AdapterStore} preload, a
 \ColdStartSpeedupMin--\ColdStartSpeedupNOneK$\times$ reduction.
 
 \begin{table}[h]
@@ -698,8 +698,8 @@ constant-time \texttt{AdapterStore} preload---a
 
 \paragraph{Finding 7: PEFT's per-swap cost is $\mathcal{O}(N)$ in the
 tenant pool.}
-\emph{Homogeneous} batching---PEFT's best case (single-tenant batches, one
-\texttt{set\_adapter} and forward each)---is competitive at $N{=}100$, even
+\emph{Homogeneous} batching, PEFT's best case (single-tenant batches, one
+\texttt{set\_adapter} and forward each), is competitive at $N{=}100$, even
 edging \sysname{} at $\mathcal{B}{=}128$
 (\PeftHomogQpsNHundredBOneTwentyEight{}
 vs.\ \SysRefQpsNHundredBOneTwentyEight~samples/sec). Yet
@@ -710,7 +710,7 @@ at $\mathcal{B}{=}\HeadlineBatch$), leaving \sysname{}
 \SpeedupHomogNOneKBOneTwentyEight--\SpeedupHomogNOneKBEight$\times$
 faster at $N{=}1{,}000$; since only the adapter \emph{count} changed,
 this isolates
-\texttt{set\_adapter} as $\mathcal{O}(N)$. \emph{Grouped} fares worse---mixed
+\texttt{set\_adapter} as $\mathcal{O}(N)$. \emph{Grouped} fares worse: mixed
 batches rarely share an adapter, so \sysname{} leads by
 \SpeedupGroupedNHundredBThirtyTwo--\SpeedupGroupedNOneKBThirtyTwo$\times$ at
 $\mathcal{B}{=}\HeadlineBatch$. PEFT's native \emph{mixed} API sits between
@@ -773,8 +773,8 @@ is just \ProfLoraBmmIsolatedPct\% of forward GPU time, so the custom
 kernels that dominate decoder systems (Punica, S-LoRA) are bounded to
 single-digit percentage gains here, while standard \texttt{torch.bmm} needs no
 compilation step and deploys on managed GPU platforms as-is. The residual
-cost has moved off the GPU---CPU-side batch assembly, not the forward
-pass, now bounds tail latency---so host-side gather and transfer, not
+cost has moved off the GPU: CPU-side batch assembly, not the forward
+pass, now bounds tail latency. Host-side gather and transfer, not
 faster kernels, is where further work belongs. For teams serving a
 personalized encoder feature across thousands of tenants, the upshot is
 that a single commodity GPU and a stock PyTorch stack replace a fleet of
@@ -890,7 +890,7 @@ latency cost (Finding~3); the only price is GPU memory.
 
 Our measurements isolate a single GPU node; this appendix describes how the
 same serving primitive composes into a horizontally scaled cluster. We provide
-a reference deployment---Kubernetes manifests and a FastAPI serving layer---that
+a reference deployment (Kubernetes manifests and a FastAPI serving layer) that
 is intentionally minimal: it demonstrates the architecture rather than
 optimizing it, and is meant to be adapted to a given workload's batching,
 autoscaling, and adapter-placement policy. We do not evaluate it empirically.
@@ -913,7 +913,7 @@ node's $\approx$\CapacityRankEight-adapter ceiling (Finding~4)
 additionally requires
 partitioning the adapters across pods by the same hash, so each loads only its
 shard; the reference deployment instead replicates a fixed adapter set per
-pod---simpler, and adequate when the population fits one node---leaving
+pod (simpler, and adequate when the population fits one node), leaving
 shard-aware placement as a configuration change.
 
 \paragraph{Elasticity and hot reload.}
