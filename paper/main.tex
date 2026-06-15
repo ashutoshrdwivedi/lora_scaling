@@ -104,10 +104,10 @@ weights (requiring \StorageTwentyKGPUs{} A100-80GB GPUs) and eliminate any
 opportunity for cross-tenant request batching.
 Low-Rank Adaptation (LoRA) \cite{hu2022lora} removes the storage barrier
 by expressing tenant-specific adaptations as low-rank updates to the
-shared base encoder: it retains \SetfitBgeRetainsPct{}\% of full
-fine-tuning's mean accuracy while shrinking the per-tenant footprint
-to just \LoraBytesREightMB{}~MB (rank~\HeadlineRank{}, \BgeLayers{}
-layers)—a \StorageReductionFullVsLoraRankEight$\times$ reduction.
+shared base encoder, shrinking the per-tenant footprint to just
+\LoraBytesREightMB{}~MB (rank~\HeadlineRank{}, \BgeLayers{} layers), a
+\StorageReductionFullVsLoraRankEight$\times$ reduction, at minimal accuracy
+cost (\S\ref{sec:background_lora}).
 The remaining challenge is \textbf{batched serving} across these
 heterogeneous adapters on a shared GPU.
 
@@ -133,23 +133,16 @@ custom CUDA kernels yield minimal, single-digit performance gains
 This structural difference makes standard batched matrix
 multiplication (BMM) the appropriate primitive for encoder serving.
 
-We present \sysname, a serving system built on this primitive.
-Its design hinges on \emph{where} the adapter is applied: merging
-$B_i A_i$ into $W_0$ yields a per-sample weight matrix $W'_i$ that must be
-applied serially, whereas keeping the base output $W_0 x$ and the delta
-$B_i A_i x$ as separate terms and summing them lets the per-sample work
-run as batched matrix multiplication. We call this
-\emph{activation-space} fusion, as opposed to parameter-space
-merging. \sysname{} runs the shared base path once over
-a mixed-tenant batch of size $\mathcal{B}$ and dispatches the per-sample LoRA paths in
-parallel via \texttt{torch.bmm}, so the batch completes in a single forward pass regardless of how
-many distinct adapters it references. Per-tenant task heads
-(variable-size classifiers, regressors, retrieval re-rankers) are
-batched analogously via zero-padded BMM.
-
-Our single-GPU evaluation characterizes this serving primitive; a
-minimal reference deployment for stateless scale-out is in
-Appendix~\ref{sec:deployment}.
+We present \sysname, a serving system built on this primitive. Rather than
+merging each $B_i A_i$ into $W_0$, which forces per-sample weights to be applied
+serially, \sysname{} keeps the base output $W_0 x$ and the delta $B_i A_i x$ as
+separate terms and sums them (\emph{activation-space} fusion, not parameter-space
+merging; \S\ref{sec:lf_decomp}). It runs the shared base path once over a
+mixed-tenant batch of size $\mathcal{B}$ and dispatches the per-sample LoRA paths
+in parallel via \texttt{torch.bmm}, so the batch completes in a single forward
+pass regardless of how many distinct adapters it references. Per-tenant task
+heads (variable-size classifiers, regressors, retrieval re-rankers) are batched
+analogously via zero-padded BMM.
 
 \paragraph{Contributions.}
 \begin{itemize}
@@ -200,15 +193,9 @@ Appendix~\ref{sec:deployment}.
 \label{sec:background_lora}
 
 LoRA \cite{hu2022lora} decomposes a weight update $\Delta W \in
-\mathbb{R}^{d \times d}$ as the product of two low-rank matrices:
-\begin{equation}
-  \Delta W = B A, \quad
-  A \in \mathbb{R}^{r \times d},\;
-  B \in \mathbb{R}^{d \times r},\;
-  r \ll d.
-\end{equation}
-The full forward pass for a single sample becomes
-$h = W_0 x + \frac{\alpha}{r} B A x$,
+\mathbb{R}^{d \times d}$ into two low-rank matrices, $\Delta W = B A$ with
+$A \in \mathbb{R}^{r \times d}$, $B \in \mathbb{R}^{d \times r}$, and $r \ll d$.
+The single-sample forward pass becomes $h = W_0 x + \frac{\alpha}{r} B A x$,
 where $W_0$ is the frozen pre-trained weight and $\alpha$ is a scaling
 hyperparameter typically set equal to $r$.
 For an encoder of hidden size $d = \BgeHidden$ with $L = \BgeLayers$
@@ -255,17 +242,13 @@ forward pass.
 \label{sec:background_serving}
 
 Consider a classification service for $N$ customers, each with a custom
-\texttt{BAAI/bge-m3} \cite{chen2024bge} adapter. Three naive serving strategies
-fail at scale:
-(1)~\emph{One model per tenant} requires a full base model copy per customer
-and lacks cross-tenant batching;
-(2)~\emph{Dynamic weight merging} ($W' = W_0 + B_i A_i$ in-place) serializes requests,
-fragments memory, and introduces concurrency risks;
-(3)~\emph{Sequential batching} processes tenants one-by-one, driving average GPU
-utilization toward $1/N$.
-An effective solution must batch \emph{heterogeneous} adapters (distinct weights,
-identical shapes) in a single forward pass, applying sample-specific linear
-operations concurrently without serialization.
+\texttt{BAAI/bge-m3} \cite{chen2024bge} adapter. The naive options all fail at
+scale: a full model copy per tenant forecloses cross-tenant batching, in-place
+weight merging ($W' = W_0 + B_i A_i$) serializes requests, and sequential
+per-tenant batching drives GPU utilization toward $1/N$. An effective solution
+must instead batch \emph{heterogeneous} adapters (distinct weights, identical
+shapes) in a single forward pass, applying sample-specific linear operations
+concurrently without serialization.
 
 % =============================================================================
 \section{Related Work}
@@ -355,12 +338,10 @@ Each \texttt{bmm} call is a single GPU kernel launch, processing
 all $\mathcal{B}$
 samples simultaneously regardless of how many distinct adapters they reference.
 
-Unlike the custom kernels of Punica \cite{chen2024punica} and
-S-LoRA \cite{sheng2024slora}, which group or gather inputs by
-adapter id and target the autoregressive prefill$\to$decode
-pipeline, \texttt{torch.bmm} applies a distinct $(A_i, B_i)$ to
-every batch item on the dense $(S, H)$ encoder forward pass
-(\S\ref{sec:relwork}).
+Unlike Punica \cite{chen2024punica} and S-LoRA \cite{sheng2024slora}, whose
+custom kernels group inputs by adapter id for the prefill$\to$decode pipeline,
+\texttt{torch.bmm} applies a distinct $(A_i, B_i)$ to every item of the dense
+$(S, H)$ encoder forward pass (\S\ref{sec:relwork}).
 
 \subsection{Batched Classification Heads}
 \label{sec:lr_head}
@@ -394,17 +375,13 @@ have no effect on the resulting probability distribution of any tenant.
 \label{sec:impl}
 
 \paragraph{Pre-allocated buffers.}
-A naive implementation lets \texttt{torch.bmm} allocate a fresh output
-tensor on every call, producing $2 \times |\mathcal{M}| \times L$
-allocations per forward pass, adding several hundred microseconds of
-pure CUDA-allocator overhead per batch.
-\sysname{} instead pre-allocates two fixed-size buffers at initialization,
-$\mathtt{out\_A} \in \mathbb{R}^{\mathcal{B}_{\max} \times S_{\max} \times r}$
-and $\mathtt{out\_B} \in \mathbb{R}^{\mathcal{B}_{\max} \times
-S_{\max} \times H}$,
-and passes them via the \texttt{out=} argument of every \texttt{bmm} call.
-Both are shared across layers because each \texttt{expand} consumes
-\texttt{out\_A} before the next \texttt{shrink} overwrites it.
+A naive implementation lets \texttt{torch.bmm} allocate a fresh output tensor on
+every call, $2 |\mathcal{M}| L$ allocations per forward pass and several hundred
+microseconds of allocator overhead. \sysname{} instead pre-allocates two
+fixed-size buffers ($\mathtt{out\_A}$, $\mathtt{out\_B}$) at initialization and
+passes them via the \texttt{out=} argument of every \texttt{bmm}; both are shared
+across layers, since each \texttt{expand} consumes \texttt{out\_A} before the
+next \texttt{shrink} overwrites it.
 
 \paragraph{Adapter store and batch assembly.}
 At service startup, \sysname{} pre-loads all tenant LoRA adapters into GPU
@@ -413,39 +390,28 @@ memory as an \texttt{AdapterStore}: a dictionary mapping adapter IDs to
 $W_A \in \mathbb{R}^{L \times H \times r}$ and
 $W_B \in \mathbb{R}^{L \times r \times H}$, stored in inference-transposed
 layout so \texttt{bmm} requires no runtime transpose.
-For a batch of adapter IDs, the \texttt{BatchAssembler} gathers each
-adapter's per-layer $W_A$/$W_B$ slices into per-layer Python lists. This
-CPU-side gather (a loop over samples, layers, and target modules) is the
-dominant per-request overhead before the GPU forward pass
-(\S\ref{sec:results_latency}). The per-layer lists are concatenated into
-$(\mathcal{B}, H, r)$ and $(\mathcal{B}, r, H)$ tensors lazily inside the
-forward, one \texttt{torch.cat} per layer immediately before its
-\texttt{bmm}, so this concatenation is attributed to forward rather than
+For a batch of adapter IDs, the \texttt{BatchAssembler} gathers each adapter's
+per-layer $W_A$/$W_B$ slices into per-layer Python lists. This CPU-side gather
+(a loop over samples, layers, and target modules) is the dominant per-request
+overhead before the GPU forward pass (\S\ref{sec:results_latency}). The lists
+are concatenated lazily inside the forward, one \texttt{torch.cat} per layer
+before its \texttt{bmm}, so this cost is attributed to forward rather than
 assembly time.
 
 \subsection{Complexity Analysis}
 \label{sec:complexity}
 
 \paragraph{Memory.}
-The base model requires $\mathcal{O}(d^2 L)$ memory regardless of tenant
-count.
-Each adapter requires $\mathcal{O}(r d L)$ memory.
-For $N$ tenants: total GPU memory $= \mathcal{O}(d^2 L + N r d L)$.
-At $d=\BgeHidden$, $L=\BgeLayers$, $r=\HeadlineRank$: 100 adapters occupy
-\CacheNHundredMB~MB; 20{,}000 adapters occupy \CacheNTwentyKGB~GB.
-An A100-80GB can hold \CapacityRankEight{} adapters at rank \HeadlineRank{}
-before exhausting memory.
+Total GPU memory is $\mathcal{O}(d^2 L + N r d L)$: a tenant-independent base
+plus $\mathcal{O}(r d L)$ per adapter. Finding~4 (\S\ref{sec:results_latency})
+reports the per-adapter footprint and per-GPU ceilings.
 
 \paragraph{Inference time.}
-The latency of a single forward pass is independent of $N$ (adapter count):
-it depends only on batch size $\mathcal{B}$, sequence length $S$, and
-model depth $L$.
-The adapter count affects only CPU-side batch assembly time, which is
-$\mathcal{O}(\mathcal{B} \cdot L \cdot |\mathcal{M}|)$ where
-$|\mathcal{M}|$ is the
-number of target modules.
-We validate both properties empirically in \S\ref{sec:results_latency}
-(Findings~1 and~5).
+A single forward pass is independent of $N$, depending only on batch size
+$\mathcal{B}$, sequence length $S$, and depth $L$; adapter count affects only
+CPU-side batch assembly, $\mathcal{O}(\mathcal{B} \cdot L \cdot |\mathcal{M}|)$
+for $|\mathcal{M}|$ target modules. We validate both empirically in
+\S\ref{sec:results_latency} (Findings~1 and~5).
 
 % =============================================================================
 \section{Experiments}
@@ -458,9 +424,8 @@ We validate both properties empirically in \S\ref{sec:results_latency}
 Primary experiments use \texttt{BAAI/bge-m3} \cite{chen2024bge},
 a \BgeLayers-layer XLM-RoBERTa-derived encoder with hidden size $d=\BgeHidden$,
 \BgeHeads{} attention heads, and \BgeParamsM{}M parameters.
-This is among the most widely-served encoders for retrieval and classification
-in production multi-tenant systems, and at $d=\BgeHidden$ with \BgeParamsM{}M
-parameters it is a demanding setting for the per-request overheads we measure.
+It is among the most widely-served production encoders for retrieval and
+classification, and a demanding setting for the per-request overheads we measure.
 
 \paragraph{LoRA configuration.}
 We apply LoRA to the query and value projection matrices of each attention
@@ -472,15 +437,12 @@ the configuration used by our PEFT-equivalence numerical tests.
 Primary experiments run on a single \HeadlineGPU{} GPU on a
 cloud-managed node with PyTorch \EnvTorchVersion{} in
 \HeadlineDtype{} precision.
-We measure end-to-end on one node.
 
 \paragraph{Benchmark protocol.}
 We measure end-to-end latency (batch assembly + encoder forward pass + LR head)
-using \SysWarmup{} warm-up iterations followed by \SysIters{} measured
-iterations for \sysname{}; the PEFT baselines use \PeftWarmup{}/\PeftIters{}
-because PEFT-grouped reaches $\sim$80~s/iter at the largest
-configuration and 200 iterations would dominate wall-clock without
-sharpening an order-of-magnitude speedup claim.
+using \SysWarmup{}/\SysIters{} warm-up/measured iterations for \sysname{}; the
+PEFT baselines use \PeftWarmup{}/\PeftIters{}, since PEFT-grouped reaches
+$\sim$80~s/iter at the largest configuration.
 GPU-side work is timed with reusable \texttt{torch.cuda.Event} pairs and
 synchronized once per iteration; CPU-side assembly is timed with
 \texttt{time.perf\_counter} between identical synchronization points.
@@ -505,9 +467,9 @@ its native mixed-batch API (\texttt{adapter\_names}), which does not route
 per-request classification
 heads,\footnote{\url{https://github.com/huggingface/peft/issues/1960}}
 a requirement of our workload.
-\texttt{vLLM} \cite{kwon2023vllm} has no runtime LoRA path for encoder
-models and \texttt{LoRAX} \cite{predibase2023lorax} is decoder-oriented;
-we omit both from quantitative comparison (\S\ref{sec:relwork}).
+We omit \texttt{vLLM} \cite{kwon2023vllm} and \texttt{LoRAX}
+\cite{predibase2023lorax} from quantitative comparison: neither serves encoder
+LoRA (\S\ref{sec:relwork}).
 All PEFT configurations time the bare encoder forward with no
 classification head, whereas \sysname{} latencies include batch
 assembly and the per-tenant head; the comparison is therefore
@@ -549,7 +511,19 @@ entire sweep, and the only $N$-dependent component is the CPU-side batch
 assembler, whose share stays at or below
 \AssemblePctCeilingBThirtyTwo\% of total
 latency, empirically validating the $\mathcal{O}(1)$-in-$N$ scaling of
-\S\ref{sec:complexity}.
+\S\ref{sec:complexity} (Figure~\ref{fig:latency_adapters}).
+
+\begin{figure}[tb]
+  \centering
+  \includegraphics[width=0.46\linewidth]{figures/latency_adapters.pdf}
+  \caption{p50 latency as a function of pre-loaded adapter count at five
+    batch sizes (rank = \HeadlineRank, sequence length = 128; setup in
+    \S\ref{sec:setup}).
+    Curves are flat across $N \in [100, \CapacityRankEight]$,
+    empirically confirming the
+  $\mathcal{O}(1)$-in-$N$ scaling property of \sysname.}
+  \label{fig:latency_adapters}
+\end{figure}
 
 \paragraph{Finding 2: Batch size drives throughput up to saturation
 at $\mathcal{B}{=}64$.}
@@ -630,18 +604,6 @@ not the \texttt{bmm}, dominate the gap above the
 \ProfLoraBmmIsolatedPct\% kernel cost. Custom fused
 kernels target only this path, so \AblationLoraCostPct\% is the hard
 ceiling here.
-
-\begin{figure}[t]
-  \centering
-  \includegraphics[width=0.52\linewidth]{figures/latency_adapters.pdf}
-  \caption{p50 latency as a function of pre-loaded adapter count at five
-    batch sizes (rank = \HeadlineRank, sequence length = 128; setup in
-    \S\ref{sec:setup}).
-    Curves are flat across $N \in [100, \CapacityRankEight]$,
-    empirically confirming the
-  $\mathcal{O}(1)$-in-$N$ scaling property of \sysname.}
-  \label{fig:latency_adapters}
-\end{figure}
 
 % Throughput-vs-baselines figure dropped: redundant with Table tab:baselines.
 % \begin{figure}[t]
@@ -766,19 +728,16 @@ grows $100\to1{,}000$), leaving \sysname{}
 \label{sec:conclusion}
 
 We presented \sysname, a serving system for multi-tenant LoRA on encoder
-models built on late-fusion batched matrix multiplication. The broader
-lesson is that encoder serving inverts the economics that justify custom
-LoRA kernels on decoders: at sequence length $S \gg 1$ the adapter path
-is just \ProfLoraBmmIsolatedPct\% of forward GPU time, so the custom
-kernels that dominate decoder systems (Punica, S-LoRA) are bounded to
-single-digit percentage gains here, while standard \texttt{torch.bmm} needs no
-compilation step and deploys on managed GPU platforms as-is. The residual
-cost has moved off the GPU: CPU-side batch assembly, not the forward
-pass, now bounds tail latency. Host-side gather and transfer, not
-faster kernels, is where further work belongs. For teams serving a
-personalized encoder feature across thousands of tenants, the upshot is
-that a single commodity GPU and a stock PyTorch stack replace a fleet of
-per-tenant deployments.
+models built on late-fusion batched matrix multiplication. Encoder serving
+inverts the economics that justify custom LoRA kernels on decoders: at
+sequence length $S \gg 1$ the adapter path is just \ProfLoraBmmIsolatedPct\%
+of forward GPU time, bounding the custom kernels of decoder systems (Punica,
+S-LoRA) to single-digit gains here, while standard \texttt{torch.bmm} deploys
+on managed GPU platforms with no compilation step. The residual cost has moved
+off the GPU to CPU-side batch assembly, so host-side gather and transfer, not
+faster kernels, is where further work belongs. For teams serving a personalized
+encoder feature across thousands of tenants, a single commodity GPU and a stock
+PyTorch stack replace a fleet of per-tenant deployments.
 
 % =============================================================================
 \section*{Limitations}
