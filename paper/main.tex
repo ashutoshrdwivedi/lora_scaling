@@ -277,12 +277,13 @@ LoRA id for per-group matrix-vector products) and S-LoRA \cite{sheng2024slora}
 (a paged memory pool with Triton MBGMM/MBGMV kernels for heterogeneous ranks)
 both scope their designs to the autoregressive prefill$\to$decode pipeline and
 never expose the encoder operations (bidirectional attention, pooling, and
-classification heads) that classification workloads require. vLLM
+task specific heads) that workloads like classification require. vLLM
 \cite{kwon2023vllm} adopts these kernels as its multi-LoRA backend, but its
 encoder model classes do not implement them---v0.23.0 rejects
 \texttt{enable\_lora} for \texttt{BAAI/bge-m3} at
 initialization---and multi-adapter
-classification serving remains an unmerged draft (PR~\#24596). LoRAX
+classification serving remains an unmerged
+draft.\footnote{vLLM PR \#24596, unmerged as of June~2026.} LoRAX
 \cite{predibase2023lorax}, CaraServe \cite{li2024caraserve}, and dLoRA
 \cite{wu2024dlora} likewise optimize decoder-only serving and do not address
 encoder classifiers, variable-size classification heads, or deployment without
