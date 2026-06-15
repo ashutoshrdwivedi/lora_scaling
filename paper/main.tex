@@ -4,15 +4,6 @@
 %
 % Target venue: EMNLP 2026 Industry Track (ACL-format, 6-page body limit;
 %               Limitations / Ethics / References / appendix are excluded)
-% Draft status: 2026-05-12
-%   [DONE] Abstract, Introduction, Background, System Design, Related Work,
-%          Limitations, Conclusion, verified BibTeX
-%   [DONE] Baseline comparison table (task #2): Table 3, grouped/mixed/homog
-%   [DONE] Real-task accuracy evaluation (task #3): Table 1 + Appendix A
-%   [TODO] Multi-GPU × multi-model matrix (task #4)
-%   [DONE] Statistical multi-seed runs (task #6): 5-seed A100 re-run 2026-06-10;
-%          Findings 1/3 and Limitations now report mean±s.d.
-%   [TODO] Ablation table (task #7)
 %   [TODO] Profile breakdown figure (task #11)
 %   [TODO] Publication-quality figures (task #14)
 % =============================================================================
@@ -299,7 +290,7 @@ custom CUDA compilation.
 
 \paragraph{Encoder and multi-adapter serving.}
 HuggingFace TEI \cite{huggingface2023tei} serves encoder/embedding models at
-high throughput via Flash Attention and cuBLASLt but has no adapter support
+high throughput via Flash Attention and cuBLASL but has no adapter support
 (an open feature request as of
 June~2026).\footnote{\url{https://github.com/huggingface/text-embeddings-inference/issues/788}}
 In production multi-tenant retrieval, Vishwanathan et
