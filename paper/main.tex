@@ -157,16 +157,11 @@ analogously via zero-padded BMM.
     on managed GPU platforms (\S\ref{sec:system},
     Appendix~\ref{sec:deployment}).
 
-  \item We validate the served workload: under the SetFit few-shot
-    protocol on seven classification benchmarks, rank-\HeadlineRank{}
-    LoRA on the \texttt{BAAI/bge-m3} serving model retains
-    \SetfitBgeRetainsPct\% of full fine-tuning's mean accuracy and
-    improves over a frozen encoder on every task, justifying
-    per-tenant adaptation over a single shared model
-    (Table~\ref{tab:accuracy_bge}, \S\ref{sec:background_lora}); the
-    standard \texttt{paraphrase-mpnet-base-v2} backbone shows the same
-    pattern (\SetfitRetainsPct\% retained), validating the protocol
-    against the SetFit literature (Appendix~\ref{app:accuracy}).
+  \item We validate the served workload: rank-\HeadlineRank{} LoRA on
+    \texttt{BAAI/bge-m3} retains \SetfitBgeRetainsPct\% of full
+    fine-tuning's mean accuracy and improves over a frozen encoder,
+    justifying per-tenant adaptation over a single shared model
+    (\S\ref{sec:background_lora}).
 
   \item We empirically demonstrate that adapter count does not drive
     inference latency: scaling from 100 to \HeadlineCapacity{} adapters at batch
