@@ -344,8 +344,8 @@ $(S, H)$ encoder forward pass (\S\ref{sec:relwork}).
 In the multi-tenant classification setting, each tenant trains a
 logistic-regression (LR) head on top of the encoder's pooled
 \texttt{[CLS]} representation.
-Tenants differ in the number of output classes: tenant $i$ may have $c_i$
-classes where $c_i$ varies from 2 to over 100.
+Tenants also differ in their class count $c_i$, so co-batched heads have
+mismatched shapes and cannot be stacked directly.
 
 \sysname{} serves all heads in a single BMM call.
 Given a batch of pooled representations
