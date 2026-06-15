@@ -370,13 +370,13 @@ have no effect on the resulting probability distribution of any tenant.
 \label{sec:impl}
 
 \paragraph{Pre-allocated buffers.}
-A naive implementation lets \texttt{torch.bmm} allocate a fresh output tensor on
-every call, $2 |\mathcal{M}| L$ allocations per forward pass and several hundred
+A naive implementation allocates a fresh output tensor for each of the
+$2 |\mathcal{M}| L$ \texttt{bmm} calls per forward pass, adding several hundred
 microseconds of allocator overhead. \sysname{} instead pre-allocates two
-fixed-size buffers ($\mathtt{out\_A}$, $\mathtt{out\_B}$) at initialization and
-passes them via the \texttt{out=} argument of every \texttt{bmm}; both are shared
-across layers, since each \texttt{expand} consumes \texttt{out\_A} before the
-next \texttt{shrink} overwrites it.
+reusable buffers ($\mathtt{out\_A}$, $\mathtt{out\_B}$), passed via each
+\texttt{bmm}'s \texttt{out=} argument; the two suffice for all layers because
+each \texttt{expand} consumes \texttt{out\_A} before the next \texttt{shrink}
+overwrites it.
 
 \paragraph{Adapter store and batch assembly.}
 At service startup, \sysname{} pre-loads all tenant LoRA adapters into GPU
