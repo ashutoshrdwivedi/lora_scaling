@@ -449,11 +449,10 @@ Each configuration samples mixed-tenant batches uniformly at random from the
 adapter pool.
 
 \paragraph{Adapters and correctness.}
-Benchmarks use synthetic LoRA weights to isolate system overhead. We enforce
-numerical equivalence to reference HuggingFace and PEFT models to within
-$\text{atol}=\text{rtol}=10^{-4}$ in fp32. This is verified via unit tests
-across five routing and padding scenarios under both BERT and XLM-RoBERTa
-position-id conventions.
+Benchmarks use synthetic LoRA weights to isolate system overhead. Unit tests
+enforce numerical equivalence to reference HuggingFace and PEFT models within
+$\text{atol}=\text{rtol}=10^{-4}$ in fp32, across five routing and padding
+scenarios and both BERT and XLM-RoBERTa position-id conventions.
 
 \paragraph{Baselines.}
 We compare against \texttt{HuggingFace PEFT}~\cite{mangrulkar2022peft} in
