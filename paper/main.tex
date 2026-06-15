@@ -200,9 +200,6 @@ $2 L \cdot (d r + r d) = \LoraParamsREight$ trainable parameters per adapter, re
 $\LoraReductionVsQVRankEight\times$ reduction over full fine-tuning
 of those layers.
 
-In this work, $B$ is initialized to zero so that $\Delta W = 0$ at the start
-of training, leaving the pre-trained representations intact.
-
 Our evaluation shows that on \texttt{BAAI/bge-m3} \cite{chen2024bge}, the
 encoder used by every serving experiment in this paper, rank-\HeadlineRank{}
 LoRA retains \SetfitBgeRetainsPct\% of full fine-tuning's mean accuracy and
@@ -210,13 +207,13 @@ beats a frozen encoder baseline on all seven public
 text-classification benchmarks (Table~\ref{tab:accuracy_bge}; mean
   \SetfitBgeMeanLora{} vs.\ \SetfitBgeMeanFrozen{}, a
 \SetfitBgeLoraGainOverFrozenPP~pp gain over frozen), at
-$1/\BgeParamReductionRankEight$ the trainable-parameter cost.\footnote{We
+$1/\BgeParamReductionRankEight$ the trainable-parameter cost,\footnote{We
   replicate the protocol on the standard SetFit backbone
   \texttt{paraphrase-mpnet-base-v2} \cite{tunstall2022efficient}, which
   reproduces SetFit-comparable accuracy and shows the same
   low-rank-vs-full-fine-tuning pattern (\SetfitRetainsPct\% retained;
-Table~\ref{tab:accuracy}, Appendix~\ref{app:accuracy}).} The frozen
-baseline confirms per-tenant adaptation is worth serving; the remaining
+Table~\ref{tab:accuracy}, Appendix~\ref{app:accuracy}).} confirming that
+tenant adaptation is worth serving; the remaining
 barrier is \emph{serving}: combining thousands of these adapters in a single
 forward pass.
 
@@ -419,8 +416,6 @@ for $|\mathcal{M}|$ target modules. We validate both empirically in
 Primary experiments use \texttt{BAAI/bge-m3} \cite{chen2024bge},
 a \BgeLayers-layer XLM-RoBERTa-derived encoder with hidden size $d=\BgeHidden$,
 \BgeHeads{} attention heads, and \BgeParamsM{}M parameters.
-It is among the most widely-served production encoders for retrieval and
-classification, and a demanding setting for the per-request overheads we measure.
 
 \paragraph{LoRA configuration.}
 We apply LoRA to the query and value projection matrices of each attention
@@ -464,10 +459,8 @@ a requirement of our workload.
 We omit \texttt{vLLM} \cite{kwon2023vllm} and \texttt{LoRAX}
 \cite{predibase2023lorax} from quantitative comparison: neither serves encoder
 LoRA (\S\ref{sec:relwork}).
-All PEFT configurations time the bare encoder forward with no
-classification head, whereas \sysname{} latencies include batch
-assembly and the per-tenant head; the comparison is therefore
-conservative in PEFT's favor.
+The timing asymmetry (PEFT omits the per-tenant head) makes the
+comparison conservative in PEFT's favor.
 
 \subsection{Latency and Throughput Scaling}
 \label{sec:results_latency}
@@ -575,8 +568,6 @@ $\mathcal{B}{=}\HeadlineBatch$ but reaches
 $\PNinetyNineOverPFiftyAtBSixtyFour\times$ at $\mathcal{B}{=}64$, with
 profiling localizing the spike to occasional Python/GC stalls during
 assembly; the GPU forward exhibits no such variance.
-Double-buffered H2D transfer and a GPU-resident \texttt{index\_select} gather
-would amortize this; both are future work.
 
 \paragraph{Finding 6: Custom LoRA kernels offer only single-digit upside on
 encoders.}
@@ -624,9 +615,7 @@ configurations, all attaching $N$ adapters via \texttt{add\_adapter}.
 the adapters present in the batch (\S\ref{sec:setup}).
 \emph{Homogeneous}, PEFT's friendliest case, uses
 single-tenant batches: one \texttt{set\_adapter} and one batched forward each.
-\emph{Base} is the bare model with no adapters
-(\PeftBaseQpsAtBEight/\PeftBaseQpsAtBThirtyTwo/\PeftBaseQpsAtBOneTwentyEight{}~samples/sec
-at $\mathcal{B}{=}8/32/128$, $N$-independent).
+\emph{Base} is the bare model with no adapters ($N$-independent).
 We also report PEFT's $N$-adapter registration cost: \texttt{add\_adapter}
 re-validates the growing adapter set on each call, so loading the pool takes
 \PeftGroupedAddAdapterSecNHundred~s at $N{=}100$ and
