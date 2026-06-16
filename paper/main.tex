@@ -284,17 +284,17 @@ single encoder forward pass.
 \begin{figure}[t]
   \centering
   \begin{tikzpicture}[
-    font=\scriptsize,
-    >={Stealth[length=4pt,width=3pt]},
-    box/.style={draw, rounded corners=2pt, align=center, line width=0.6pt,
+      font=\scriptsize,
+      >={Stealth[length=4pt,width=3pt]},
+      box/.style={draw, rounded corners=2pt, align=center, line width=0.6pt,
       inner sep=2.5pt},
-    base/.style={box, fill=black!7},
-    lora/.style={box, fill=blue!10},
-    head/.style={box, fill=teal!15},
-    io/.style={box, fill=black!4},
-    add/.style={draw, circle, line width=0.8pt, inner sep=1.5pt, fill=black!5},
-    fl/.style={->, line width=0.6pt},
-  ]
+      base/.style={box, fill=black!7},
+      lora/.style={box, fill=blue!10},
+      head/.style={box, fill=teal!15},
+      io/.style={box, fill=black!4},
+      add/.style={draw, circle, line width=0.8pt, inner sep=1.5pt, fill=black!5},
+      fl/.style={->, line width=0.6pt},
+    ]
     \node[io]   (x)      at (0,0)         {mixed-tenant batch $x$ \,$(\mathcal{B}{\times}S{\times}d)$};
     \node[base] (basep)  at (-1.8,-1.425) {base path\\$W_0\,x$\\\textit{shared, once}};
     \node[lora] (shrink) at (1.65,-1.0)   {\texttt{shrink}: $\texttt{bmm}(x,[A_i])$\\$\to\mathcal{B}{\times}S{\times}r$};
@@ -314,7 +314,7 @@ single encoder forward pass.
   \caption{Late-fusion BMM forward pass in \sysname. The shared base path runs
     once over the mixed-tenant batch while per-sample LoRA deltas are applied as
     batched matrix multiplications, so the whole batch completes in a single
-    forward pass regardless of adapter count.}
+  forward pass regardless of adapter count.}
   \label{fig:overview}
 \end{figure}
 
