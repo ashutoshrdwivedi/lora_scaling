@@ -241,7 +241,7 @@ forward pass.
 \label{sec:background_serving}
 
 Consider a classification service for $N$ customers, each with a custom
-\texttt{BAAI/bge-m3} \cite{chen2024bge} adapter. The naive options all fail at
+\texttt{BAAI/bge-m3} adapter. The naive options all fail at
 scale: a full model copy per tenant forecloses cross-tenant batching, in-place
 weight merging ($W' = W_0 + B_i A_i$) serializes requests, and sequential
 per-tenant batching drives GPU utilization toward $1/N$. An effective solution
@@ -357,7 +357,7 @@ Each \texttt{bmm} call is a single GPU kernel launch, processing
 all $\mathcal{B}$
 samples simultaneously regardless of how many distinct adapters they reference.
 
-Unlike Punica \cite{chen2024punica} and S-LoRA \cite{sheng2024slora}, whose
+Unlike Punica and S-LoRA, whose
 custom kernels group inputs by adapter id for the prefill$\to$decode pipeline,
 \texttt{torch.bmm} applies a distinct $(A_i, B_i)$ to every item of the dense
 $(S, d)$ encoder forward pass (\S\ref{sec:relwork}).
@@ -440,7 +440,7 @@ for $|\mathcal{M}|$ target modules. We validate both empirically in
 \label{sec:setup}
 
 \paragraph{Base model.}
-Primary experiments use \texttt{BAAI/bge-m3} \cite{chen2024bge},
+Primary experiments use \texttt{BAAI/bge-m3},
 a \BgeLayers-layer XLM-RoBERTa-derived encoder with hidden size $d=\BgeHidden$,
 \BgeHeads{} attention heads, and \BgeParamsM{}M parameters.
 
@@ -484,8 +484,8 @@ its native mixed-batch API (\texttt{adapter\_names}), which does not route
 per-request classification
 heads,\footnote{\url{https://github.com/huggingface/peft/issues/1960}}
 a requirement of our workload.
-We omit \texttt{vLLM} \cite{kwon2023vllm} and \texttt{LoRAX}
-\cite{predibase2023lorax} from quantitative comparison: neither serves encoder
+We omit \texttt{vLLM} and \texttt{LoRAX}
+from quantitative comparison: neither serves encoder
 LoRA (\S\ref{sec:relwork}).
 The timing asymmetry (PEFT omits the per-tenant head) makes the
 comparison conservative in PEFT's favor.
@@ -586,8 +586,8 @@ assembly; the GPU forward exhibits no such variance.
 \paragraph{Finding 6: Custom LoRA kernels offer only single-digit upside on
 encoders.}
 \label{sec:results_custom_kernels}
-Could custom kernels (Punica's SGMV \cite{chen2024punica}, S-LoRA's MBGMV
-\cite{sheng2024slora}) replacing our \texttt{torch.bmm} help? Three measurements
+Could custom kernels (Punica's SGMV, S-LoRA's MBGMV)
+replacing our \texttt{torch.bmm} help? Three measurements
 at $\mathcal{B}{=}\HeadlineBatch$, $N{=}1{,}000$, $r{=}\HeadlineRank$ bound the
 upside to single digits. The \emph{analytic FLOP ratio} per layer is
 $3d/r{=}\FlopBaseToLoraRatio$, so even an instantaneous LoRA kernel
@@ -620,11 +620,11 @@ ceiling here.
 \subsection{Comparison with Baselines}
 \label{sec:results_baselines}
 
-We compare against \texttt{HuggingFace PEFT} \cite{mangrulkar2022peft} in four
+We compare against \texttt{HuggingFace PEFT} in four
 configurations, all attaching $N$ adapters via \texttt{add\_adapter}.
 \emph{Grouped} buckets a mixed batch by adapter id, running one
 \texttt{set\_adapter} and forward per bucket (Punica's SGMV strategy
-\cite{chen2024punica}). \emph{Mixed} is PEFT's native mixed-batch API
+). \emph{Mixed} is PEFT's native mixed-batch API
 (\texttt{adapter\_names}): one shared base forward with a per-layer loop over
 the adapters present in the batch (\S\ref{sec:setup}).
 \emph{Homogeneous}, PEFT's friendliest case, uses
@@ -825,7 +825,7 @@ sizes.
 To confirm that our few-shot protocol reproduces results comparable to the
 SetFit literature, we replicate it on \texttt{paraphrase-mpnet-base-v2}
 \cite{reimers2019sentencebert}, the standard SetFit backbone
-\cite{tunstall2022efficient}, across the same seven public benchmarks used in
+, across the same seven public benchmarks used in
 that work: SST-2, SST-5, CR, Amazon-Counterfactual, Emotion, EnronSpam, and AG
 News. For each dataset we train two variants at $N{=}8$ labeled examples per
 class: a full fine-tune of the encoder (\MpnetVanillaParamsM{}M trainable
