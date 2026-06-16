@@ -4,8 +4,6 @@
 %
 % Target venue: EMNLP 2026 Industry Track (ACL-format, 6-page body limit;
 %               Limitations / Ethics / References / appendix are excluded)
-%   [TODO] Profile breakdown figure (task #11)
-%   [TODO] Publication-quality figures (task #14)
 % =============================================================================
 
 \documentclass[11pt]{article}
@@ -106,7 +104,7 @@ weights (requiring \StorageTwentyKGPUs{} A100-80GB GPUs) and eliminate any
 opportunity for cross-tenant request batching.
 Low-Rank Adaptation (LoRA) \cite{hu2022lora} removes the storage barrier
 by expressing tenant-specific adaptations as low-rank updates to the
-shared base encoder, shrinking the per-tenant footprint to just
+shared base encoder, shrinking the per-tenant weight footprint to just
 \LoraBytesREightMB{}~MB (rank~\HeadlineRank{}, \BgeLayers{} layers), a
 \StorageReductionFullVsLoraRankEight$\times$ reduction, at minimal accuracy
 cost (\S\ref{sec:background_lora}).
@@ -133,7 +131,7 @@ Encoder workloads exhibit fundamentally different dynamics from
 decoder generation: the bidirectional forward pass at sequence length $S \gg 1$
 is compute-bound and dominated by the base model's projection weights.
 Consequently, the LoRA compute path accounts for only
-\ProfLoraBmmIsolatedPct{}\% of the total forward GPU time, meaning
+\AblationLoraCostPct{}\% of the total forward GPU time, meaning
 custom CUDA kernels yield minimal, single-digit performance gains
 (\S\ref{sec:results_custom_kernels}, Finding~6).
 This structural difference makes standard batched matrix
@@ -622,9 +620,9 @@ ceiling here.
 
 We compare against \texttt{HuggingFace PEFT} in four
 configurations, all attaching $N$ adapters via \texttt{add\_adapter}.
-\emph{Grouped} buckets a mixed batch by adapter id, running one
-\texttt{set\_adapter} and forward per bucket (Punica's SGMV strategy
-). \emph{Mixed} is PEFT's native mixed-batch API
+\emph{Grouped} buckets a mixed batch by adapter id, paying one
+\texttt{set\_adapter} and forward per distinct adapter present. \emph{Mixed} is
+PEFT's native mixed-batch API
 (\texttt{adapter\_names}): one shared base forward with a per-layer loop over
 the adapters present in the batch (\S\ref{sec:setup}).
 \emph{Homogeneous}, PEFT's friendliest case, uses
@@ -693,33 +691,6 @@ grows $100\to1{,}000$), leaving \sysname{}
 % \subsection{Multi-Model and Multi-Hardware Generalization}
 % \label{sec:results_generalization}
 
-% TODO (Task #7): §4.6 Ablation Study.
-% Run ablations and fill in Table tab:ablation.
-% Expected: buffer pre-allocation saves ~0.5 ms; contiguous A-matrix layout
-% saves ~0.1–0.3 ms; float16 reduces memory 2× with 10–20% latency reduction.
-% \subsection{Ablation Study}
-% \label{sec:ablation}
-%
-% \begin{table}[h]
-% \centering
-% \small
-% \caption{Ablation study: contribution of each design choice
-% (20{,}000 adapters, batch=32, rank=8). TODO: fill in after Task #7.}
-% \label{tab:ablation}
-% \begin{tabular}{lrr}
-% \toprule
-% Configuration & p50 (ms) & $\Delta$ vs.\ full \\
-% \midrule
-% Full \sysname{}                                    & 56.3          & --- \\
-% w/o pre-allocated buffers (dynamic alloc)          & \emph{?} & $+$\emph{?} \\
-% w/o contiguous A-matrix layout (runtime transpose) & \emph{?} & $+$\emph{?} \\
-% Query only (not query$+$value)                     & \emph{?} & $-$\emph{?} \\
-% Query$+$Key$+$Value$+$Output                       & \emph{?} & $+$\emph{?} \\
-% float16 precision                                  & \emph{?} & $-$\emph{?} \\
-% \bottomrule
-% \end{tabular}
-% \end{table}
-
 % =============================================================================
 \section{Conclusion}
 \label{sec:conclusion}
@@ -727,7 +698,7 @@ grows $100\to1{,}000$), leaving \sysname{}
 We presented \sysname, a serving system for multi-tenant LoRA on encoder
 models built on late-fusion batched matrix multiplication. Encoder serving
 inverts the economics that justify custom LoRA kernels on decoders: at
-sequence length $S \gg 1$ the adapter path is just \ProfLoraBmmIsolatedPct\%
+sequence length $S \gg 1$ the adapter path is just \AblationLoraCostPct\%
 of forward GPU time, bounding custom kernels to single-digit gains here, while
 standard \texttt{torch.bmm} deploys
 on managed GPU platforms with no compilation step. This turns a per-tenant
