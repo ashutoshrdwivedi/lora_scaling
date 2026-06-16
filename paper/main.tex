@@ -283,7 +283,7 @@ single encoder forward pass.
     font=\scriptsize,
     >={Stealth[length=4pt,width=3pt]},
     box/.style={draw, rounded corners=2pt, align=center, line width=0.6pt,
-      inner sep=3pt},
+      inner sep=2.5pt},
     base/.style={box, fill=black!7},
     lora/.style={box, fill=blue!10},
     head/.style={box, fill=teal!15},
@@ -291,13 +291,13 @@ single encoder forward pass.
     add/.style={draw, circle, line width=0.8pt, inner sep=1.5pt, fill=black!5},
     fl/.style={->, line width=0.6pt},
   ]
-    \node[io]   (x)      at (0,0)        {mixed-tenant batch $x$ \,$(\mathcal{B}{\times}S{\times}H)$};
-    \node[base] (basep)  at (-1.95,-2.0) {base path\\$W_0\,x$\\\textit{shared, once}};
-    \node[lora] (shrink) at (1.75,-1.45) {\texttt{shrink}: $\texttt{bmm}(x,[A_i])$\\$\to\mathcal{B}{\times}S{\times}r$};
-    \node[lora] (expand) at (1.75,-2.6)  {\texttt{expand}: $\texttt{bmm}(\cdot,[B_i])$\\$\to\mathcal{B}{\times}S{\times}H$};
-    \node[add]  (add)    at (0,-3.75)    {$+$};
-    \node[head] (head)   at (0,-4.85)    {pooled $\texttt{[CLS]}$ $\to$ per-tenant head\\\textit{zero-padded \texttt{bmm}}};
-    \node[io]   (logits) at (0,-5.85)    {per-tenant logits};
+    \node[io]   (x)      at (0,0)         {mixed-tenant batch $x$ \,$(\mathcal{B}{\times}S{\times}H)$};
+    \node[base] (basep)  at (-1.8,-1.425) {base path\\$W_0\,x$\\\textit{shared, once}};
+    \node[lora] (shrink) at (1.65,-1.0)   {\texttt{shrink}: $\texttt{bmm}(x,[A_i])$\\$\to\mathcal{B}{\times}S{\times}r$};
+    \node[lora] (expand) at (1.65,-1.85)  {\texttt{expand}: $\texttt{bmm}(\cdot,[B_i])$\\$\to\mathcal{B}{\times}S{\times}H$};
+    \node[add]  (add)    at (0,-2.75)     {$+$};
+    \node[head] (head)   at (0,-3.6)      {pooled $\texttt{[CLS]}$ $\to$ per-tenant head\\\textit{zero-padded \texttt{bmm}}};
+    \node[io]   (logits) at (0,-4.4)      {per-tenant logits};
 
     \draw[fl] (x) -- (basep);
     \draw[fl] (x) -- (shrink);
