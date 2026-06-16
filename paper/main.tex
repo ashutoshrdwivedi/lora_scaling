@@ -620,9 +620,9 @@ ceiling here.
 
 We compare against \texttt{HuggingFace PEFT} \cite{mangrulkar2022peft} in four
 configurations, all attaching $N$ adapters via \texttt{add\_adapter}.
-\emph{Grouped} buckets a mixed batch by adapter id, running one
-\texttt{set\_adapter} and forward per bucket (Punica's SGMV strategy
-\cite{chen2024punica}). \emph{Mixed} is PEFT's native mixed-batch API
+\emph{Grouped} buckets a mixed batch by adapter id so same-adapter samples
+share a single \texttt{set\_adapter} and forward per bucket. \emph{Mixed} is
+PEFT's native mixed-batch API
 (\texttt{adapter\_names}): one shared base forward with a per-layer loop over
 the adapters present in the batch (\S\ref{sec:setup}).
 \emph{Homogeneous}, PEFT's friendliest case, uses
