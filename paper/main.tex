@@ -181,8 +181,9 @@ analogously via zero-padded BMM.
     than PEFT's native mixed-batch API and up to
     \textbf{\HeadlineSpeedupHigh$\times$} over per-adapter swapping,
     \textbf{$>$\ColdStartSpeedupMin{}$\times$} faster cold-start
-    deployment, and \texttt{set\_adapter} isolated as the
-    $\mathcal{O}(N)$ bottleneck in the standard PEFT baseline
+    deployment, isolating PEFT's two pool-size costs: an
+    $\mathcal{O}(N^2)$ one-time \texttt{add\_adapter} registration and an
+    $\mathcal{O}(N)$ per-request \texttt{set\_adapter} swap
     (\S\ref{sec:results_baselines}, Finding~7).
 \end{itemize}
 
