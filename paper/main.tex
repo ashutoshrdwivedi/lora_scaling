@@ -110,6 +110,10 @@ shared base encoder, shrinking the per-tenant footprint to just
 \LoraBytesREightMB{}~MB (rank~\HeadlineRank{}, \BgeLayers{} layers), a
 \StorageReductionFullVsLoraRankEight$\times$ reduction, at minimal accuracy
 cost (\S\ref{sec:background_lora}).
+Per-tenant adapters also keep customer data isolated: each is trained only on
+its own tenant's data, avoiding the cross-tenant pooling that a single shared
+fine-tuned encoder would require, a separation that multi-tenant SaaS customers
+increasingly demand.
 The remaining challenge is \textbf{batched serving} across these
 heterogeneous adapters on a shared GPU.
 
