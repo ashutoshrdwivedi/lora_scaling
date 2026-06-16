@@ -449,10 +449,11 @@ layer (\texttt{target\_modules = [query, value]}).
 We sweep rank $r \in \{4, 8, 16, 32\}$ with $\alpha = r$ (no scaling), matching
 the configuration used by our PEFT-equivalence numerical tests.
 
-\paragraph{Hardware.}
+\paragraph{Hardware and software.}
 Primary experiments run on a single \HeadlineGPU{} GPU on a
-cloud-managed node with PyTorch \EnvTorchVersion{} in
-\HeadlineDtype{} precision.
+cloud-managed node in \HeadlineDtype{} precision, with PyTorch
+\EnvTorchVersion{} (CUDA \EnvCudaVersion{}), \texttt{transformers}
+\EnvTransformersVersion{}, and \texttt{peft} \EnvPeftVersion{}.
 
 \paragraph{Benchmark protocol.}
 We measure end-to-end latency (batch assembly + encoder forward pass + LR head)
@@ -629,11 +630,11 @@ the adapters present in the batch (\S\ref{sec:setup}).
 single-tenant batches: one \texttt{set\_adapter} and one batched forward each.
 \emph{Base} is the bare model with no adapters ($N$-independent).
 We also report PEFT's $N$-adapter registration cost: \texttt{add\_adapter}
-re-validates the growing adapter set on each call, so loading the pool takes
+re-scans the growing module tree on each call ($\mathcal{O}(N^2)$ total), so loading the pool takes
 \PeftGroupedAddAdapterSecNHundred~s at $N{=}100$ and
 \PeftGroupedAddAdapterSecNOneK~s at $N{=}1{,}000$, versus
 \LateFuseColdLoadSecNHundred~s and \LateFuseColdLoadSecNOneK~s for \sysname{}'s
-constant-time \texttt{AdapterStore} preload, a
+linear-time \texttt{AdapterStore} preload, a
 \ColdStartSpeedupMin--\ColdStartSpeedupNOneK$\times$ reduction.
 
 \begin{table}[h]
@@ -760,8 +761,7 @@ store would eliminate this overhead, at the cost of departing from
 pure-PyTorch deployability. Alternatively, moving the adapter cache into a
 single contiguous GPU tensor and performing batch assembly via GPU-resident
 index selection (e.g., \texttt{torch.index\_select}) represents a promising path to
-eliminate this CPU bottleneck while retaining pure-PyTorch compatibility, which
-can be optimized further via \texttt{torch.compile}.
+eliminate this CPU bottleneck while retaining pure-PyTorch compatibility.
 
 \paragraph{Single-node evaluation.}
 All latency and throughput results are measured on one GPU. The architecture
