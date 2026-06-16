@@ -794,6 +794,7 @@ present in weight-merging approaches.
 \bibliography{references}
 
 \appendix
+\clearpage
 
 % =============================================================================
 \section{Adapter-Count Latency Scaling}
@@ -802,7 +803,7 @@ present in weight-merging approaches.
 Figure~\ref{fig:latency_adapters} is the visual companion to Finding~1
 (\S\ref{sec:results_latency}): p50 latency stays flat as the pre-loaded adapter
 pool grows from 100 to \CapacityRankEight{} adapters across all five batch
-sizes, confirming the $\mathcal{O}(1)$-in-$N$ scaling.
+sizes.
 
 \begin{figure}[t]
   \centering
