@@ -28,6 +28,8 @@
 \usepackage{graphicx}
 \usepackage{subcaption}
 \usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, calc}
 % algorithm/algpseudocode: uncomment when pseudocode is added
 % \usepackage{algorithm}
 % \usepackage{algpseudocode}
@@ -275,27 +277,49 @@ single encoder forward pass.
 \section{\sysname: System Design}
 \label{sec:system}
 
-% TODO (Task #14): Figure 1 — architecture diagram of the late-fusion
-% forward pass. Should depict: (left) per-sample adapter stacking into
-% batched B/A tensors; (center) split base path W0x and delta path BAx
-% running in parallel; (right) element-wise fusion and LR head BMM.
-% \begin{figure}[t]
-%   \centering
-%   \caption{Overview of late-fusion BMM serving in \sysname.
-%     For a mixed-tenant batch of size $\mathcal{B}$, the base
-% attention projection
-%     $W_0 x$ runs once (shared weights), while per-sample LoRA deltas
-%     $B_i A_i x$ are computed in two \texttt{torch.bmm} calls.
-%     All $\mathcal{B}$ samples are fused in a single forward pass
-% regardless of how many
-%     distinct adapters are present.}
-%   \label{fig:overview}
-% \end{figure}
+\begin{figure}[t]
+  \centering
+  \begin{tikzpicture}[
+    font=\scriptsize,
+    >={Stealth[length=4pt,width=3pt]},
+    box/.style={draw, rounded corners=2pt, align=center, line width=0.6pt,
+      inner sep=3pt},
+    base/.style={box, fill=black!7},
+    lora/.style={box, fill=blue!10},
+    head/.style={box, fill=teal!15},
+    io/.style={box, fill=black!4},
+    add/.style={draw, circle, line width=0.8pt, inner sep=1.5pt, fill=black!5},
+    fl/.style={->, line width=0.6pt},
+  ]
+    \node[io]   (x)      at (0,0)        {mixed-tenant batch $x$ \,$(\mathcal{B}{\times}S{\times}H)$};
+    \node[base] (basep)  at (-1.95,-2.0) {base path\\$W_0\,x$\\\textit{shared, once}};
+    \node[lora] (shrink) at (1.75,-1.45) {\texttt{shrink}: $\texttt{bmm}(x,[A_i])$\\$\to\mathcal{B}{\times}S{\times}r$};
+    \node[lora] (expand) at (1.75,-2.6)  {\texttt{expand}: $\texttt{bmm}(\cdot,[B_i])$\\$\to\mathcal{B}{\times}S{\times}H$};
+    \node[add]  (add)    at (0,-3.75)    {$+$};
+    \node[head] (head)   at (0,-4.85)    {pooled $\texttt{[CLS]}$ $\to$ per-tenant head\\\textit{zero-padded \texttt{bmm}}};
+    \node[io]   (logits) at (0,-5.85)    {per-tenant logits};
+
+    \draw[fl] (x) -- (basep);
+    \draw[fl] (x) -- (shrink);
+    \draw[fl] (shrink) -- (expand);
+    \draw[fl] (basep)  |- (add);
+    \draw[fl] (expand) |- (add);
+    \draw[fl] (add) -- (head);
+    \draw[fl] (head) -- (logits);
+  \end{tikzpicture}
+  \caption{Late-fusion BMM forward pass in \sysname. The frozen base $W_0 x$
+    runs once over the whole mixed-tenant batch; each sample's LoRA delta
+    $B_i(A_i x)$ is applied via two batched matrix multiplications
+    (\texttt{shrink}, \texttt{expand}) and summed in, and per-tenant heads are a
+    zero-padded BMM. The batch completes in a single forward pass regardless of
+    adapter count, with no custom kernels.}
+  \label{fig:overview}
+\end{figure}
 
 \subsection{Late-Fusion Decomposition}
 \label{sec:lf_decomp}
 
-The core insight is that the LoRA forward pass
+The core insight (Figure~\ref{fig:overview}) is that the LoRA forward pass
 $h = W_0 x + B_i A_i x$
 can be split into two \emph{independent} computations:
 \begin{align}
