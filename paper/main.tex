@@ -104,7 +104,7 @@ weights (requiring \StorageTwentyKGPUs{} A100-80GB GPUs) and eliminate any
 opportunity for cross-tenant request batching.
 Low-Rank Adaptation (LoRA) \cite{hu2022lora} removes the storage barrier
 by expressing tenant-specific adaptations as low-rank updates to the
-shared base encoder, shrinking the per-tenant footprint to just
+shared base encoder, shrinking the per-tenant weight footprint to just
 \LoraBytesREightMB{}~MB (rank~\HeadlineRank{}, \BgeLayers{} layers), a
 \StorageReductionFullVsLoraRankEight$\times$ reduction, at minimal accuracy
 cost (\S\ref{sec:background_lora}).
@@ -620,8 +620,8 @@ ceiling here.
 
 We compare against \texttt{HuggingFace PEFT} \cite{mangrulkar2022peft} in four
 configurations, all attaching $N$ adapters via \texttt{add\_adapter}.
-\emph{Grouped} buckets a mixed batch by adapter id so same-adapter samples
-share a single \texttt{set\_adapter} and forward per bucket. \emph{Mixed} is
+\emph{Grouped} buckets a mixed batch by adapter id, paying one
+\texttt{set\_adapter} and forward per distinct adapter present. \emph{Mixed} is
 PEFT's native mixed-batch API
 (\texttt{adapter\_names}): one shared base forward with a per-layer loop over
 the adapters present in the batch (\S\ref{sec:setup}).
