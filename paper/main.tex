@@ -168,8 +168,8 @@ analogously via zero-padded BMM.
   \item We empirically demonstrate that adapter count does not drive
     inference latency: scaling from 100 to \HeadlineCapacity{} adapters at batch
     size \HeadlineBatch{} on a single A100 leaves p50 latency flat
-    (\PFiftyAtNHundred$\to$\PFiftyAtNFortySevenK~ms) and p99 bounded
-    (\S\ref{sec:experiments}).
+    ($\le$\PFiftyDriftPctNHundredToFortySevenK\% drift, within seed noise) and
+    p99 bounded (\S\ref{sec:experiments}).
 
   \item We benchmark \sysname{} against HuggingFace PEFT on identical
     hardware:
@@ -291,12 +291,12 @@ single encoder forward pass.
     add/.style={draw, circle, line width=0.8pt, inner sep=1.5pt, fill=black!5},
     fl/.style={->, line width=0.6pt},
   ]
-    \node[io]   (x)      at (0,0)         {mixed-tenant batch $x$ \,$(\mathcal{B}{\times}S{\times}H)$};
+    \node[io]   (x)      at (0,0)         {mixed-tenant batch $x$ \,$(\mathcal{B}{\times}S{\times}d)$};
     \node[base] (basep)  at (-1.8,-1.425) {base path\\$W_0\,x$\\\textit{shared, once}};
     \node[lora] (shrink) at (1.65,-1.0)   {\texttt{shrink}: $\texttt{bmm}(x,[A_i])$\\$\to\mathcal{B}{\times}S{\times}r$};
-    \node[lora] (expand) at (1.65,-1.85)  {\texttt{expand}: $\texttt{bmm}(\cdot,[B_i])$\\$\to\mathcal{B}{\times}S{\times}H$};
+    \node[lora] (expand) at (1.65,-1.85)  {\texttt{expand}: $\texttt{bmm}(\cdot,[B_i])$\\$\to\mathcal{B}{\times}S{\times}d$};
     \node[add]  (add)    at (0,-2.75)     {$+$};
-    \node[head] (head)   at (0,-3.6)      {pooled $\texttt{[CLS]}$ $\to$ per-tenant head\\\textit{zero-padded \texttt{bmm}}};
+    \node[head] (head)   at (0,-3.6)      {pooled $\texttt{[CLS]}$ $\to$ per-tenant head\\\textit{zero-padded} \texttt{bmm}};
     \node[io]   (logits) at (0,-4.4)      {per-tenant logits};
 
     \draw[fl] (x) -- (basep);
@@ -307,12 +307,10 @@ single encoder forward pass.
     \draw[fl] (add) -- (head);
     \draw[fl] (head) -- (logits);
   \end{tikzpicture}
-  \caption{Late-fusion BMM forward pass in \sysname. The frozen base $W_0 x$
-    runs once over the whole mixed-tenant batch; each sample's LoRA delta
-    $B_i(A_i x)$ is applied via two batched matrix multiplications
-    (\texttt{shrink}, \texttt{expand}) and summed in, and per-tenant heads are a
-    zero-padded BMM. The batch completes in a single forward pass regardless of
-    adapter count, with no custom kernels.}
+  \caption{Late-fusion BMM forward pass in \sysname. The shared base path runs
+    once over the mixed-tenant batch while per-sample LoRA deltas are applied as
+    batched matrix multiplications, so the whole batch completes in a single
+    forward pass regardless of adapter count.}
   \label{fig:overview}
 \end{figure}
 
@@ -335,19 +333,19 @@ sample $i$, which requires batched matrix multiplication rather than a
 broadcast multiply.
 Equation~\ref{eq:fuse} is a zero-allocation element-wise addition.
 
-For a batch of $\mathcal{B}$ samples with hidden size $H$ and
+For a batch of $\mathcal{B}$ samples with hidden size $d$ and
 sequence length $S$:
 \begin{align}
   h_{\text{shrink}} &= \texttt{bmm}(x,\; [A_0,\ldots,A_{\mathcal{B}-1}])
   \in \mathbb{R}^{\mathcal{B} \times S \times r} \label{eq:shrink} \\
   h_{\text{delta}} &= \texttt{bmm}(h_{\text{shrink}},\;
   [B_0,\ldots,B_{\mathcal{B}-1}])
-  \in \mathbb{R}^{\mathcal{B} \times S \times H} \label{eq:expand}
+  \in \mathbb{R}^{\mathcal{B} \times S \times d} \label{eq:expand}
 \end{align}
 
 \noindent
 where $[A_0, \ldots, A_{\mathcal{B}-1}] \in \mathbb{R}^{\mathcal{B}
-\times H \times r}$ is the
+\times d \times r}$ is the
 stack of per-sample shrink matrices, assembled from the adapter store at
 request time.
 Each \texttt{bmm} call is a single GPU kernel launch, processing
@@ -357,7 +355,7 @@ samples simultaneously regardless of how many distinct adapters they reference.
 Unlike Punica \cite{chen2024punica} and S-LoRA \cite{sheng2024slora}, whose
 custom kernels group inputs by adapter id for the prefill$\to$decode pipeline,
 \texttt{torch.bmm} applies a distinct $(A_i, B_i)$ to every item of the dense
-$(S, H)$ encoder forward pass (\S\ref{sec:relwork}).
+$(S, d)$ encoder forward pass (\S\ref{sec:relwork}).
 
 \subsection{Batched Classification Heads}
 \label{sec:lr_head}
@@ -370,13 +368,13 @@ mismatched shapes and cannot be stacked directly.
 
 \sysname{} serves all heads in a single BMM call.
 Given a batch of pooled representations
-$p \in \mathbb{R}^{\mathcal{B} \times 1 \times H}$
+$p \in \mathbb{R}^{\mathcal{B} \times 1 \times d}$
 and per-tenant weight matrices
-$W^{\text{cls}}_i \in \mathbb{R}^{c_i \times H}$ and bias vectors
+$W^{\text{cls}}_i \in \mathbb{R}^{c_i \times d}$ and bias vectors
 $b^{\text{cls}}_i \in \mathbb{R}^{c_i}$,
 we zero-pad all weight matrices to the maximum label count
 $c_{\max} = \max_i c_i$ in the batch and form a stacked tensor
-$W^{\text{cls}} \in \mathbb{R}^{\mathcal{B} \times c_{\max} \times H}$.
+$W^{\text{cls}} \in \mathbb{R}^{\mathcal{B} \times c_{\max} \times d}$.
 The logit computation is:
 \begin{equation}
   \text{logits} = \texttt{bmm}(p,\; {W^{\text{cls}}}^\top) + b^{\text{cls}}
@@ -403,8 +401,8 @@ overwrites it.
 At service startup, \sysname{} pre-loads all tenant LoRA adapters into GPU
 memory as an \texttt{AdapterStore}: a dictionary mapping adapter IDs to
 \texttt{LoraWeight} objects holding
-$W_A \in \mathbb{R}^{L \times H \times r}$ and
-$W_B \in \mathbb{R}^{L \times r \times H}$, stored in inference-transposed
+$W_A \in \mathbb{R}^{L \times d \times r}$ and
+$W_B \in \mathbb{R}^{L \times r \times d}$, stored in inference-transposed
 layout so \texttt{bmm} requires no runtime transpose.
 For a batch of adapter IDs, the \texttt{BatchAssembler} gathers each adapter's
 per-layer $W_A$/$W_B$ slices into per-layer Python lists. This CPU-side gather
@@ -524,18 +522,6 @@ assembler, whose share stays at or below
 latency, empirically validating the $\mathcal{O}(1)$-in-$N$ scaling of
 \S\ref{sec:complexity} (Figure~\ref{fig:latency_adapters}).
 
-\begin{figure}[tb]
-  \centering
-  \includegraphics[width=0.46\linewidth]{figures/latency_adapters.pdf}
-  \caption{p50 latency as a function of pre-loaded adapter count at five
-    batch sizes (rank = \HeadlineRank, sequence length = 128; setup in
-    \S\ref{sec:setup}).
-    Curves are flat across $N \in [100, \CapacityRankEight]$,
-    empirically confirming the
-  $\mathcal{O}(1)$-in-$N$ scaling property of \sysname.}
-  \label{fig:latency_adapters}
-\end{figure}
-
 \paragraph{Finding 2: Batch size drives throughput up to saturation
 at $\mathcal{B}{=}64$.}
 Throughput scales from \QpsAtBEight~samples/sec at $\mathcal{B}{=}8$
@@ -553,17 +539,15 @@ small-rank regime.}
 At $N{=}1{,}000$, $\mathcal{B}{=}\HeadlineBatch$, p50 latency is flat
 across $r \in \{4, 8, 16, 32\}$, and tail latency shows no resolvable
 rank trend (the \PNinetyNineRankSpreadPct\% p99 spread is comparable to
-the between-seed s.d.; Table~\ref{tab:main_results}). While $r \ll H$, the
+the between-seed s.d.; Table~\ref{tab:main_results}). While $r \ll d$, the
 low-rank path adds only
-$2r/H$ of a base projection's arithmetic ($\approx$1\% of the full encoder
+$2r/d$ of a base projection's arithmetic ($\approx$1\% of the full encoder
 forward), so the per-batch GPU forward stays at
 $\approx$\FwdMsAtREight~ms across all four
-ranks; the knob ceases to be free once $2r$ approaches $H$.
+ranks; the knob ceases to be free once $2r$ approaches $d$.
 Within this regime, rank is a pure quality--memory tradeoff: doubling it leaves
 forward latency unchanged but doubles the per-adapter footprint, halving the
-per-GPU tenant ceiling (\CapacityRankEight{} adapters at
-  $r{=}\HeadlineRank$ versus
-\CapacityRankThirtyTwo{} at $r{=}32$; Finding~4).
+per-GPU tenant ceiling (Finding~4).
 
 \paragraph{Finding 4: Predictable memory footprint and per-GPU ceiling.}
 Per-adapter cache memory measures \LoraBytesREightMB~MB at
@@ -738,13 +722,11 @@ We presented \sysname, a serving system for multi-tenant LoRA on encoder
 models built on late-fusion batched matrix multiplication. Encoder serving
 inverts the economics that justify custom LoRA kernels on decoders: at
 sequence length $S \gg 1$ the adapter path is just \ProfLoraBmmIsolatedPct\%
-of forward GPU time, bounding the custom kernels of decoder systems (Punica,
-S-LoRA) to single-digit gains here, while standard \texttt{torch.bmm} deploys
-on managed GPU platforms with no compilation step. The residual cost has moved
-off the GPU to CPU-side batch assembly, so host-side gather and transfer, not
-faster kernels, is where further work belongs. For teams serving a personalized
-encoder feature across thousands of tenants, a single commodity GPU and a stock
-PyTorch stack replace a fleet of per-tenant deployments.
+of forward GPU time, bounding custom kernels to single-digit gains here, while
+standard \texttt{torch.bmm} deploys
+on managed GPU platforms with no compilation step. This turns a per-tenant
+encoder feature into a shared service that amortizes GPU cost across tenants and
+scales out as stateless, tenant-sharded replicas (Appendix~\ref{sec:deployment}).
 
 % =============================================================================
 \section*{Limitations}
@@ -808,6 +790,27 @@ present in weight-merging approaches.
 \bibliography{references}
 
 \appendix
+
+% =============================================================================
+\section{Adapter-Count Latency Scaling}
+\label{app:latency_scaling}
+
+Figure~\ref{fig:latency_adapters} is the visual companion to Finding~1
+(\S\ref{sec:results_latency}): p50 latency stays flat as the pre-loaded adapter
+pool grows from 100 to \CapacityRankEight{} adapters across all five batch
+sizes, confirming the $\mathcal{O}(1)$-in-$N$ scaling.
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{figures/latency_adapters.pdf}
+  \caption{p50 latency as a function of pre-loaded adapter count at five
+    batch sizes (rank = \HeadlineRank, sequence length = 128; setup in
+    \S\ref{sec:setup}).
+    Curves are flat across $N \in [100, \CapacityRankEight]$,
+    empirically confirming the
+  $\mathcal{O}(1)$-in-$N$ scaling property of \sysname.}
+  \label{fig:latency_adapters}
+\end{figure}
 
 % =============================================================================
 \section{Protocol Validation on the SetFit Backbone}
