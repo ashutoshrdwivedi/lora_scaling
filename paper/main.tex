@@ -675,7 +675,7 @@ Registration scales worse still: \texttt{add\_adapter} rescans that same
 loading the pool takes \PeftGroupedAddAdapterSecNHundred~s at $N{=}100$ but
 \PeftGroupedAddAdapterSecNOneK~s at $N{=}1{,}000$, versus
 \LateFuseColdLoadSecNHundred~s and \LateFuseColdLoadSecNOneK~s for \sysname{}'s
-linear-time \texttt{AdapterStore} preload---a
+linear-time \texttt{AdapterStore} preload, a
 \ColdStartSpeedupMin--\ColdStartSpeedupNOneK$\times$ cold-start reduction.
 We cap the sweep at $N{=}1{,}000$, but both costs grow with the pool by
 construction, so the throughput and load-time gaps above are conservative
