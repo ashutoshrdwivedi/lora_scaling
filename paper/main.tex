@@ -642,7 +642,7 @@ single-tenant batches: one \texttt{set\_adapter} and one batched forward each.
   \caption{Latency/throughput vs.\ PEFT in the four configurations of
     \S\ref{sec:results_baselines} ($r{=}\HeadlineRank$; PEFT measured at
     $\mathcal{B}\in\{8,32,128\}$). Speedup rows are QPS ratios (QPS column)
-    of \sysname{} over the like-for-like \emph{mixed} baseline.}
+  of \sysname{} over the like-for-like \emph{mixed} baseline.}
   \label{tab:baselines}
   \input{table_baselines.tex}
 \end{table}
@@ -721,8 +721,8 @@ remains future work.
 \paragraph{Pre-loaded adapter cache.}
 \sysname{} holds all adapters in GPU memory permanently.
 Workloads whose adapter population exceeds a single GPU's capacity require
-an LRU eviction policy with CPU offload, or paged adapter storage analogous
-to PagedAttention \cite{kwon2023vllm}; both are natural extensions.
+an LRU eviction policy with CPU offload, or paged adapter storage as in
+S-LoRA's unified paging \cite{sheng2024slora}; either is a natural extension.
 
 \paragraph{CPU-side batch assembly.}
 The \texttt{BatchAssembler} runs on CPU and gathers per-sample adapter
