@@ -568,7 +568,7 @@ parameters and activation buffers, this yields a clean empirical ceiling of
   largest pool we verified,
 occupying \GpuGBAtNFortySevenK~GB), \textbf{\CapacityRankSixteen{}} at
 $r{=}16$, and \textbf{\CapacityRankThirtyTwo{}} at $r{=}32$.
-Our $N{=}50{,}000$ runs OOM'd cleanly at all batch sizes, confirming the limit.
+Our $N{=}50{,}000$ runs OOM'd at all batch sizes.
 
 \paragraph{Finding 5: Batch assembly is the residual bottleneck and
 drives tail latency.}
@@ -698,14 +698,14 @@ lower bounds that only widen, rendering PEFT impractical for large tenant pools.
 \label{sec:conclusion}
 
 We presented \sysname, a serving system for multi-tenant LoRA on encoder
-models built on late-fusion batched matrix multiplication. Encoder serving
-inverts the economics that justify custom LoRA kernels on decoders: at
-sequence length $S \gg 1$ the adapter path is just \AblationLoraCostPct\%
-of forward GPU time, bounding custom kernels to single-digit gains here, while
-standard \texttt{torch.bmm} deploys
-on managed GPU platforms with no compilation step. This turns a per-tenant
-encoder feature into a shared service that amortizes GPU cost across tenants and
-scales out as stateless, tenant-sharded replicas (Appendix~\ref{sec:deployment}).
+models built on late-fusion BMM. Encoder serving inverts the economics that
+justify custom LoRA kernels on decoders: gathering per-tenant deltas and
+classification heads into batched matrix multiplications keeps latency flat
+as the adapter pool grows to tens of thousands on a single GPU, with
+no compilation step. A per-tenant encoder LoRA feature can therefore
+be offered as a shared service that amortizes GPU cost across
+tenants and scales out as stateless, tenant-sharded replicas
+(Appendix~\ref{sec:deployment}).
 
 % =============================================================================
 \section*{Limitations}
