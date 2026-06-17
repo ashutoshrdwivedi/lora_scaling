@@ -1106,22 +1106,31 @@ def render_table_baselines(peft_grouped, peft_mixed, peft_homog, peft_base,
                 rf" & \textbf{{{fmt_f(sp100, 1)}$\times$}} & "
                 rf" & \textbf{{{fmt_f(sp1k, 1)}$\times$}} \\"
             )
-        lines.append(r"\addlinespace")
-    for b in SPEEDUP_BATCHES:
-        sp100 = round(qps(sysname_ref, 100, b) / qps(peft_grouped, 100, b))
-        sp1k  = round(qps(sysname_ref, 1000, b) / qps(peft_grouped, 1000, b))
-        label   = r"Speedup\textsubscript{grouped}"
-        cell100 = rf"{sp100}$\times$"
-        cell1k  = rf"{sp1k}$\times$"
-        if peft_mixed is None:  # no mixed row -> grouped is primary, bold it
-            label   = rf"\textbf{{{label}}}"
-            cell100 = rf"\textbf{{{cell100}}}"
-            cell1k  = rf"\textbf{{{cell1k}}}"
-        lines.append(
-            rf"{label} ($\mathcal{{B}}{{=}}{b}$) & "
-            rf" & {cell100} & "
-            rf" & {cell1k} \\"
-        )
+
+    # The secondary Speedup_grouped rows are suppressed to save vertical space in
+    # tab:baselines (6-page body limit); the grouped multipliers still appear in
+    # Finding 7's prose, so no data is lost. To restore the three rows in the
+    # table, flip SHOW_GROUPED_SPEEDUP to True. (When there is no mixed baseline,
+    # grouped acts as the primary baseline and is always shown.)
+    SHOW_GROUPED_SPEEDUP = False
+    if SHOW_GROUPED_SPEEDUP or peft_mixed is None:
+        if peft_mixed is not None:
+            lines.append(r"\addlinespace")
+        for b in SPEEDUP_BATCHES:
+            sp100 = round(qps(sysname_ref, 100, b) / qps(peft_grouped, 100, b))
+            sp1k  = round(qps(sysname_ref, 1000, b) / qps(peft_grouped, 1000, b))
+            label   = r"Speedup\textsubscript{grouped}"
+            cell100 = rf"{sp100}$\times$"
+            cell1k  = rf"{sp1k}$\times$"
+            if peft_mixed is None:  # no mixed row -> grouped is primary, bold it
+                label   = rf"\textbf{{{label}}}"
+                cell100 = rf"\textbf{{{cell100}}}"
+                cell1k  = rf"\textbf{{{cell1k}}}"
+            lines.append(
+                rf"{label} ($\mathcal{{B}}{{=}}{b}$) & "
+                rf" & {cell100} & "
+                rf" & {cell1k} \\"
+            )
     lines.append(r"\bottomrule")
     lines.append(r"\end{tabular}")
     return GEN_HEADER + "\n".join(lines) + "\n"
