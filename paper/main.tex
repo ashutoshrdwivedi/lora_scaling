@@ -646,14 +646,11 @@ linear-time \texttt{AdapterStore} preload, a
   \footnotesize
   \setlength{\tabcolsep}{2.5pt}
   \renewcommand{\arraystretch}{0.95}
-  \caption{Latency and throughput vs.\ the PEFT baseline in the
-    \emph{base}, \emph{grouped}, \emph{mixed}, and \emph{homogeneous}
-    configurations defined in the text (rank=\HeadlineRank; setup in
-    \S\ref{sec:setup}).
-    PEFT rows time the bare encoder; \sysname{} rows include batch
-    assembly and per-tenant heads. \emph{Base} (no adapters) is
-    $N$-independent, so its two $N$ blocks are identical. Speedup is
-  \sysname{} over PEFT grouped.}
+  \caption{Latency/throughput vs.\ PEFT in the four configurations of
+    \S\ref{sec:results_baselines} ($r{=}\HeadlineRank$; PEFT measured at
+    $\mathcal{B}\in\{8,32,128\}$). Speedup rows are QPS ratios (QPS column)
+    of \sysname{} over \emph{mixed} (like-for-like; bold) and \emph{grouped}
+    (worst case).}
   \label{tab:baselines}
   \input{table_baselines.tex}
 \end{table}

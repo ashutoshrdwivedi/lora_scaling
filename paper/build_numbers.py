@@ -1083,17 +1083,44 @@ def render_table_baselines(peft_grouped, peft_mixed, peft_homog, peft_base,
         )
     lines.append(r"\midrule")
 
-    # Speedup rows (only B=32 and B=128 are in the paper)
+    # Speedup rows span all three measured batch sizes (8/32/128) so the
+    # abstract's min/max ranges are traceable in the table -- e.g. the mixed
+    # maximum (B=8, N=1000) would otherwise be invisible here. Primary row is vs
+    # PEFT's native mixed-batch API (the like-for-like baseline the abstract
+    # leads with; bold); secondary is vs grouped per-adapter swapping (the
+    # worst-case ceiling, plain). Falls back to grouped-only if mixed is absent.
+    SPEEDUP_BATCHES = (8, 32, 128)
+
     def qps(rows, n, b):
         return float(find_row(rows, num_adapters=str(n),
                               batch_size=str(b))["throughput_samples_sec"])
-    for b in (32, 128):
+
+    if peft_mixed is not None:
+        for b in SPEEDUP_BATCHES:
+            sp100 = qps(sysname_ref, 100, b) / qps(peft_mixed, 100, b)
+            sp1k  = qps(sysname_ref, 1000, b) / qps(peft_mixed, 1000, b)
+            # Speedup is a QPS ratio, so it goes in the QPS sub-column with the
+            # p50 cell left blank (empty first cell of each N block).
+            lines.append(
+                rf"\textbf{{Speedup\textsubscript{{mixed}}}} ($\mathcal{{B}}{{=}}{b}$) & "
+                rf" & \textbf{{{fmt_f(sp100, 1)}$\times$}} & "
+                rf" & \textbf{{{fmt_f(sp1k, 1)}$\times$}} \\"
+            )
+        lines.append(r"\addlinespace")
+    for b in SPEEDUP_BATCHES:
         sp100 = round(qps(sysname_ref, 100, b) / qps(peft_grouped, 100, b))
         sp1k  = round(qps(sysname_ref, 1000, b) / qps(peft_grouped, 1000, b))
+        label   = r"Speedup\textsubscript{grouped}"
+        cell100 = rf"{sp100}$\times$"
+        cell1k  = rf"{sp1k}$\times$"
+        if peft_mixed is None:  # no mixed row -> grouped is primary, bold it
+            label   = rf"\textbf{{{label}}}"
+            cell100 = rf"\textbf{{{cell100}}}"
+            cell1k  = rf"\textbf{{{cell1k}}}"
         lines.append(
-            rf"\textbf{{Speedup}} ($\mathcal{{B}}{{=}}{b}$) & "
-            rf"\multicolumn{{2}}{{c}}{{\textbf{{{sp100}$\times$}}}} & "
-            rf"\multicolumn{{2}}{{c}}{{\textbf{{{sp1k}$\times$}}}} \\"
+            rf"{label} ($\mathcal{{B}}{{=}}{b}$) & "
+            rf" & {cell100} & "
+            rf" & {cell1k} \\"
         )
     lines.append(r"\bottomrule")
     lines.append(r"\end{tabular}")
