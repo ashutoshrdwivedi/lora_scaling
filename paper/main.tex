@@ -164,7 +164,7 @@ analogously via zero-padded BMM.
     without custom CUDA kernels, in standard PyTorch, removing the
     custom-kernel build step, a common source of deployment friction
     on managed GPU platforms (\S\ref{sec:system},
-    Appendix~\ref{sec:deployment}).
+    \ref{sec:deployment}).
 
   \item We validate the served workload: rank-\HeadlineRank{} LoRA on
     \texttt{BAAI/bge-m3} retains \SetfitBgeRetainsPct\% of full
@@ -222,7 +222,7 @@ $1/\BgeParamReductionRankEight$ the trainable-parameter cost,\footnote{We
   \texttt{paraphrase-mpnet-base-v2} \cite{tunstall2022efficient}, which
   reproduces SetFit-comparable accuracy and shows the same
   low-rank-vs-full-fine-tuning pattern (\SetfitRetainsPct\% retained;
-Table~\ref{tab:accuracy}, Appendix~\ref{app:accuracy}).} confirming that
+Table~\ref{tab:accuracy}, \ref{app:accuracy}).} confirming that
 tenant adaptation is worth serving; the remaining
 barrier is \emph{serving}: combining thousands of these adapters in a single
 forward pass.
@@ -233,7 +233,7 @@ forward pass.
   \setlength{\tabcolsep}{4pt}
   \caption{Per-task accuracy on \texttt{BAAI/bge-m3}, the serving model
     ($N{=}8$ examples per class, rank=8, mean over 10 seeds; protocol in
-    Appendix~\ref{app:accuracy}). \emph{Frozen} fits only the classification
+    \ref{app:accuracy}). \emph{Frozen} fits only the classification
     head on the pre-trained encoder's embeddings; $\Delta$ is LoRA minus
   Full~FT. Scores are accuracy except Amazon-CF (MCC).}
   \label{tab:accuracy_bge}
@@ -695,7 +695,7 @@ lower bounds that only widen, rendering PEFT impractical for large tenant pools.
 % =============================================================================
 \section{Conclusion}
 \label{sec:conclusion}
-Multi-tenant NLP features increasingly require per-tenant encoder
+Multi-tenant NLP encoder features increasingly require per-tenant
 adaptation: it improves accuracy over a shared frozen encoder while keeping
 each tenant's data and weights isolated. LoRA provides this cheaply, for
 serving this at scale we presented \sysname, which serves many LoRA adapters
@@ -704,7 +704,7 @@ and classification heads into batched matrix multiplications, keeps latency flat
 the adapter pool grows to tens of thousands on a single GPU. A per-tenant
 encoder LoRA feature can therefore run as a shared service that amortizes
 GPU cost across tenants and scales out as stateless, tenant-sharded replicas
-(Appendix~\ref{sec:deployment}).
+(\ref{sec:deployment}).
 
 % =============================================================================
 \section*{Limitations}
@@ -736,7 +736,7 @@ removes this CPU bottleneck while retaining pure-PyTorch compatibility.
 \paragraph{Single-node evaluation.}
 All latency and throughput results are measured on one GPU. The architecture
 targets horizontal scale-out via stateless, tenant-sticky replicas, with a
-reference Kubernetes deployment provided (Appendix~\ref{sec:deployment});
+reference Kubernetes deployment provided (\ref{sec:deployment});
 cluster-level throughput and behavior under skewed (hot-tenant) traffic remain
 to be evaluated.
 
@@ -764,6 +764,7 @@ present in weight-merging approaches.
 \bibliography{references}
 
 \appendix
+\renewcommand{\thesection}{Appendix~\Alph{section}}
 \clearpage
 
 % =============================================================================
