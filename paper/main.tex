@@ -592,20 +592,20 @@ encoders.}
 Could custom kernels (Punica's SGMV, S-LoRA's MBGMV)
 replacing our \texttt{torch.bmm} help? Three measurements
 at $\mathcal{B}{=}\HeadlineBatch$, $N{=}1{,}000$, $r{=}\HeadlineRank$ bound the
-upside to single digits. The \emph{analytic FLOP ratio} per layer is
+upside to single digits. First, the \emph{analytic FLOP ratio} per layer is
 $3d/r{=}\FlopBaseToLoraRatio$, so even an instantaneous LoRA kernel
-saves at most
-\FlopMaxLoraSavingsPct\% of FLOPs. A \emph{profiler trace} (self CUDA time,
-isolating the LoRA shrink/expand via an apply-LoRA on/off difference) attributes
-\textbf{\ProfLoraBmmIsolatedPct\%} of forward GPU time to the LoRA \texttt{bmm}
-versus \textbf{\ProfBaseLinearPct\%} for the base projections. A
+cuts at most
+\FlopMaxLoraSavingsPct\% of FLOPs. Second, a \emph{profiler trace} (self CUDA
+time; the LoRA shrink/expand isolated by an apply-LoRA on/off toggle) charges only
+\textbf{\ProfLoraBmmIsolatedPct\%} of forward GPU time to the LoRA \texttt{bmm},
+versus \textbf{\ProfBaseLinearPct\%} for the base projections. Third, a
 \emph{no-LoRA ablation} skipping the entire LoRA path (gather, shrink/expand,
 merge) saves \textbf{\AblationLoraCostMs~ms of \AblationLoraOnMs~ms}
-(\textbf{\AblationLoraCostPct\%}); the gather and merge,
+(\textbf{\AblationLoraCostPct\%}); here the gather and merge,
 not the \texttt{bmm}, dominate the gap above the
 \ProfLoraBmmIsolatedPct\% kernel cost. Custom fused
-kernels target only this path, so \AblationLoraCostPct\% is the hard
-ceiling here.
+kernels touch only this path, so \AblationLoraCostPct\% is the hard
+ceiling.
 
 % Throughput-vs-baselines figure dropped: redundant with Table tab:baselines.
 % \begin{figure}[t]
