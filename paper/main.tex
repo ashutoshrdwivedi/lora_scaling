@@ -265,12 +265,12 @@ pooling, and task heads) that classification serving requires. vLLM
 \cite{kwon2023vllm} adopts these kernels but its encoder classes do not:
 v0.23.0 rejects \texttt{enable\_lora} for \texttt{BAAI/bge-m3} at
 initialization, and multi-adapter classification serving remains an unmerged
-draft.\footnote{vLLM PR \#24596, unmerged as of June~2026.}
+draft.\footnote{vLLM PR \href{https://github.com/vllm-project/vllm/pull/24596}{\#24596}, unmerged as of June~2026.}
 
 \paragraph{Encoder and multi-adapter serving.}
 HuggingFace TEI \cite{huggingface2023tei} serves encoder/embedding models at
 high throughput but has no adapter support (an open feature request as of
-June~2026).\footnote{\url{https://github.com/huggingface/text-embeddings-inference/issues/788}}
+June~2026).\footnote{TEI issue \href{https://github.com/huggingface/text-embeddings-inference/issues/788}{\#788}, open as of June~2026.}
 Vishwanathan et al.~\cite{vishwanathan2022multitenant} serve a shared sentence
 bi-encoder with per-tenant final-layer weights swapped per request, forcing
 each request to be single-tenant. PetS \cite{zhou2022pets}, the closest prior
@@ -859,7 +859,7 @@ replicas are independent, aggregate request throughput grows with the number of
 pods ($\approx\!K\times$ a single node for $K$ pods). Serving more than a single
 node's $\approx$\CapacityRankEight-adapter ceiling (Finding~4)
 additionally requires
-partitioning the adapters across pods by the same hash, so each loads only its
+partitioning the adapters across pods by the same hash, so each pod loads only its
 shard; the reference deployment instead replicates a fixed adapter set per
 pod (simpler, and adequate when the population fits one node), leaving
 shard-aware placement as a configuration change.
