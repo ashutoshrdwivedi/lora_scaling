@@ -137,7 +137,7 @@ decoder generation: the bidirectional forward pass at sequence length $S \gg 1$
 is compute-bound and dominated by the base model's projection weights.
 Consequently, the LoRA compute path accounts for only
 \AblationLoraCostPct{}\% of the total forward GPU time, meaning
-custom CUDA kernels yield minimal, single-digit performance gains
+custom CUDA kernels yield an optimistic upper bound of single-digit performance gains
 (\S\ref{sec:results_custom_kernels}, Finding~6).
 This structural difference makes standard batched matrix
 multiplication (BMM) the appropriate primitive for encoder serving.
