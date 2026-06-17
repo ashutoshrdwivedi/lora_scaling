@@ -633,13 +633,6 @@ the adapters present in the batch (\S\ref{sec:setup}).
 \emph{Homogeneous}, PEFT's friendliest case, uses
 single-tenant batches: one \texttt{set\_adapter} and one batched forward each.
 \emph{Base} is the bare model with no adapters ($N$-independent).
-We also report PEFT's $N$-adapter registration cost: \texttt{add\_adapter}
-re-scans the growing module tree on each call ($\mathcal{O}(N^2)$ total), so loading the pool takes
-\PeftGroupedAddAdapterSecNHundred~s at $N{=}100$ and
-\PeftGroupedAddAdapterSecNOneK~s at $N{=}1{,}000$, versus
-\LateFuseColdLoadSecNHundred~s and \LateFuseColdLoadSecNOneK~s for \sysname{}'s
-linear-time \texttt{AdapterStore} preload, a
-\ColdStartSpeedupMin--\ColdStartSpeedupNOneK$\times$ reduction.
 
 \begin{table}[h]
   \centering
@@ -655,36 +648,38 @@ linear-time \texttt{AdapterStore} preload, a
   \input{table_baselines.tex}
 \end{table}
 
-\paragraph{Finding 7: PEFT's per-swap cost is $\mathcal{O}(N)$ in the
-tenant pool.}
-\emph{Homogeneous} batching, PEFT's best case (single-tenant batches, one
-\texttt{set\_adapter} and forward each), is competitive at $N{=}100$, even
+\paragraph{Finding 7: PEFT does not scale to large tenant pools.}
+\emph{Homogeneous} batching, PEFT's best case, is competitive at $N{=}100$, even
 edging \sysname{} at $\mathcal{B}{=}128$
 (\PeftHomogQpsNHundredBOneTwentyEight{}
-vs.\ \SysRefQpsNHundredBOneTwentyEight~samples/sec). Yet
-holding batching fixed and growing the pool to 1{,}000 collapses throughput
-\PeftHomogCollapseMin--\PeftHomogCollapseMax$\times$
-(\PeftHomogQpsNHundredBThirtyTwo$\to$\PeftHomogQpsNOneKBThirtyTwo~samples/sec
-at $\mathcal{B}{=}\HeadlineBatch$), leaving \sysname{}
-\SpeedupHomogNOneKBOneTwentyEight--\SpeedupHomogNOneKBEight$\times$
-faster at $N{=}1{,}000$; since only the adapter \emph{count} changed,
-this isolates
-\texttt{set\_adapter} as $\mathcal{O}(N)$. \emph{Grouped} fares worse: mixed
+vs.\ \SysRefQpsNHundredBOneTwentyEight~samples/sec). This edge is a small-pool
+artifact: at the same $\mathcal{B}{=}128$, growing the pool to $1{,}000$
+collapses it from \PeftHomogQpsNHundredBOneTwentyEight{} to
+\PeftHomogQpsNOneKBOneTwentyEight~samples/sec (up to
+\PeftHomogCollapseMax$\times$ at smaller batches), leaving \sysname{}
+\SpeedupHomogNOneKBOneTwentyEight--\SpeedupHomogNOneKBEight$\times$ faster at
+$N{=}1{,}000$. This isolates the collapse to \texttt{set\_adapter}, which rescans the per-layer
+\texttt{ModuleDict} on every call, an $\mathcal{O}(N)$ cost by construction.
+\emph{Grouped} fares worse: mixed
 batches rarely share an adapter, so \sysname{} leads by
 \SpeedupGroupedNHundredBThirtyTwo--\SpeedupGroupedNOneKBThirtyTwo$\times$ at
 $\mathcal{B}{=}\HeadlineBatch$. PEFT's native \emph{mixed} API sits between
 the two: it shares the base forward, but loops over the batch's adapters at
-every LoRA layer and its per-call validation scales with $N$ (at
-  $\mathcal{B}{=}8$, where the expected number of distinct adapters per batch
-  is essentially unchanged, p50 still grows from
-  \PeftMixedPFiftyNHundredBEight{} to \PeftMixedPFiftyNOneKBEight~ms as $N$
-grows $100\to1{,}000$), leaving \sysname{}
+every LoRA layer, and its per-call validation scales with $N$: at
+$\mathcal{B}{=}8$, where distinct adapters per batch stay essentially fixed,
+p50 still grows from \PeftMixedPFiftyNHundredBEight{} to
+\PeftMixedPFiftyNOneKBEight~ms as $N$ grows $100\to1{,}000$, leaving \sysname{}
 \SpeedupMixedMin--\SpeedupMixedMax$\times$ faster across the measured grid.
-We cap the sweep at $N{=}1{,}000$, but neither PEFT cost plateaus there.
-By construction the per-swap penalty grows as $\mathcal{O}(N)$ and one-time registration as
-$\mathcal{O}(N^2)$, so both the throughput ratios above and the
-load-time gap are conservative lower bounds that only widen as the pool grows,
-rendering PEFT an impractical choice for large tenant pools.
+Registration scales worse still: \texttt{add\_adapter} rescans that same
+\texttt{ModuleDict} as the pool grows, an $\mathcal{O}(N^2)$ cumulative cost, so
+loading the pool takes \PeftGroupedAddAdapterSecNHundred~s at $N{=}100$ but
+\PeftGroupedAddAdapterSecNOneK~s at $N{=}1{,}000$, versus
+\LateFuseColdLoadSecNHundred~s and \LateFuseColdLoadSecNOneK~s for \sysname{}'s
+linear-time \texttt{AdapterStore} preload---a
+\ColdStartSpeedupMin--\ColdStartSpeedupNOneK$\times$ cold-start reduction.
+We cap the sweep at $N{=}1{,}000$, but both costs grow with the pool by
+construction, so the throughput and load-time gaps above are conservative
+lower bounds that only widen, rendering PEFT impractical for large tenant pools.
 
 % TODO (Task #4): §4.5 Multi-Model and Multi-Hardware Generalization.
 % Run the latency/throughput sweep on at least 3 base encoders × 3 GPU classes:
