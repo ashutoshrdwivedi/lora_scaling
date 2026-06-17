@@ -729,12 +729,9 @@ The \texttt{BatchAssembler} runs on CPU and gathers per-sample adapter
 slices into per-layer lists via Python loops.
 For very high request rates ($>$10{,}000 requests/sec), this becomes the
 throughput bottleneck.
-A custom CUDA or C++ gather kernel that indexes directly into the adapter
-store would eliminate this overhead, at the cost of departing from
-pure-PyTorch deployability. Alternatively, moving the adapter cache into a
-single contiguous GPU tensor and performing batch assembly via GPU-resident
-index selection (e.g., \texttt{torch.index\_select}) represents a promising path to
-eliminate this CPU bottleneck while retaining pure-PyTorch compatibility.
+Moving the adapter cache into a single contiguous GPU tensor and performing
+batch assembly via GPU-resident index selection (e.g., \texttt{torch.index\_select})
+removes this CPU bottleneck while retaining pure-PyTorch compatibility.
 
 \paragraph{Single-node evaluation.}
 All latency and throughput results are measured on one GPU. The architecture
