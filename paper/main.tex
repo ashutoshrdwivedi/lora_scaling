@@ -695,15 +695,15 @@ lower bounds that only widen, rendering PEFT impractical for large tenant pools.
 % =============================================================================
 \section{Conclusion}
 \label{sec:conclusion}
-
-We presented \sysname, a serving system for multi-tenant LoRA on encoder
-models built on late-fusion BMM. Encoder serving inverts the economics that
-justify custom LoRA kernels on decoders: gathering per-tenant deltas and
-classification heads into batched matrix multiplications keeps latency flat
-as the adapter pool grows to tens of thousands on a single GPU, with
-no compilation step. A per-tenant encoder LoRA feature can therefore
-be offered as a shared service that amortizes GPU cost across
-tenants and scales out as stateless, tenant-sharded replicas
+Multi-tenant NLP features increasingly require per-tenant encoder
+adaptation: it improves accuracy over a shared frozen encoder while keeping
+each tenant's data and weights isolated. LoRA provides this cheaply, for
+serving this at scale we presented \sysname, which serves many LoRA adapters
+in one shared forward pass via late-fusion BMM. Gathering per-tenant deltas
+and classification heads into batched matrix multiplications, keeps latency flat as
+the adapter pool grows to tens of thousands on a single GPU. A per-tenant
+encoder LoRA feature can therefore run as a shared service that amortizes
+GPU cost across tenants and scales out as stateless, tenant-sharded replicas
 (Appendix~\ref{sec:deployment}).
 
 % =============================================================================
