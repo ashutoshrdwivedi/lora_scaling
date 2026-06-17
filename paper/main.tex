@@ -389,9 +389,9 @@ The logit computation is:
   \;\in\; \mathbb{R}^{\mathcal{B} \times 1 \times c_{\max}}
 \end{equation}
 
-Callers slice $[:, :, :c_i]$ per sample before applying softmax.
-Because these padded dimensions are discarded prior to softmax, they
-have no effect on the resulting probability distribution of any tenant.
+Callers slice $[:, :, :c_i]$ per sample before softmax, so the padded
+entries never enter the normalization and leave each tenant's
+distribution unchanged.
 
 \subsection{Implementation}
 \label{sec:impl}
