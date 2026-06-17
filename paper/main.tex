@@ -302,7 +302,7 @@ single encoder forward pass.
     \node[io]   (x)      at (0,0)         {mixed-tenant batch $x$ \,$(\mathcal{B}{\times}S{\times}d)$};
     \node[base] (basep)  at (-1.8,-1.425) {base path\\$W_0\,x$\\\textit{shared, once}};
     \node[lora] (shrink) at (1.65,-1.0)   {\texttt{shrink}: $\texttt{bmm}(x,[A_i])$\\$\to\mathcal{B}{\times}S{\times}r$};
-    \node[lora] (expand) at (1.65,-1.85)  {\texttt{expand}: $\texttt{bmm}(\cdot,[B_i])$\\$\to\mathcal{B}{\times}S{\times}d$};
+    \node[lora] (expand) at (1.65,-1.85)  {\texttt{expand}: $\texttt{bmm}(h_{\text{shrink}},[B_i])$\\$\to\mathcal{B}{\times}S{\times}d$};
     \node[add]  (add)    at (0,-2.75)     {$+$};
     \node[head] (head)   at (0,-3.6)      {pooled $\texttt{[CLS]}$ $\to$ per-tenant head\\\textit{zero-padded} \texttt{bmm}};
     \node[io]   (logits) at (0,-4.4)      {per-tenant logits};
