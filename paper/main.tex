@@ -650,7 +650,7 @@ linear-time \texttt{AdapterStore} preload, a
     \S\ref{sec:results_baselines} ($r{=}\HeadlineRank$; PEFT measured at
     $\mathcal{B}\in\{8,32,128\}$). Speedup rows are QPS ratios (QPS column)
     of \sysname{} over \emph{mixed} (like-for-like; bold) and \emph{grouped}
-    (worst case).}
+  (worst case).}
   \label{tab:baselines}
   \input{table_baselines.tex}
 \end{table}
@@ -680,6 +680,11 @@ every LoRA layer and its per-call validation scales with $N$ (at
   \PeftMixedPFiftyNHundredBEight{} to \PeftMixedPFiftyNOneKBEight~ms as $N$
 grows $100\to1{,}000$), leaving \sysname{}
 \SpeedupMixedMin--\SpeedupMixedMax$\times$ faster across the measured grid.
+We cap the sweep at $N{=}1{,}000$, but neither PEFT cost plateaus there.
+By construction the per-swap penalty grows as $\mathcal{O}(N)$ and one-time registration as
+$\mathcal{O}(N^2)$, so both the throughput ratios above and the
+load-time gap are conservative lower bounds that only widen as the pool grows,
+rendering PEFT an impractical choice for large tenant pools.
 
 % TODO (Task #4): §4.5 Multi-Model and Multi-Hardware Generalization.
 % Run the latency/throughput sweep on at least 3 base encoders × 3 GPU classes:
