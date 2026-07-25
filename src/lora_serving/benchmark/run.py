@@ -34,7 +34,7 @@ from lora_serving.benchmark.synthetic import (
     make_synthetic_lr_weights,
 )
 from lora_serving.config import LoraServingConfig
-from lora_serving.model.encoder import EncoderWithLora
+from lora_serving.model import EncoderWithLora, SentenceBertEncoderWithLora, T5EncoderWithLora
 from lora_serving.weights.batch import BatchAssembler
 from lora_serving.weights.store import AdapterStore
 
@@ -80,7 +80,28 @@ def print_memory_ceiling(model_name: str, dtype: torch.dtype, vram_gb: float) ->
     print()
 
 
+ENCODER_REGISTRY = {
+    "bert": EncoderWithLora,
+    "sbert": SentenceBertEncoderWithLora,
+    "t5": T5EncoderWithLora,
+}
+
+DEFAULT_FAMILY_SWEEP = [
+    ("bert", "microsoft/deberta-v2-xxlarge"),
+    ("sbert", "sentence-transformers/all-roberta-large-v1"),
+    ("t5", "google-t5/t5-large"),
+]
+
+BERT_COMPATIBLE_MODEL_TYPES = {
+    "bert",
+    "roberta",
+    "xlm-roberta",
+    "mpnet",
+}
+
+
 def run_single_config(
+    encoder_family: str,
     model_name: str,
     num_adapters: int,
     batch_size: int,
@@ -109,9 +130,18 @@ def run_single_config(
         device=device,
         dtype=dtype,
     )
+    model_cls = ENCODER_REGISTRY[encoder_family]
+    if encoder_family in {"bert", "sbert"} and config.model_type not in BERT_COMPATIBLE_MODEL_TYPES:
+        raise ValueError(
+            f"{model_name} has model_type={config.model_type!r}, which is not compatible with "
+            f"the current {encoder_family} custom encoder. DeBERTa-v2 needs its own "
+            "disentangled-attention LoRA encoder before this benchmark can run faithfully."
+        )
+    if encoder_family == "t5" and config.model_type != "t5":
+        raise ValueError(f"{model_name} has model_type={config.model_type!r}; expected a T5-family model.")
 
-    print(f"  Loading base model ({model_name}, {dtype})...")
-    model = EncoderWithLora.from_pretrained_serving(config)
+    print(f"  Loading {encoder_family} base model ({model_name}, {dtype})...")
+    model = model_cls.from_pretrained_serving(config)
     model.eval()
 
     print(f"  Generating {num_adapters} synthetic adapters (rank={lora_rank})...")
@@ -182,6 +212,7 @@ def run_single_config(
 
     return {
         "model": model_name,
+        "encoder_family": encoder_family,
         "dtype": str(dtype).replace("torch.", ""),
         "num_adapters": num_adapters,
         "batch_size": batch_size,
@@ -222,6 +253,12 @@ def main():
     parser = argparse.ArgumentParser(description="Multi-tenant LoRA serving benchmark")
     parser.add_argument("--model", default="BAAI/bge-m3")
     parser.add_argument("--dtype", choices=list(DTYPE_MAP.keys()), default="fp16")
+    parser.add_argument("--encoder-family", choices=sorted(ENCODER_REGISTRY), default="bert")
+    parser.add_argument(
+        "--default-family-sweep",
+        action="store_true",
+        help="Run the requested BERT/SBERT/T5 model sweep instead of a single model.",
+    )
     parser.add_argument(
         "--adapters", nargs="+", type=int,
         default=[100, 1000, 5000, 10000, 20000, 50000],
@@ -261,7 +298,9 @@ def main():
     gpu_name = torch.cuda.get_device_name(0)
     vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
     print(f"GPU: {gpu_name}  ({vram_gb:.1f} GB VRAM)")
-    print_memory_ceiling(args.model, dtype, vram_gb)
+    model_specs = DEFAULT_FAMILY_SWEEP if args.default_family_sweep else [(args.encoder_family, args.model)]
+    for _, model_name in model_specs:
+        print_memory_ceiling(model_name, dtype, vram_gb)
 
     seeds: list[int | None] = args.seeds if args.seeds else [None]
 
@@ -283,42 +322,52 @@ def main():
         configs.add(tuple(int(p) for p in parts))
     configs = sorted(configs)
 
-    print(f"Sweep: {len(configs)} unique (N, B, r) configs × {len(seeds)} seed(s)\n")
+    print(
+        f"Sweep: {len(model_specs)} model(s) × {len(configs)} unique (N, B, r) configs "
+        f"× {len(seeds)} seed(s)\n"
+    )
 
     results = []
-    total = len(configs) * len(seeds)
+    total = len(model_specs) * len(configs) * len(seeds)
     done = 0
 
     # Seed is the outermost loop: each repeat is a full pass over the sweep,
     # so between-seed variance also captures slow drift (thermal, clocks).
     for seed in seeds:
-        for num_adapters, batch_size, lora_rank in configs:
-            done += 1
-            print(f"[{done}/{total}] adapters={num_adapters} batch={batch_size} "
-                  f"rank={lora_rank} seed={seed}")
-            try:
-                row = run_single_config(
-                    model_name=args.model,
-                    num_adapters=num_adapters,
-                    batch_size=batch_size,
-                    lora_rank=lora_rank,
-                    seq_len=args.seq_len,
-                    warmup=args.warmup,
-                    iters=args.iters,
-                    dtype=dtype,
-                    num_labels=args.num_labels,
-                    seed=seed,
+        for encoder_family, model_name in model_specs:
+            for num_adapters, batch_size, lora_rank in configs:
+                done += 1
+                print(
+                    f"[{done}/{total}] family={encoder_family} model={model_name} "
+                    f"adapters={num_adapters} batch={batch_size} rank={lora_rank} seed={seed}"
                 )
-            except torch.cuda.OutOfMemoryError as e:
-                print(f"  OOM at adapters={num_adapters} batch={batch_size} rank={lora_rank}: {e}")
-                torch.cuda.empty_cache()
-                continue
-            results.append(row)
-            print(f"  p50={row['p50_ms']}ms  p95={row['p95_ms']}ms  p99={row['p99_ms']}ms  "
-                  f"asm={row['assemble_mean_ms']}ms ({row['assemble_share_pct']}%)  "
-                  f"fwd={row['forward_mean_ms']}ms  "
-                  f"tput={row['throughput_samples_sec']} samples/s  "
-                  f"peak_gpu={row['peak_gpu_mem_gb']}GB\n")
+                try:
+                    row = run_single_config(
+                        encoder_family=encoder_family,
+                        model_name=model_name,
+                        num_adapters=num_adapters,
+                        batch_size=batch_size,
+                        lora_rank=lora_rank,
+                        seq_len=args.seq_len,
+                        warmup=args.warmup,
+                        iters=args.iters,
+                        dtype=dtype,
+                        num_labels=args.num_labels,
+                        seed=seed,
+                    )
+                except torch.cuda.OutOfMemoryError as e:
+                    print(
+                        f"  OOM at family={encoder_family} model={model_name} "
+                        f"adapters={num_adapters} batch={batch_size} rank={lora_rank}: {e}"
+                    )
+                    torch.cuda.empty_cache()
+                    continue
+                results.append(row)
+                print(f"  p50={row['p50_ms']}ms  p95={row['p95_ms']}ms  p99={row['p99_ms']}ms  "
+                      f"asm={row['assemble_mean_ms']}ms ({row['assemble_share_pct']}%)  "
+                      f"fwd={row['forward_mean_ms']}ms  "
+                      f"tput={row['throughput_samples_sec']} samples/s  "
+                      f"peak_gpu={row['peak_gpu_mem_gb']}GB\n")
 
     if not results:
         print("No results collected (all configs OOM'd?)")
