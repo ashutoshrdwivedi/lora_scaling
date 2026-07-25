@@ -1,0 +1,45 @@
+# Batch-assembly strategies — BAAI/bge-m3
+# GPU: NVIDIA A100-SXM4-80GB
+# N=2000 r=8 seq=128 dtype=fp16 warmup=20 iters=100 seeds=1,2,3,4,5
+# Values are mean±s.d. across seeds.
+
+## End-to-end latency (assemble + forward + LR head), mean ms
+ batch          baseline          indexsel          idx+comp   speedup
+     8      22.289±0.910      19.105±0.070      19.179±0.028     1.17x
+    16      25.750±0.195      19.274±0.067      19.445±0.079     1.34x
+    32      42.473±1.083      26.967±0.018      27.102±0.046     1.58x
+    64      85.400±1.630      49.461±0.033      49.647±0.077     1.73x
+   128     170.272±2.683      95.234±0.058      95.570±0.055     1.79x
+
+## Assembly-only time (Finding 5 quantity), mean ms
+ batch          baseline          indexsel          idx+comp
+     8       3.830±0.775       0.427±0.005       0.544±0.002
+    16       6.875±0.081       0.433±0.003       0.557±0.005
+    32      16.387±1.061       0.470±0.009       0.567±0.012
+    64      37.427±1.645       0.475±0.008       0.579±0.015
+   128      77.627±2.687       0.505±0.008       0.609±0.020
+
+## Assembly share of end-to-end (%)
+ batch          baseline          indexsel          idx+comp
+     8         17.1±2.6%          2.2±0.0%          2.8±0.0%
+    16         26.7±0.1%          2.2±0.0%          2.9±0.0%
+    32         38.5±1.5%          1.7±0.0%          2.1±0.0%
+    64         43.8±1.1%          1.0±0.0%          1.2±0.0%
+   128         45.6±0.9%          0.5±0.0%          0.6±0.0%
+
+## Tail ratio p99/p50 (end-to-end)
+ batch          baseline          indexsel          idx+comp
+     8        1.15±0.25x        1.07±0.08x        1.05±0.07x
+    16        1.12±0.12x        1.07±0.08x        1.12±0.12x
+    32        1.14±0.09x        1.01±0.00x        1.02±0.01x
+    64        4.12±0.57x        1.01±0.00x        1.01±0.00x
+   128        2.53±0.19x        1.01±0.00x        1.01±0.00x
+
+Interpretation:
+- 'speedup' is baseline/indexsel end-to-end (ratio of seed means).
+  >1 means the index_select gather reduced total latency.
+- 'idx+comp' vs 'indexsel' isolates torch.compile's MARGINAL
+  effect on the already-vectorized gather (the id->row Python
+  lookup is eager in both, so this is the pure fusion upside).
+- Assembly share collapsing toward 0% means the CPU-side
+  bottleneck is gone; the forward then bounds latency.
