@@ -19,20 +19,22 @@
 # makes the comparison against PEFT exact (2.2e-5, fp32 round-off on 900M
 # params). Both facts are asserted in tests/test_real_checkpoint_parity.py.
 #
-# Measurement kernel is otherwise identical to the paper's run_sxm80.sh: fp16,
-# seq=128, r=8, warmup 50 / iters 200, 5 seeds (PEFT arms at warmup 10 / iters
-# 50). Only the GRID is trimmed: an N-spine at the operating point B=32 plus a
-# B-crossbar at N=1000, which is exactly what the reported columns (p50 drift
-# as N->ceiling, throughput, speedup vs PEFT-mixed) consume. The full N x B
-# cross product is already in Table 2 for bge-m3.
+# Grid and measurement kernel both mirror the paper's run_sxm80.sh: the full
+# N x B cross product at fp16, seq=128, r=8, warmup 50 / iters 200, 5 seeds,
+# plus the same three rank cells at the (1000, 32) operating point (PEFT arms
+# at warmup 10 / iters 50, and at B=8/32/128 only, exactly as in the paper).
+# Measuring the whole grid rather than a subset means every cell Table 2 has
+# for bge-m3 has a counterpart here, so a rebuttal answer can quote any of
+# them without a second pod session.
 #
 # Ceiling: 1 module x 2 (A,B) x 24 layers x 1536 x r8 x 2B = 1.18 MB/adapter
 # -> formula says ~70k on 80GB; applying the same ~12% overestimate the paper
 # saw for bge-m3 (formula 52.8k vs measured 47k) gives a practical ~62k. The
 # sweep therefore runs out to 60k and the probe brackets it.
 #
-# Runtime ~1h55m. Independent of the other rebuttal scripts -- safe to run
-# concurrently on a separate pod.
+# Runtime ~3h35m (DeBERTa's forward is ~2.6x bge-m3's, so the full grid costs
+# more here than the paper's 2h). Independent of the other rebuttal scripts --
+# safe to run concurrently on a separate pod.
 set -u
 export HOME=/root
 export PATH=$HOME/.local/bin:$PATH
@@ -72,15 +74,17 @@ uv run python -m benchmarks.profiling.model_metadata \
   > "$R/model_metadata_$TAG.log" 2>&1
 echo "  metadata rc=$?"
 
-# N-spine at B=32 (the operating point) + B-crossbar at N=1000 via
-# --extra-configs, the same mechanism the paper uses to fold in rank cells so
-# the shared (1000, 32) cell is measured exactly once per seed.
-echo "=== [2/5] LateFuse sweep, 5 seeds (~50 min) ==="
+# --extra-configs folds the r!=8 cells into this same run so the shared
+# (1000, 32, r8) cell is measured exactly once and all four ranks are timed
+# back-to-back within each seed pass (one thermal envelope), matching the
+# paper's rationale for not running ranks as a separate later sweep.
+# 7 N x 5 B + 3 rank cells = 38 configs x 5 seeds = 190 runs.
+echo "=== [2/5] LateFuse sweep, full grid, 5 seeds (~2h50m) ==="
 uv run python -m lora_serving.benchmark.run \
   --model "$M" --engine hf --dtype fp16 \
   --adapters 100 1000 5000 10000 20000 40000 60000 \
-  --batch-sizes 32 --lora-ranks 8 --target-modules value \
-  --extra-configs 1000:8:8 1000:128:8 \
+  --batch-sizes 8 16 32 64 128 --lora-ranks 8 --target-modules value \
+  --extra-configs 1000:32:4 1000:32:16 1000:32:32 \
   --seq-len 128 --warmup 50 --iters 200 \
   --seeds 1 2 3 4 5 \
   --out "$R/sweep_${TAG}_a100.csv" > "$R/sweep_${TAG}_a100.log" 2>&1

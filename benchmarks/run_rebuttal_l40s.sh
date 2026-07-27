@@ -14,12 +14,15 @@
 # Ceiling scales with VRAM exactly as Finding 4 predicts: 1.57 MB/adapter on
 # ~45 GB usable -> ~28k adapters, vs 47k on the 80GB A100.
 #
-# Measurement kernel identical to run_sxm80.sh; grid is the N-spine at B=32
-# plus a B-crossbar at N=1000 (see run_rebuttal_deberta.sh for the rationale).
+# Grid and measurement kernel both mirror run_sxm80.sh: the full N x B cross
+# product plus the same three rank cells at the (1000, 32) operating point.
+# Since this row varies ONLY the GPU, a full grid makes it directly diffable
+# against Table 2 cell for cell -- the cleanest form of a hardware claim.
+# 6 N x 5 B + 3 rank cells = 33 configs x 5 seeds = 165 runs.
 # The PEFT arm runs on this same node so the speedup column is never a
 # cross-node comparison.
 #
-# Runtime ~1h30m. Independent of the other rebuttal scripts.
+# Runtime ~2h45m. Independent of the other rebuttal scripts.
 set -u
 export HOME=/root
 export PATH=$HOME/.local/bin:$PATH
@@ -50,12 +53,12 @@ uv run python -m benchmarks.profiling.model_metadata \
   > "$R/model_metadata_$TAG.log" 2>&1
 echo "  metadata rc=$?"
 
-echo "=== [2/5] LateFuse sweep, 5 seeds (~35 min) ==="
+echo "=== [2/5] LateFuse sweep, full grid, 5 seeds (~2h) ==="
 uv run python -m lora_serving.benchmark.run \
   --model "$M" --dtype fp16 \
   --adapters 100 1000 5000 10000 20000 28000 \
-  --batch-sizes 32 --lora-ranks 8 \
-  --extra-configs 1000:8:8 1000:128:8 \
+  --batch-sizes 8 16 32 64 128 --lora-ranks 8 \
+  --extra-configs 1000:32:4 1000:32:16 1000:32:32 \
   --seq-len 128 --warmup 50 --iters 200 \
   --seeds 1 2 3 4 5 \
   --out "$R/sweep_bgem3_$TAG.csv" > "$R/sweep_bgem3_$TAG.log" 2>&1
