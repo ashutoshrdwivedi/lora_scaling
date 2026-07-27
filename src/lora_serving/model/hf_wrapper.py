@@ -22,6 +22,7 @@ from transformers import AutoModel
 
 from lora_serving.config import LoraServingConfig
 from lora_serving.ops.head import LRHeadOps
+from lora_serving.ops.lora import LoraOps
 from lora_serving.weights.batch import BatchedLRWeights, LayerwiseBatchedWeights
 
 # Per-layer module paths (relative to "encoder.layer.{i}.") for each logical
@@ -58,9 +59,19 @@ class HFEncoderWithLora(nn.Module):
         super().__init__()
         self.base = base
         self.config = serving_config
+        # Same pre-allocated shrink/expand buffers the specialized encoder
+        # uses, so the delta path is allocation-free and the two engines run
+        # an identical LoRA computation — the only difference between them is
+        # whose base forward executes.
+        self.lora_ops = LoraOps(serving_config)
         # Set per forward pass; hooks read these.
         self._batch_lora: list[LayerwiseBatchedWeights] | None = None
-        self._expected_bs: tuple[int, int] | None = None  # (B, S) of the current batch
+        self._expected_shape: tuple[int, int, int] | None = None
+        self._fired: set[tuple[int, str]] = set()
+        # Count of hook calls skipped because their input was not the
+        # per-sample content hidden states (see _make_hook). Non-zero only for
+        # architectures with batch-shared projections; exposed for auditing.
+        self.shared_projection_skips = 0
 
         suffixes = _TARGET_SUFFIXES.get(
             base.config.model_type, _TARGET_SUFFIXES["default"]
@@ -85,22 +96,35 @@ class HFEncoderWithLora(nn.Module):
                 )
 
     def _make_hook(self, layer_idx: int, logical: str):
+        key = (layer_idx, logical)
+
         def hook(module: nn.Module, inputs: tuple, output: Tensor):
             batch_lora = self._batch_lora
             if batch_lora is None:
                 return None
+            # Some architectures call the same projection Linear on a
+            # batch-shared tensor as well as on the per-sample hidden states:
+            # DeBERTa-v2 with share_att_key=True projects the relative-position
+            # embeddings through query_proj/key_proj, shaped (1, 2*att_span, H).
+            # A per-tenant delta cannot apply to a tensor with no per-sample
+            # dimension, so only the content call takes the LoRA path.
+            #
+            # Two guards, because shape alone is not sufficient: a batch of 1
+            # whose sequence length happened to equal 2*att_span would collide.
+            # HF computes the content projections before the position bias, so
+            # firing only on the first shape-matching call per (layer, module)
+            # per forward disambiguates even that case.
             x = inputs[0]
-            # Some architectures route batch-agnostic tensors through the same
-            # projection — e.g. DeBERTa-v2 projects the shared relative-position
-            # embeddings with query/key_proj when share_att_key is set. Those
-            # calls carry no per-sample dimension, so per-tenant deltas do not
-            # apply; only the (B, S, H) content call gets the LoRA path.
-            if x.dim() != 3 or (x.shape[0], x.shape[1]) != self._expected_bs:
+            if key in self._fired or x.shape != self._expected_shape:
+                self.shared_projection_skips += 1
                 return None
+            self._fired.add(key)
             layer_w = batch_lora[layer_idx]
             a = torch.cat(layer_w.a[logical], dim=0)  # (B, H, R)
             b = torch.cat(layer_w.b[logical], dim=0)  # (B, R, H)
-            return output + torch.bmm(torch.bmm(x, a), b)
+            self.lora_ops.shrink(x, a)
+            self.lora_ops.expand(b)
+            return output + self.lora_ops.output
 
         return hook
 
@@ -132,8 +156,20 @@ class HFEncoderWithLora(nn.Module):
         Uses the checkpoint's own pooler when it has one (BERT/RoBERTa
         family); otherwise the raw CLS hidden state (ELECTRA, DeBERTa).
         """
+        B, S = input_ids.shape
+        cfg = self.config
+        # LoraOps buffers are sized from the config at construction; a batch
+        # that does not match them would silently resize the `out=` target and
+        # defeat the pre-allocation, so fail loudly instead.
+        if apply_lora and (B, S) != (cfg.batch_size, cfg.max_seq_len):
+            raise ValueError(
+                f"input batch {(B, S)} does not match the config's "
+                f"{(cfg.batch_size, cfg.max_seq_len)}; LoraOps buffers are "
+                "pre-allocated from the config"
+            )
         self._batch_lora = lora_weights if apply_lora else None
-        self._expected_bs = tuple(input_ids.shape)
+        self._expected_shape = (B, S, cfg.hidden_size)
+        self._fired = set()
         try:
             kwargs = {}
             if token_type_ids is not None:
@@ -143,7 +179,8 @@ class HFEncoderWithLora(nn.Module):
             )
         finally:
             self._batch_lora = None
-            self._expected_bs = None
+            self._expected_shape = None
+            self._fired = set()
         pooled = getattr(out, "pooler_output", None)
         if pooled is None:
             pooled = out.last_hidden_state[:, 0]

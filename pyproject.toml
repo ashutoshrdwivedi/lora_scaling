@@ -49,6 +49,9 @@ explicit = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "real_checkpoints: equivalence checks against the multi-GB generality-row checkpoints (needs CUDA; deselect with -m 'not real_checkpoints')",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "UP", "I"]
@@ -59,4 +62,5 @@ dev = [
     "peft>=0.19.1",
     "pytest>=9.0.2",
     "pytest-cov>=7.1.0",
+    "scikit-learn>=1.3",
 ]
