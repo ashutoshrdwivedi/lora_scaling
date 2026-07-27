@@ -202,7 +202,17 @@ class EncoderWithLora(PreTrainedModel):
             serving_config.model_name,
             torch_dtype=serving_config.dtype,
         ).state_dict()
-        model.load_state_dict(state_dict, strict=True)
+        # Some BERT-architecture checkpoints ship without a pooler (ELECTRA
+        # discriminators). Tolerate exactly that gap — the pooler keeps its
+        # fresh initialization, which leaves serving latency unchanged — and
+        # stay strict about everything else.
+        missing, unexpected = model.load_state_dict(state_dict, strict=False)
+        non_pooler_missing = [k for k in missing if not k.startswith("pooler.")]
+        if unexpected or non_pooler_missing:
+            raise RuntimeError(
+                f"{serving_config.model_name} does not match the BERT-family "
+                f"layout: missing={non_pooler_missing} unexpected={unexpected}"
+            )
         return model.to(device=serving_config.device, dtype=serving_config.dtype)
 
     def position_ids(self, input_ids: Tensor) -> Tensor:

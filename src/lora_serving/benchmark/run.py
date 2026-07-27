@@ -35,6 +35,7 @@ from lora_serving.benchmark.synthetic import (
 )
 from lora_serving.config import LoraServingConfig
 from lora_serving.model.encoder import EncoderWithLora
+from lora_serving.model.hf_wrapper import HFEncoderWithLora
 from lora_serving.weights.batch import BatchAssembler
 from lora_serving.weights.store import AdapterStore
 
@@ -91,6 +92,7 @@ def run_single_config(
     dtype: torch.dtype,
     num_labels: int = 10,
     seed: int | None = None,
+    engine: str = "custom",
 ) -> dict:
     """Run one benchmark configuration and return metrics (including assembly/forward split)."""
     device = torch.device("cuda:0")
@@ -110,8 +112,11 @@ def run_single_config(
         dtype=dtype,
     )
 
-    print(f"  Loading base model ({model_name}, {dtype})...")
-    model = EncoderWithLora.from_pretrained_serving(config)
+    print(f"  Loading base model ({model_name}, {dtype}, engine={engine})...")
+    if engine == "hf":
+        model = HFEncoderWithLora.from_pretrained_serving(config)
+    else:
+        model = EncoderWithLora.from_pretrained_serving(config)
     model.eval()
 
     print(f"  Generating {num_adapters} synthetic adapters (rank={lora_rank})...")
@@ -204,6 +209,7 @@ def run_single_config(
         "warmup": warmup,
         "iters": iters,
         "seed": seed if seed is not None else "",
+        "engine": engine,
     }
 
 
@@ -237,6 +243,14 @@ def main():
              "r=8 cell is measured exactly once and all ranks at an operating "
              "point share one thermal envelope. Example: "
              "--extra-configs 1000:32:4 1000:32:16 1000:32:32",
+    )
+    parser.add_argument(
+        "--engine", choices=["custom", "hf"], default="custom",
+        help="Base-model forward: 'custom' = the repo's EncoderWithLora "
+             "(BERT-family reimplementation, strict weight load); 'hf' = stock "
+             "HuggingFace AutoModel with LoRA injected via forward hooks "
+             "(HFEncoderWithLora) — required for architectures the custom "
+             "encoder cannot load (e.g. DeBERTa-v2's disentangled attention).",
     )
     parser.add_argument("--seq-len", type=int, default=128)
     parser.add_argument("--warmup", type=int, default=50)
@@ -308,6 +322,7 @@ def main():
                     dtype=dtype,
                     num_labels=args.num_labels,
                     seed=seed,
+                    engine=args.engine,
                 )
             except torch.cuda.OutOfMemoryError as e:
                 print(f"  OOM at adapters={num_adapters} batch={batch_size} rank={lora_rank}: {e}")
