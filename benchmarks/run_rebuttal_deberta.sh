@@ -1,8 +1,8 @@
 #!/bin/bash
 # Rebuttal pod A1 -- A100-80GB -- DeBERTa-v2-xlarge generality row.
 #
-# Answers 5qtX ("a larger encoder would strengthen this") and yeZ9 Q4 ("beyond
-# BERT/RoBERTa"): 900M params, d=1536, disentangled attention. Runs on the
+# Architecture-generality row beyond the BERT/RoBERTa family, at larger scale:
+# 900M params, d=1536, disentangled attention. Runs on the
 # stock HF forward with hook-injected LoRA (--engine hf) because the repo's
 # custom encoder cannot load disentangled attention; the hook path is
 # PEFT-parity tested in tests/test_hf_wrapper.py.
@@ -24,8 +24,8 @@
 # plus the same three rank cells at the (1000, 32) operating point (PEFT arms
 # at warmup 10 / iters 50, and at B=8/32/128 only, exactly as in the paper).
 # Measuring the whole grid rather than a subset means every cell Table 2 has
-# for bge-m3 has a counterpart here, so a rebuttal answer can quote any of
-# them without a second pod session.
+# for bge-m3 has a counterpart here, so any of them can be cited without a
+# second pod session.
 #
 # Ceiling: 1 module x 2 (A,B) x 24 layers x 1536 x r8 x 2B = 1.18 MB/adapter
 # -> formula says ~70k on 80GB; applying the same ~12% overestimate the paper
@@ -99,7 +99,7 @@ uv run python -m lora_serving.benchmark.run \
   --out "$R/sweep_${TAG}_capacity.csv" > "$R/sweep_${TAG}_capacity.log" 2>&1
 echo "  capacity rc=$?"
 
-# Only the 'mixed' mode is cited in the rebuttal (speedup vs PEFT's native
+# Only the 'mixed' mode is reported here (speedup vs PEFT's native
 # mixed-batch API) plus 'base' for the single-tenant ceiling. grouped /
 # homogeneous / sequential are paper-only and skipped here.
 echo "=== [4/5] PEFT mixed baseline, same node (~35 min) ==="

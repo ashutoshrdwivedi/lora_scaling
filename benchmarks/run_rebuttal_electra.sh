@@ -1,7 +1,7 @@
 #!/bin/bash
 # Rebuttal pod A2 -- A100-80GB -- ELECTRA-large generality row.
 #
-# Answers yeZ9 Q4 ("beyond BERT/RoBERTa") with a model the reviewer named.
+# Architecture-generality row beyond the BERT/RoBERTa family.
 # ELECTRA is a replaced-token-detection discriminator, a different pretraining
 # family from bge-m3's masked-LM XLM-RoBERTa, with WordPiece 30k vs
 # SentencePiece 250k vocabulary and absolute (arange) position ids rather than
@@ -19,8 +19,8 @@
 #
 # Grid and measurement kernel both mirror run_sxm80.sh: the full N x B cross
 # product plus the same three rank cells at the (1000, 32) operating point, so
-# every Table 2 cell has an ELECTRA counterpart and the rebuttal can quote any
-# of them without a second pod session.
+# every Table 2 cell has an ELECTRA counterpart and any of them can be cited
+# without a second pod session.
 # 6 N x 5 B + 3 rank cells = 33 configs x 5 seeds = 165 runs.
 #
 # Runtime ~2h30m. Independent of the other rebuttal scripts. If you have a

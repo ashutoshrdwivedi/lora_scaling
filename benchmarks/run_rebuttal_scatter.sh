@@ -1,14 +1,14 @@
 #!/bin/bash
 # Rebuttal pod A3 (short) -- A100-80GB -- result-scatter instrumentation.
 #
-# Fills the [X]/[Y] placeholders in the consolidated CPU-path answer (yeZ9 Q1 +
-# Q3 + reject-#5): the per-tenant slice + softmax cost, to show it is negligible
-# next to batch assembly. Must run on an A100-80GB so the numbers compose with
-# the already-measured assembly_bench results rather than mixing hardware.
+# Quantifies the CPU-path cost: the per-tenant slice + softmax, to show it is
+# negligible next to batch assembly. Must run on an A100-80GB so the numbers
+# compose with the already-measured assembly_bench results rather than mixing
+# hardware.
 #
 # Measures on-device scatter only, matching the forward's boundary -- host D2H
-# and serialization are serving-layer and stay out of scope (a caveat the
-# rebuttal keeps explicitly).
+# and serialization are serving-layer and stay out of scope. State that caveat
+# explicitly wherever these numbers are cited.
 #
 # New output filenames: does NOT clobber the submitted assembly_bench.txt /
 # assembly_bench_minilm.txt results.

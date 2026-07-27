@@ -1,18 +1,35 @@
 #!/bin/bash
-# Rebuttal pod B -- L40S-48GB -- hardware-generality row (OPTIONAL).
+# Rebuttal pod B -- L40S-48GB -- hardware-generality row.
 #
 # Runs the paper's reference model (bge-m3) on an inference-class GPU -- Ada,
 # GDDR6, ~864 GB/s vs the A100's HBM2e ~2 TB/s -- to show the O(1)-in-N property
 # and the PEFT speedups are not artifacts of the A100.
 #
-# SCOPE CAVEAT (keep this straight in the rebuttal): a second GPU *class* is
-# hardware generality. It does NOT answer yeZ9 reject-#2, which is about
-# multi-GPU / multi-node scaling; that stays future work (Appendix C).
-# No reviewer asked for this row -- it is the first thing to cut if the
-# deadline tightens.
+# SCOPE. This row varies the GPU *class* and nothing else, so it speaks to
+# hardware generality: the O(1)-in-N property survives a 2.3x memory-bandwidth
+# swing on the same code and the same measurement protocol. It says nothing
+# about multi-GPU or multi-node scaling, which remains future work -- keep the
+# two claims distinct when citing these numbers.
+#
+# Side benefit: the memory model is validated independently of the A100 here.
+# Measured 1.594 MB/adapter against 1.573 theoretical (fp16, r=8), with 1.86 GB
+# of non-adapter overhead at the 45.9 GB peak.
+#
+# Measured with BatchAssembler -- the SAME path run_sxm80.sh uses, so the
+# cross-hardware comparison is internally consistent. Note this is NOT
+# IndexSelectBatchAssembler (weights/batch.py), which benchmarks separately via
+# benchmarks/profiling/assembly_bench.py; numbers from the two paths are not
+# interchangeable and should not be quoted side by side.
 #
 # Ceiling scales with VRAM exactly as Finding 4 predicts: 1.57 MB/adapter on
-# ~45 GB usable -> ~28k adapters, vs 47k on the 80GB A100.
+# ~45 GB usable -> ~28k adapters, vs 47k on the 80GB A100. Measured 2026-07-27:
+# 28000 fits (45.9 GB peak), 29000 OOMs -- prediction confirmed.
+#
+# expandable_segments is REQUIRED, not a tuning knob. Without it the default
+# caching allocator fragments during adapter generation and every N=28000 cell
+# OOMs at ~44.5/44.5 GiB with 2.7 GiB reserved-but-unallocated -- silently
+# dropping the entire top-N column (140 rows instead of 165) while the sweep
+# still exits rc=0. With it, the same cells run at 96% VRAM utilization.
 #
 # Grid and measurement kernel both mirror run_sxm80.sh: the full N x B cross
 # product plus the same three rank cells at the (1000, 32) operating point.
@@ -22,7 +39,8 @@
 # The PEFT arm runs on this same node so the speedup column is never a
 # cross-node comparison.
 #
-# Runtime ~2h45m. Independent of the other rebuttal scripts.
+# Runtime ~1h30m measured 2026-07-27 (the ~2h45m estimate was conservative);
+# the sweep is ~1h of it. Independent of the other rebuttal scripts.
 set -u
 export HOME=/root
 export PATH=$HOME/.local/bin:$PATH
@@ -32,6 +50,8 @@ export PYTHONUNBUFFERED=1
 export HF_HOME=${HF_HOME:-/workspace/hf_cache}
 export UV_CACHE_DIR=${UV_CACHE_DIR:-/workspace/uv_cache}
 export TMPDIR=${TMPDIR:-/workspace/tmp}
+# Required for the N=28000 cells -- see the fragmentation note in the header.
+export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
 mkdir -p "$HF_HOME" "$UV_CACHE_DIR" "$TMPDIR"
 cd /root/lora_scaling
 R=benchmarks/results/rebuttal_l40s
@@ -68,7 +88,7 @@ echo "  sweep rc=$?"
 echo "=== [3/5] capacity probe (OOM ceiling on 48GB) ==="
 uv run python -m lora_serving.benchmark.run \
   --model "$M" --dtype fp16 \
-  --adapters 26000 28000 30000 32000 --batch-sizes 32 --lora-ranks 8 \
+  --adapters 28000 29000 30000 --batch-sizes 32 --lora-ranks 8 \
   --seq-len 128 --warmup 50 --iters 200 \
   --out "$R/sweep_capacity_$TAG.csv" > "$R/sweep_capacity_$TAG.log" 2>&1
 echo "  capacity rc=$?"

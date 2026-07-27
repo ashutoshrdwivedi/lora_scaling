@@ -1,8 +1,8 @@
 #!/bin/bash
 # Rebuttal pod A1 -- A100-80GB REQUIRED -- XLM-RoBERTa-XL scale row.
 #
-# Answers 5qtX ("the empirical evidence could be even stronger if a larger
-# encoder were tested"): 3.48B params, d=2560, L=36 -- 6.1x bge-m3's 568M.
+# Scale row: 3.48B params, d=2560, L=36 -- 6.1x bge-m3's 568M -- to show the
+# O(1)-in-N property holds on a much larger encoder.
 #
 # Runs on the stock HF forward with hook-injected LoRA (--engine hf). This is
 # not optional: XLM-R-XL is pre-LN, so the repo's custom encoder cannot load it
@@ -113,7 +113,7 @@ uv run python -m lora_serving.benchmark.run \
   --out "$R/sweep_${TAG}_capacity.csv" > "$R/sweep_${TAG}_capacity.log" 2>&1
 echo "  capacity rc=$?"
 
-# Only 'mixed' is cited in the rebuttal (speedup vs PEFT's native mixed-batch
+# Only 'mixed' is reported here (speedup vs PEFT's native mixed-batch
 # API) plus 'base' for the single-tenant ceiling. grouped / homogeneous /
 # sequential are paper-only and skipped here.
 echo "=== [4/5] PEFT mixed baseline, same node (~1h) ==="
