@@ -7,23 +7,31 @@
 # custom encoder cannot load disentangled attention; the hook path is
 # PEFT-parity tested in tests/test_hf_wrapper.py.
 #
-# Measurement kernel is identical to the paper's run_sxm80.sh: fp16, seq=128,
-# r=8, q+v projections, warmup 50 / iters 200, 5 seeds (PEFT arms at warmup 10
-# / iters 50). Only the GRID is trimmed: an N-spine at the operating point
-# B=32 plus a B-crossbar at N=1000, which is exactly what the reported columns
-# (p50 drift as N->ceiling, throughput, speedup vs PEFT-mixed) consume. The
-# full N x B cross product is already in Table 2 for bge-m3.
+# TARGET MODULES: value only, NOT the paper's query+value. This is deliberate.
+# deberta-v2-xlarge sets share_att_key=true, so query_proj is applied both to
+# the per-sample hidden states AND to the batch-shared relative-position
+# embeddings, whose result HF then tiles across the batch (`.repeat(...)` in
+# DisentangledSelfAttention.disentangled_attention_bias). PEFT wraps the Linear
+# and therefore adapts that shared call; per-tenant serving has no per-sample
+# counterpart for a batch-independent tensor, so we skip it -- and the outputs
+# genuinely diverge, measured at 10.3% relative on this checkpoint.
+# value_proj is never applied to the position embeddings, so targeting it alone
+# makes the comparison against PEFT exact (2.2e-5, fp32 round-off on 900M
+# params). Both facts are asserted in tests/test_real_checkpoint_parity.py.
 #
-# Ceiling: 2 modules x 2 (A,B) x 24 layers x 1536 x r8 x 2B = 2.36 MB/adapter
-# -> ~32k adapters on 80GB.
+# Measurement kernel is otherwise identical to the paper's run_sxm80.sh: fp16,
+# seq=128, r=8, warmup 50 / iters 200, 5 seeds (PEFT arms at warmup 10 / iters
+# 50). Only the GRID is trimmed: an N-spine at the operating point B=32 plus a
+# B-crossbar at N=1000, which is exactly what the reported columns (p50 drift
+# as N->ceiling, throughput, speedup vs PEFT-mixed) consume. The full N x B
+# cross product is already in Table 2 for bge-m3.
 #
-# PEFT caveat to disclose, not engineer around: deberta-v2-xlarge sets
-# share_att_key=true, so PEFT's LoRA on query_proj also fires on the shared
-# relative-position projection. Per-sample adapters cannot target a
-# batch-independent tensor, so our hooks skip that call by construction. The
-# extra PEFT work is <1% of its forward.
+# Ceiling: 1 module x 2 (A,B) x 24 layers x 1536 x r8 x 2B = 1.18 MB/adapter
+# -> formula says ~70k on 80GB; applying the same ~12% overestimate the paper
+# saw for bge-m3 (formula 52.8k vs measured 47k) gives a practical ~62k. The
+# sweep therefore runs out to 60k and the probe brackets it.
 #
-# Runtime ~1h45m. Independent of the other rebuttal scripts -- safe to run
+# Runtime ~1h55m. Independent of the other rebuttal scripts -- safe to run
 # concurrently on a separate pod.
 set -u
 export HOME=/root
@@ -46,14 +54,14 @@ TAG=deberta
 echo "=== [0/5] smoke test (fail fast before burning the pod) ==="
 uv run python -m lora_serving.benchmark.run \
   --model "$M" --engine hf --dtype fp16 --adapters 100 --batch-sizes 8 \
-  --lora-ranks 8 --seq-len 128 --warmup 5 --iters 10 \
+  --lora-ranks 8 --target-modules value --seq-len 128 --warmup 5 --iters 10 \
   --out "$R/smoke_$TAG.csv" > "$R/smoke_$TAG.log" 2>&1
 rc=$?; echo "  latefuse smoke rc=$rc"
 [ $rc -ne 0 ] && { echo "SMOKE FAILED -- see $R/smoke_$TAG.log"; tail -20 "$R/smoke_$TAG.log"; exit 1; }
 
 uv run python -m benchmarks.baselines.peft_swap \
   --model "$M" --dtype fp16 --lora-ranks 8 --seq-len 128 --batch-sizes 8 \
-  --adapters 2 --mode mixed --target-modules query_proj value_proj \
+  --adapters 2 --mode mixed --target-modules value_proj \
   --warmup 2 --iters 5 \
   --out "$R/smoke_peft_$TAG.csv" > "$R/smoke_peft_$TAG.log" 2>&1
 rc=$?; echo "  peft smoke rc=$rc"
@@ -67,11 +75,11 @@ echo "  metadata rc=$?"
 # N-spine at B=32 (the operating point) + B-crossbar at N=1000 via
 # --extra-configs, the same mechanism the paper uses to fold in rank cells so
 # the shared (1000, 32) cell is measured exactly once per seed.
-echo "=== [2/5] LateFuse sweep, 5 seeds (~42 min) ==="
+echo "=== [2/5] LateFuse sweep, 5 seeds (~50 min) ==="
 uv run python -m lora_serving.benchmark.run \
   --model "$M" --engine hf --dtype fp16 \
-  --adapters 100 1000 5000 10000 20000 30000 \
-  --batch-sizes 32 --lora-ranks 8 \
+  --adapters 100 1000 5000 10000 20000 40000 60000 \
+  --batch-sizes 32 --lora-ranks 8 --target-modules value \
   --extra-configs 1000:8:8 1000:128:8 \
   --seq-len 128 --warmup 50 --iters 200 \
   --seeds 1 2 3 4 5 \
@@ -81,8 +89,8 @@ echo "  sweep rc=$?"
 echo "=== [3/5] capacity probe (OOM ceiling) ==="
 uv run python -m lora_serving.benchmark.run \
   --model "$M" --engine hf --dtype fp16 \
-  --adapters 30000 32000 34000 --batch-sizes 32 --lora-ranks 8 \
-  --seq-len 128 --warmup 50 --iters 200 \
+  --adapters 60000 64000 68000 --batch-sizes 32 --lora-ranks 8 \
+  --target-modules value --seq-len 128 --warmup 50 --iters 200 \
   --out "$R/sweep_${TAG}_capacity.csv" > "$R/sweep_${TAG}_capacity.log" 2>&1
 echo "  capacity rc=$?"
 
@@ -93,7 +101,7 @@ echo "=== [4/5] PEFT mixed baseline, same node (~35 min) ==="
 uv run python -m benchmarks.baselines.peft_swap \
   --model "$M" --dtype fp16 --lora-ranks 8 --seq-len 128 \
   --batch-sizes 8 32 128 --adapters 100 1000 --mode mixed \
-  --target-modules query_proj value_proj --warmup 10 --iters 50 \
+  --target-modules value_proj --warmup 10 --iters 50 \
   --out "$R/peft_mixed_$TAG.csv" > "$R/peft_mixed_$TAG.log" 2>&1
 echo "  peft mixed rc=$?"
 
@@ -101,7 +109,7 @@ echo "=== [5/5] PEFT base ceiling ==="
 uv run python -m benchmarks.baselines.peft_swap \
   --model "$M" --dtype fp16 --lora-ranks 8 --seq-len 128 \
   --batch-sizes 8 32 128 --adapters 1 --mode base \
-  --target-modules query_proj value_proj --warmup 10 --iters 50 \
+  --target-modules value_proj --warmup 10 --iters 50 \
   --out "$R/peft_base_$TAG.csv" > "$R/peft_base_$TAG.log" 2>&1
 echo "  peft base rc=$?"
 

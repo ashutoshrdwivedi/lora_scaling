@@ -62,17 +62,23 @@ def memory_ceiling(
     return max(0, int(available_bytes / bpa)), bpa
 
 
-def print_memory_ceiling(model_name: str, dtype: torch.dtype, vram_gb: float) -> None:
+def print_memory_ceiling(
+    model_name: str,
+    dtype: torch.dtype,
+    vram_gb: float,
+    target_modules: list[str],
+) -> None:
     """At startup: predict adapter ceiling for a representative config so the run is self-documenting."""
     print(f"\n=== Memory ceiling (predicted) ===")
     print(f"  Model: {model_name}  dtype: {dtype}  VRAM budget: {vram_gb:.1f} GB")
+    print(f"  Target modules: {target_modules}")
     for rank in (4, 8, 16, 32):
         cfg = LoraServingConfig(
             model_name=model_name,
             lora_rank=rank,
             batch_size=1,
             max_seq_len=128,
-            target_modules=["query", "value"],
+            target_modules=target_modules,
             device=torch.device("cuda:0"),
             dtype=dtype,
         )
@@ -93,6 +99,7 @@ def run_single_config(
     num_labels: int = 10,
     seed: int | None = None,
     engine: str = "custom",
+    target_modules: list[str] | None = None,
 ) -> dict:
     """Run one benchmark configuration and return metrics (including assembly/forward split)."""
     device = torch.device("cuda:0")
@@ -102,12 +109,13 @@ def run_single_config(
         np.random.seed(seed)
         torch.manual_seed(seed)
 
+    target_modules = target_modules or ["query", "value"]
     config = LoraServingConfig(
         model_name=model_name,
         lora_rank=lora_rank,
         batch_size=batch_size,
         max_seq_len=seq_len,
-        target_modules=["query", "value"],
+        target_modules=target_modules,
         device=device,
         dtype=dtype,
     )
@@ -210,6 +218,7 @@ def run_single_config(
         "iters": iters,
         "seed": seed if seed is not None else "",
         "engine": engine,
+        "target_modules": "+".join(target_modules),
     }
 
 
@@ -252,6 +261,14 @@ def main():
              "(HFEncoderWithLora) — required for architectures the custom "
              "encoder cannot load (e.g. DeBERTa-v2's disentangled attention).",
     )
+    parser.add_argument(
+        "--target-modules", nargs="+", default=["query", "value"],
+        help="Attention projections to attach LoRA to. Names are the logical "
+             "'query'/'key'/'value' regardless of the checkpoint's own naming "
+             "(the HF engine maps them per architecture, e.g. DeBERTa-v2's "
+             "query_proj/value_proj). Per-adapter memory — and hence the "
+             "tenant ceiling — scales with the number of modules.",
+    )
     parser.add_argument("--seq-len", type=int, default=128)
     parser.add_argument("--warmup", type=int, default=50)
     parser.add_argument("--iters", type=int, default=200)
@@ -275,7 +292,7 @@ def main():
     gpu_name = torch.cuda.get_device_name(0)
     vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
     print(f"GPU: {gpu_name}  ({vram_gb:.1f} GB VRAM)")
-    print_memory_ceiling(args.model, dtype, vram_gb)
+    print_memory_ceiling(args.model, dtype, vram_gb, args.target_modules)
 
     seeds: list[int | None] = args.seeds if args.seeds else [None]
 
@@ -323,6 +340,7 @@ def main():
                     num_labels=args.num_labels,
                     seed=seed,
                     engine=args.engine,
+                    target_modules=args.target_modules,
                 )
             except torch.cuda.OutOfMemoryError as e:
                 print(f"  OOM at adapters={num_adapters} batch={batch_size} rank={lora_rank}: {e}")
