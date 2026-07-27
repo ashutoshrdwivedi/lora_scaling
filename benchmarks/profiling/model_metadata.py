@@ -146,8 +146,8 @@ def inspect_one(name: str, target_modules: list[str]
         torch.cuda.empty_cache()
 
 
-def write_model_csv(rows: list[tuple[str, str, str]]) -> Path:
-    out = OUT_DIR / "model_metadata.csv"
+def write_model_csv(rows: list[tuple[str, str, str]], out_dir: Path | None = None) -> Path:
+    out = (out_dir or OUT_DIR) / "model_metadata.csv"
     with out.open("w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["model", "key", "value"])
@@ -155,7 +155,7 @@ def write_model_csv(rows: list[tuple[str, str, str]]) -> Path:
     return out
 
 
-def write_env_csv() -> Path:
+def write_env_csv(out_dir: Path | None = None) -> Path:
     if torch.cuda.is_available():
         gpu = torch.cuda.get_device_name(0)
         mem_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
@@ -183,7 +183,7 @@ def write_env_csv() -> Path:
         "peft_version": peft_ver,
         "captured_at_utc": datetime.datetime.utcnow().isoformat() + "Z",
     }
-    out = OUT_DIR / "env_metadata.csv"
+    out = (out_dir or OUT_DIR) / "env_metadata.csv"
     with out.open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(env.keys()))
         w.writeheader()
@@ -202,17 +202,25 @@ def main() -> int:
         help="Repeatable. Format: 'hf-name:tm1,tm2'. "
              "If omitted, uses the default list.",
     )
+    ap.add_argument(
+        "--out-dir", type=Path, default=None,
+        help="Directory for model_metadata.csv and env_metadata.csv. Defaults "
+             "to benchmarks/results. Point concurrent runs (different models, "
+             "different GPUs, different authors) at their own directory so "
+             "they neither overwrite each other nor the committed baseline.",
+    )
     args = ap.parse_args()
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    out_dir = args.out_dir or OUT_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     models = args.model if args.model else DEFAULT_MODELS
     rows: list[tuple[str, str, str]] = []
     for name, tms in models:
         rows.extend(inspect_one(name, tms))
 
-    model_out = write_model_csv(rows)
-    env_out = write_env_csv()
+    model_out = write_model_csv(rows, out_dir)
+    env_out = write_env_csv(out_dir)
     print(f"\nwrote {model_out}  ({len(rows)} rows)")
     print(f"wrote {env_out}")
     print("\nNext: copy these two CSVs back to your local repo and re-run")

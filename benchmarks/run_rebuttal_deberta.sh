@@ -47,7 +47,7 @@ export UV_CACHE_DIR=${UV_CACHE_DIR:-/workspace/uv_cache}
 export TMPDIR=${TMPDIR:-/workspace/tmp}
 mkdir -p "$HF_HOME" "$UV_CACHE_DIR" "$TMPDIR"
 cd /root/lora_scaling
-R=benchmarks/results
+R=benchmarks/results/rebuttal_deberta
 mkdir -p "$R"
 
 M="microsoft/deberta-v2-xlarge"
@@ -71,6 +71,7 @@ rc=$?; echo "  peft smoke rc=$rc"
 
 echo "=== [1/5] model + env metadata ==="
 uv run python -m benchmarks.profiling.model_metadata \
+  --model "microsoft/deberta-v2-xlarge:value" --out-dir "$R" \
   > "$R/model_metadata_$TAG.log" 2>&1
 echo "  metadata rc=$?"
 

@@ -26,7 +26,7 @@ export UV_CACHE_DIR=${UV_CACHE_DIR:-/workspace/uv_cache}
 export TMPDIR=${TMPDIR:-/workspace/tmp}
 mkdir -p "$HF_HOME" "$UV_CACHE_DIR" "$TMPDIR"
 cd /root/lora_scaling
-R=benchmarks/results
+R=benchmarks/results/rebuttal_scatter
 mkdir -p "$R"
 
 echo "=== [1/2] assembly + scatter, bge-m3 (paper's model) ==="
