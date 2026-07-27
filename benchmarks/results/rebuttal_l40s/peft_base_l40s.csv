@@ -1,0 +1,4 @@
+harness,model,dtype,num_adapters,batch_size,lora_rank,seq_len,p50_ms,p90_ms,p95_ms,p99_ms,mean_ms,throughput_samples_sec,peak_gpu_mem_gb,add_adapter_total_s,warmup,iters
+peft_base,BAAI/bge-m3,float16,1,8,8,128,7.59,7.79,7.92,14.11,7.88,1015.4,1.168,0.0,10,50
+peft_base,BAAI/bge-m3,float16,1,32,8,128,18.65,18.79,18.81,18.91,18.66,1715.2,1.238,0.0,10,50
+peft_base,BAAI/bge-m3,float16,1,128,8,128,75.7,75.91,75.96,76.31,75.69,1691.2,1.515,0.0,10,50
