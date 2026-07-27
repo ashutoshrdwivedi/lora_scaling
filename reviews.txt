@@ -1,0 +1,91 @@
+A simple practical approach to solve a gap in current LoRA adapter serving libraries
+Official Reviewby Reviewer 5qtX18 Jul 2026, 07:14 (modified: 22 Jul 2026, 17:31)Program Chairs, Area Chairs, Reviewers, AuthorsRevisions
+Summary:
+
+The authors show how to speed up inference for multi-tenant LoRA encoder models through careful batching and batched matrix multiplications. Their approach is simple and direct and beats current implementation in the PEFT library in scaling to a large number of tenants. Their empirical comparison is also detailed and thorough. Overall a very good paper solving a gap in current implementations of adapter model serving.
+Reasons To Accept:
+
+    This paper solves a very practical problem: how to efficiently serve LoRA adapters for encoder models for multiple tenants. The authors identify a gap in existing software implementations and propose an efficient serving method based on batched matrix multiplication. The idea is straightforward but also very effective. They demonstrate simultaneously serving 47k adapters without suffering loss in latency.
+
+    The authors also take care of different number of target classes for different tenant adapters by batching with placeholders and separating the softmax computation. Attention to these details make the method practical to use.
+
+    There are a good set of findings listed in the experiments section, each supported with a table of results. The investigation is very thorough.
+
+Reasons To Reject:
+
+    There are not many weaknesses in this paper. One potential complaint is that only one model BAAI/bge-m3 is being tested. The empirical evidence could be even stronger if a larger encoder model were tested.
+
+Questions And Additional Feedback:
+
+    Would the authors release their code as libraries?
+
+Needs Ethical Review: No
+Soundness: 4 = Strong: This study provides sufficient support for all of its claims. Some extra experiments could be nice, but not essential.
+Excitement: 3.5
+Overall Assessment: 4 = Conference: I think this paper could be accepted to an *ACL conference.
+Confidence: 4: The reviewer is confident but not absolutely certain that the evaluation is correct
+Author Identity Knowledge: 4 = From a preprint or allowed workshop paper, I know/can guess at least one author’s name.
+Add:
+Clean systems contribution - late-fusion BMM for encoder multi-tenant LoRA is solid, no-kernel approach is immediately practical
+Official Reviewby Reviewer yeZ917 Jul 2026, 11:41 (modified: 22 Jul 2026, 17:31)Program Chairs, Area Chairs, Reviewers, AuthorsRevisions
+Summary:
+
+Paper addresses multi-tenant LoRA serving specifically for encoder models (BERT/RoBERTa-family), which is an underserved problem compared to the decoder-side LoRA serving literature. Key observation is encoder forward pass is compute-bound and dominated by base model projections - LoRA delta accounts for only ~9% of total forward pass FLOPs. This means per-tenant adaptation can be decomposed as W_0x + B_iA_i*x: run the base path once for the full batch, then apply per-sample LoRA deltas as batched matrix multiplications. LateFuse implements this in pure PyTorch via torch.bmm (no custom CUDA) - base projections run once shared, then per-sample A_i and B_i are applied as BMMs across the mixed-tenant batch, and per-tenant classification heads are batched as zero-padded BMMs. Tenant weights are never merged into the base, ruling out cross-tenant contamination by design. Main claims: (1) serving latency stays flat as adapter count scales from 100 to 47k at B=32, r=8 on a single A100 (2) 5.6-21.2x higher throughput vs HuggingFace PEFT's native mixed-batch API (3) 521x speedup over per-adapter swapping (4) adapter pool ceiling of 47k. 7 numbered findings validated empirically.
+Reasons To Accept:
+
+    Core algorithmic insight is compelling: encoder compute is base-dominated, so LoRA adaptation costs O(1) in N by construction via BMM decomposition. The FLOP analysis (only 9% of forward pass comes from LoRA deltas) is a well-motivated observation that actually explains why this works where decoder-side systems need custom kernels
+    Pure PyTorch / no custom CUDA is a genuinely big practical win which removes the main engineering barrier to deployment. Existing systems like Punica, S-LoRA, LoRAX all require custom CUDA/Triton kernels for decoder LoRA, which makes them hard to maintain and port to new hardware. LateFuse sidestepping that entirely is practically important
+    Tenant isolation by design, where weights never merged into shared base eliminates cross-tenant contamination entirely, which is a real customer requirement for multi-tenant SaaS. This is explicitly not satisfied by weight-merging approaches
+    Eval is thorough. 7 numbered findings are specific and empirically validated - not vague qualitative claims
+    The O(N^2) vs O(1) cold-start comparison (PEFT's add_adapter vs LateFuse's AdapterStore) is an important practical finding for large adapter pools - 14.4s vs 0.05s registration
+    Finding 6 (custom kernels offer only single-digit upside on encoders, analytically bounded by LoRA FLOP ratio) is a nice theoretical result that explains why torch.bmm suffices and gives context to why the no-kernel approach has low ceiling risk
+    Good repro: code + benchmarks released at anonymous link; Appendix B validates protocol against SetFit baseline on paraphrase-mpnet-base-v2
+
+Reasons To Reject:
+
+    Uniform rank constraint across the batch is a significant limitation - all adapters in a batch must share rank r and same target modules, so tenants with heterogeneous fine-tuning strategies require padding every adapter to the max rank in the batch, wasting compute on low-rank adapters. Paper acknowledges this but the overhead is potentially severe for mixed-rank deployments
+    Eval is exclusively on a single A100-SXM4-80GB, single node. No multi-GPU/multi-node experiments. Appendix C describes horizontal scaling architecture but doesn't eval it quantitatively - the throughput scaling claims under replicated pods are theoretical
+    Baseline comparison is limited to HuggingFace PEFT only. vLLM and LoRAX are excluded from quantitative comparison coz they don't serve encoder LoRA, but that means there's no comparison against custom-kernel BMM implementations - the ceiling analysis in Finding 6 is analytic rather than empirical
+    Accuracy eval uses N=8 examples per class (few-shot), which is standard for SetFit protocol but makes it hard to assess whether the LoRA quality claim generalizes to full training data regimes where different LoRA configs might matter more
+    Batch assembly CPU bottleneck at high request rates (>10k req/s) isn't addressed in the main paper - only mentioned in limitations. For high-QPS deployments, the CPU-side gather and list operations becoming the throughput ceiling is a real concern that deserves more experimental characterization
+    The paper targets encoder classification/retrieval tasks but LLM-encoder use cases like semantic search, reranking with cross-encoders, or embedding generation under heavy load aren't directly eval'd - the datasets are all text classification benchmarks
+
+Questions And Additional Feedback:
+
+    Can authors report end-to-end latency (not just GPU compute) including batch assembly, CPU gather ops, and result scatter? This is critical for the high-QPS regime claim
+    At r=8 with 47k adapters, what's the actual GPU memory footprint vs just the adapter parameter count? How much headroom remains for KV cache at typical seq lengths?
+    For the CPU bottleneck at >10k req/s, do authors have a mitigation plan or is this a hard ceiling for LateFuse as designed?
+    Have authors tested on any encoder model beyond BERT/RoBERTa family? DeBERTa, ELECTRA, or even a small encoder-decoder like T5-small would strengthen generality claims
+    Fig 3 shows latency flat as N scales - can authors clarify if this holds under mixed-rank deployments (eg: some adapters r=4, others r=16 in same batch)?
+    The O(N^2) vs O(1) cold-start result is compelling - can authors show this translates to real prod impact, eg: what % of serving time is spent in adapter registration under realistic churn rates?
+
+Ethical Concerns:
+
+No ethical concerns. Standard serving systems paper, no sensitive data or harmful applications involved.
+Needs Ethical Review: No
+Soundness: 4 = Strong: This study provides sufficient support for all of its claims. Some extra experiments could be nice, but not essential.
+Excitement: 3.5
+Overall Assessment: 3.5 = Borderline Conference
+Confidence: 4: The reviewer is confident but not absolutely certain that the evaluation is correct
+Author Identity Knowledge: 1 = I do not have even an educated guess about author identity.
+Add:
+Useful innovation for multi-tenant LoRA in encoder models
+Official Reviewby Reviewer aNEv07 Jul 2026, 14:01 (modified: 22 Jul 2026, 17:31)Program Chairs, Area Chairs, Reviewers, AuthorsRevisions
+Summary:
+
+This work has proposed an infra update to host multi-tenant LoRA for encoder models, where tens of thousands of lora matrices may come from different tenants for different inputs and tasks. The implementation employs techniques including LateFusion Decomposition and Batched Classification Heads. Experiments show significant speedup compared to baseline implementations.
+Reasons To Accept:
+
+The paper has described the ideas and implementation in sufficient clarity with open source-code. Experiments show outstanding performance compared to baseline techniques.
+Reasons To Reject:
+
+The contribution seems limited in an implementation optimization, instead of algorithmic innovation, and its adoption by the open-source community is yet to be verified.
+Questions And Additional Feedback:
+
+The authors may want to briefly discuss any future directions.
+Needs Ethical Review: No
+Soundness: 4 = Strong: This study provides sufficient support for all of its claims. Some extra experiments could be nice, but not essential.
+Excitement: 3 = Interesting: I might mention some points of this paper to others and/or attend its presentation in a conference if there is time.
+Overall Assessment: 3 = Workshop: I think this paper could be accepted instead to a workshop at *ACL, for example because it is solid and relevant but more preliminary, specialized, or narrower in scope than expected for the main conference.
+Confidence: 3: The reviewer is fairly confident that the evaluation is correct
+Author Identity Knowledge: 1 = I do not have even an educated guess about author identity.
