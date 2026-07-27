@@ -22,8 +22,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import random
 import time
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -319,6 +321,12 @@ def main():
     results = []
     total = len(configs) * len(seeds)
     done = 0
+    # The CSV is written incrementally, one row per completed config, flushed
+    # immediately. A long sweep (the largest here is ~6 h) that dies partway --
+    # OOM at a high N, pod eviction, exhausted balance -- then still leaves
+    # every config it did finish on disk, instead of losing the whole run.
+    csv_file = None
+    writer = None
 
     # Seed is the outermost loop: each repeat is a full pass over the sweep,
     # so between-seed variance also captures slow drift (thermal, clocks).
@@ -347,11 +355,22 @@ def main():
                 torch.cuda.empty_cache()
                 continue
             results.append(row)
+            if writer is None:
+                Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+                csv_file = open(args.out, "w", newline="")
+                writer = csv.DictWriter(csv_file, fieldnames=list(row.keys()))
+                writer.writeheader()
+            writer.writerow(row)
+            csv_file.flush()
+            os.fsync(csv_file.fileno())
             print(f"  p50={row['p50_ms']}ms  p95={row['p95_ms']}ms  p99={row['p99_ms']}ms  "
                   f"asm={row['assemble_mean_ms']}ms ({row['assemble_share_pct']}%)  "
                   f"fwd={row['forward_mean_ms']}ms  "
                   f"tput={row['throughput_samples_sec']} samples/s  "
                   f"peak_gpu={row['peak_gpu_mem_gb']}GB\n")
+
+    if csv_file is not None:
+        csv_file.close()
 
     if not results:
         print("No results collected (all configs OOM'd?)")
@@ -359,12 +378,7 @@ def main():
 
     print("\n=== Results ===")
     print_table(results)
-
-    with open(args.out, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=results[0].keys())
-        writer.writeheader()
-        writer.writerows(results)
-    print(f"\nSaved to {args.out}")
+    print(f"\nSaved to {args.out}  ({len(results)}/{total} configs completed)")
 
 
 if __name__ == "__main__":
