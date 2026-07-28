@@ -1,214 +1,101 @@
-# Rebuttal Response — Working Notes
+# EMNLP 2026 Industry Track — Rebuttal (paste-ready)
 
-Working scratchpad for the EMNLP 2026 Industry Track rebuttal. Not the final response — captures findings, measured data, draft answers, and framing decisions so far.
+Deadline: **2026-07-29, 11:59pm AoE**. Text-only; no PDF re-upload.
 
-## Logistics
+How to use this file:
+- Post **Part 0 (General response)** either as a top-level general comment, or paste it at the top of each per-reviewer response if the portal only allows per-review replies.
+- Then post Parts 1–3 as the per-reviewer responses.
+- OpenReview renders markdown tables; if a table mangles in preview, use the one-sentence-per-row fallback given beneath each table.
+- If a response box has a character limit (typically 5,000), the yeZ9 response is split into **3a (Questions)** and **3b (Weaknesses)** so each part fits on its own.
+- All numbers below are measured (5 seeds, 200 timed iters after 50 warmup, fp16, seq len 128, r=8 unless stated) from `benchmarks/results/rebuttal_{electra,deberta,xlmr_xl,l40s}/` and `benchmarks/results/assembly_bench*`.
 
-- **Venue:** EMNLP 2026 **Industry Track** (direct submission, *not* ARR — the July 7–13 ARR window does not apply).
-- **Author-response deadline:** **2026-07-29, 11:59pm AoE (UTC-12).** Verify in the OpenReview portal (authoritative).
-- **Format:** **Text-only rebuttal.** No PDF re-upload. Report new numbers in text; promise camera-ready edits. Notification 2026-08-20; camera-ready 2026-09-20 (gets +1 page, 6→7; Limitations/refs/appendix excluded from the limit).
+---
 
-## Scores
+## Part 0 — General response (all reviewers)
 
-| Reviewer | Overall | Soundness | Excitement | Conf. | Read |
+We thank all reviewers for their careful reading. All three reviews rate Soundness 4; the recurring requests are (a) evidence beyond a single model, (b) evidence beyond a single GPU, and (c) characterization of the CPU-side assembly ceiling. Since submission we have run new experiments on all three axes, using the paper's exact protocol (5 seeds, fp16, seq 128, r=8).
+
+**(a) Generality across encoder families and scale (334M → 3.5B), and (b) across GPU class.** We hold the system fixed — no model- or hardware-specific code — and vary the encoder and the GPU. The paper's two headline properties replicate everywhere: p50 latency stays flat as the adapter pool scales to the memory ceiling (O(1)-in-N, Finding 1), and the speedup over PEFT's mixed-batch API persists:
+
+| Config | Params (layers, d) | GPU | p50 drift, N=100→ceiling | Pool ceiling @ r=8 | Speedup vs PEFT-mixed |
 |---|---|---|---|---|---|
-| 5qtX | **4 (Accept)** | 4 | 3.5 | 4 | Champion; sole weakness = "one model". AIK=4 but *wrong guess* (no public copy; anonymization verified clean). |
-| yeZ9 | **3.5 (Borderline)** | 4 | 3.5 | 4 | Engaged, identity-blind → **the reviewer to convert (3.5→4)**. |
-| aNEv | **3 (Workshop)** | 4 | 3 | 3 | Detractor, lowest confidence; "just implementation, not algorithmic". |
+| bge-m3 (paper) | 568M (24, 1024) | A100-80GB | ≤1% (→47k) | 47,000 | 5.6–21.2× |
+| ELECTRA-large | 334M (24, 1024) | A100-80GB | ≤3.8% (→49k) | 49,000 | 6.6–22.6× |
+| DeBERTa-v2-xlarge | 884M (24, 1536) | A100-80GB | ≤1.4% (→58k) | 58,000 | 2.5–7.3× |
+| XLM-RoBERTa-XL | 3.5B (36, 2560) | A100-80GB | ≤0.6% (→12k) | 12,000 | 3.0–19.8× |
+| bge-m3 | 568M (24, 1024) | L40S-48GB | ≤4.1% (→28k) | 28,000 | 4.3–32.4× |
 
-All three **Soundness 4** — no one disputes correctness. Fight is excitement/scope. "3 = Workshop" is a quality rung, **not** a workshop offer.
+(Drift is the total spread of p50 across the full N sweep — a conservative measure: it is non-monotone seed-level and cache-locality variation, not growth. In every configuration and at every batch size, p50 at the pool ceiling is within +1.3% of its N=1,000 value, and in several cells is *below* the N=100 value. Speedup ranges span N∈{100, 1000} × B∈{8, 32, 128}, the cells the PEFT arm covers. Rank-insensitivity (Finding 3) also replicates on every config: sweeping r∈{4,8,16,32} at N=1000, B=32 leaves p50 flat within seed noise on all four new configs. Pool ceilings are memory arithmetic, not performance limits: per-adapter bytes × N filling GPU memory (e.g. XLM-R-XL's 5.9 MB/adapter at r=8 → 12k on 80 GB; DeBERTa's 1.2 MB → 58k). DeBERTa note: adapters there target the value projections — deliberately: DeBERTa-v2 shares `query_proj` between per-sample hidden states and the batch-shared relative-position embeddings (`share_att_key`), a call with no per-tenant counterpart, whereas value-only serving matches PEFT's outputs exactly (2×10⁻⁵ relative, unit-tested); all other configs target query+value as in the paper. Its lower speedup range follows from the same choice: with one wrapped module per layer PEFT's mixed-batch overhead is smaller and the 884M base forward dilutes it further — the comparison is conservative for us, not favorable.)
 
-## Strategy (one line)
+[Raw result CSVs for all new runs have been added to the anonymized repository under `benchmarks/results/`.]
 
-Lead with **new evidence**, concede the two genuine limitations gracefully, reframe "just engineering" via the Industry-Track remit + the FLOP insight. Don't try to win all twelve bullets — spend effort on the score-movers.
+*Table fallback:* ELECTRA-large (334M) on A100: p50 drift ≤3.8% from N=100 to the 49k ceiling, 6.6–22.6× over PEFT-mixed. DeBERTa-v2-xlarge (884M): drift ≤1.4% to 58k, 2.5–7.3×. XLM-RoBERTa-XL (3.5B, 36 layers): drift ≤0.6% to 12k, 3.0–19.8×. bge-m3 on an L40S-48GB: drift ≤4.1% to 28k, 4.3–32.4×.
 
-**Priority order:** (1) generality / 2nd encoder (moves *two* reviewers) — the score-mover; (2) CPU-path answer (data in hand); (3) reframe aNEv; (4) everything else = text.
+**(c) CPU assembly ceiling (>10k req/s).** Our reported latencies are already end-to-end (CPU assembly + full GPU forward; Finding 5 decomposes them). To characterize the high-QPS regime directly we ran the decomposition on a lightweight encoder (all-MiniLM-L6-v2), where the CPU is the bottleneck by design: the baseline assembler caps single-stream throughput at ~4.7k req/s (CPU assembly = 57–66% of latency at B≥64). The GPU-resident `index_select` assembler proposed in our Limitations removes this ceiling in pure PyTorch: 11.7k–14.5k req/s (2.5–3.2×), assembly share down to 2–5%, and the p99/p50 tail ratio drops from 4.6× to ~1.0×. On the paper's bge-m3 it yields 1.17× (B=8) to 1.79× (B=128) end-to-end. The paper's serving numbers use the baseline assembler and are therefore conservative — this optimization only widens the reported margins.
 
----
-
-## Concern map & status
-
-| Concern | Reviewer(s) | Plan | Status |
-|---|---|---|---|
-| **Only one model / generality** | 5qtX (sole weakness), yeZ9 Q4 | ELECTRA-base serving sweep (beyond BERT/RoBERTa, low-risk) | **OPEN — needs GPU run (score-mover)** |
-| **End-to-end latency incl. CPU/scatter** | yeZ9 Q1 | Already end-to-end; + MiniLM data; measure scatter | Data ✅, draft ✅, scatter pending |
-| **>10k req/s CPU bottleneck** | yeZ9 Q3, reject-#5 | MiniLM CPU-regime + index_select | **Data ✅, draft ✅** |
-| Mixed-rank in one batch | yeZ9 Q5, reject-#1 | Argue from Finding 3 (pad-to-max = homogeneous max-rank batch = latency-neutral; cost is memory not compute; bucketing avoids it) | **Draft ✅** (optional mixed-batch confirmation on pod) |
-| GPU memory / "KV cache headroom" | yeZ9 Q2 | Finding 4 numbers + correct decoder assumption (encoders have no KV cache) | Unwritten |
-| No empirical custom-kernel cmp | yeZ9 reject-#3 | Clarify Finding 6 *is* empirical (9% ablation) | Unwritten |
-| N=8 few-shot only | yeZ9 reject-#4 | Concede + context (SetFit protocol; serving is accuracy-agnostic) | Unwritten |
-| Single-node only | yeZ9 reject-#2 | Concede honestly (Appendix C architectural) | Unwritten |
-| Embedding/rerank not eval'd | yeZ9 reject-#6 | Clarify scope (bge-m3 IS retrieval; heads are task-agnostic) | Unwritten |
-| "Just implementation" + adoption | aNEv | Reframe: Industry Track + FLOP insight (quote yeZ9) + library commit | Unwritten |
-| Future directions | aNEv | Add short future-work note | Unwritten |
-| Release as library | 5qtX Q | Commit to pip library at camera-ready | Unwritten |
-| Cold-start under churn | yeZ9 Q6 | Frame Finding 7: registration is O(1) + off-path → ≈0% of serving time (flat in N); PEFT O(N²) saturates a core under churn | **Draft ✅** (optional interleaved add-under-load microbench on pod) |
-| Plagiarized preprint? | (author worry) | Checked web + arXiv API → **none exists**; field is all decoder-side | ✅ Resolved |
+At camera-ready (+1 page) we will consolidate (a)+(b) into a new subsection "Generalization Across Models and Hardware" with a new Finding, and fold (c) into Finding 5 and the Limitations discussion. We hope these results address the concerns shared across the reviews, and we would be grateful if they are weighed in the final assessment.
 
 ---
 
-## Measured findings (new experiments)
+## Part 1 — Response to Reviewer 5qtX
 
-### 1. index_select assembler — bge-m3 (paper's model)
-A100-80GB, N=2000, r=8, seq=128, fp16, 5 seeds. `benchmarks/results/assembly_bench.txt`.
+We thank the reviewer for the encouraging assessment.
 
-- End-to-end speedup **1.17× (B=8) → 1.79× (B=128)**.
-- Assembly time: baseline O(B), 3.8→77.6 ms; index_select **flat ~0.5 ms**.
-- Assembly share of latency: baseline **17%→46%**; index_select **2.2%→0.5%**.
-- Tail p99/p50: baseline 4.1× (B=64) / 2.5× (B=128); index_select **~1.0×** (spike gone).
-- `torch.compile` adds nothing (eager index_select already optimal).
+**Only one model tested.** We agree, and have now replicated the paper's headline results on three additional encoders spanning families and scale — ELECTRA-large (334M), DeBERTa-v2-xlarge (884M, disentangled attention), and XLM-RoBERTa-XL (3.5B, 36 layers) — plus bge-m3 on a second GPU class (L40S-48GB). In every configuration, p50 stays flat as the pool grows to the memory ceiling (total spread ≤0.6–4.1% across the sweep, with no upward trend: p50 at each ceiling is within +1.3% of its N=1,000 value) and the speedup over PEFT-mixed persists (2.5–22.6× on A100; up to 32.4× on L40S); see the table in our general response. Notably the O(1)-in-N property holds unchanged at 3.5B parameters, where the base forward dominates even more strongly. These become a new "Generalization Across Models and Hardware" subsection at camera-ready.
 
-### 2. index_select — all-MiniLM-L6-v2 (the >10k / CPU-regime demo)
-Same config, `benchmarks/results/assembly_bench_minilm.txt`. Fast/shallow model exposes the CPU bottleneck sharply.
-
-| Batch | Baseline req/s | index_select req/s | Speedup | Baseline asm share |
-|---:|---:|---:|---:|---:|
-| 64 | 4,710 | 11,656 | 2.47× | 57.3% |
-| 128 | 4,730 | 13,619 | 2.88× | 61.9% |
-| 256 | 4,572 | 14,455 | 3.16× | 66.0% |
-
-- **Baseline caps ~4.7k req/s** — cannot reach 10k; CPU assembly is 57–66% of latency at B≥64.
-- **index_select crosses 10k → 11.7k–14.5k req/s** (2.5–3.2×), assembly share → 2–5%.
-- Tail p99/p50: baseline 4.6× (B=128); index_select ~1.0×.
-- **The cap formula:** throughput → `1 / (per-sample assembly + per-sample forward)`. Baseline ≈ `1/0.21ms ≈ 4.7k` (assembly-dominated); index_select ≈ `1/0.069ms ≈ 14.5k` (forward-bound). CPU gather was the bottleneck, not the GPU.
-
-### 3. Result-scatter instrumentation
-Added to `benchmarks/profiling/assembly_bench.py` (scatter_results + timing + tables). **Not yet run.** Bundle with the ELECTRA pod session. Decision to confirm: measure on-device scatter only (excludes host D2H/serialization, matching the forward's boundary).
+**Would we release the code as a library?** Yes. The anonymized benchmark repository is already linked in the paper; at camera-ready we will de-anonymize it and publish the serving path as a pip-installable library (batched assembler, `AdapterStore`, and the batched-head implementation, with the benchmark harness).
 
 ---
 
-## Draft answer — CPU path (Q1 + Q3 + reject-#5, consolidated)
+## Part 2 — Response to Reviewer aNEv
 
-> Our reported latency is already end-to-end, not GPU-only: every number is CPU batch assembly (the per-sample LoRA gather) plus the full GPU forward including the batched LR head (§Benchmark Protocol); Finding 5 decomposes it. To address the high-QPS regime directly, we ran the end-to-end decomposition on a widely-deployed lightweight encoder (all-MiniLM-L6-v2): the baseline CPU assembler **caps single-stream throughput at ~4.7k req/s** with CPU assembly at 57–66% of latency — it cannot reach 10k because the CPU gather is the ceiling. The GPU-resident `index_select` assembler we proposed in our Limitations removes this, lifting throughput past 10k (to **11.7k–14.5k req/s, 2.5–3.2×**) and eliminating the tail spike (4.6×→1.0×), in pure PyTorch. **Our paper's serving numbers use the baseline assembler and are therefore conservative — this optimization only widens the margins.** Result scatter (per-tenant slice + softmax) is O(B·c_max) tensor indexing, [X] ms ([Y]%), negligible vs. assembly. Full production end-to-end including request queueing under dynamic batching is a serving-layer property (Appendix C) we characterize architecturally but do not benchmark — future work.
+We thank the reviewer for the assessment and address the two concerns.
 
-Brackets [X]/[Y] fill from the scatter run.
+**"Implementation optimization, not algorithmic innovation."** The paper's core is an algorithmic observation, not a code path: encoder forward passes are dominated by the base projections — the LoRA delta is ~9% of forward FLOPs (measured) — so per-tenant adaptation can be decomposed as W₀x + BᵢAᵢx with the base path shared across a mixed-tenant batch. That decomposition is what makes serving cost O(1) in the number of tenants *by construction*, and it yields an analytic bound (Finding 6) showing custom kernels can add at most single-digit gains on encoders — an explanation of *why* the decoder-side literature needs custom CUDA and encoders do not. We would also note the deployment gap is real and currently unclosed by any system: vLLM's LoRA-pooling path covers only decoder-backbone embedders, and PEFT's mixed-batch API degrades 5.6–21.2× at our operating points while registering adapters in O(N²) time. Since submission we have further verified the method is not tied to one model or GPU: the same code reproduces the paper's results on ELECTRA-large, DeBERTa-v2-xlarge, XLM-RoBERTa-XL (3.5B), and on an L40S (general response table).
 
----
+**Adoption by the open-source community.** We agree adoption cannot be claimed in advance. To lower the barrier: the benchmark repository is already public (anonymized), and at camera-ready we will release the serving path as a pip-installable library — the generality results above are what a third party would need to apply it to their own encoder.
 
-## Draft answer — Mixed rank in one batch (yeZ9 Q5 + reject-#1)
-
-**Key move: the reviewer's worst case *is* Finding 3, already measured — no new run needed.**
-Padding every adapter to the batch's max rank produces exactly a homogeneous max-rank
-batch. Finding 3 sweeps the *uniform* batch rank r ∈ {4,8,16,32} — that homogeneous case —
-and shows it is latency-neutral. So Finding 3 is an exact upper bound on any mixed batch
-whose max rank is r_max.
-
-### Facts / numbers (all from Table 2 / Findings 3–4)
-- **Rank sweep, N=1000, B=32.** p50: r4=**40.8**, r8=40.4, r16=40.4, r32=**40.2** ms (spread <2%, and *decreasing* — pure noise). p99: 44.8 / 44.7 / 42.9 / 42.7 (±0.9/3.9/2.0/3.7 seed s.d.) → 5% spread, within between-seed noise. Forward stays **≈26.0 ms across all four ranks**.
-- **FLOP share of the delta path = 2r/d** (bge-m3 d=1024): r8 ≈ **1.6%**, r32 ≈ **6.25%** of *one* projection's arithmetic → a fraction of a percent of the full encoder forward. Base path W₀x is rank-independent and dominates.
-- **The real cost of rank is memory, not compute** (Finding 4): doubling r halves the tenant ceiling — 47k (r8) → 23.5k (r16) → 11.75k (r32). This is a per-adapter *storage* property, not a mixed-batch penalty.
-- **Padding is transient, not resident.** The baseline assembler (the paper's system) stores each adapter at its own rank; pad-to-max only inflates the per-batch buffer, freed after the forward. No resident-memory waste.
-- **Avoidable in deployment:** rank is a fixed small per-adapter integer known at registration → rank-bucketed batch formation (an O(1) scheduling policy over the *same* assembler, no kernel change) gives rank-homogeneous batches with zero padding. Masked-BMM (our stated future work) removes even the need to bucket.
-
-### Blockquote (paste-ready)
-> **Mixed rank in one batch (Q5).** The overhead identified is exactly the cost of running a batch at its maximum rank — and Finding 3 already measures that this is latency-neutral in the operating regime. Padding inflates only the LoRA *delta* path (BᵢAᵢx); the shared base path W₀x is rank-independent and dominates the forward. While r ≪ d the delta path adds just 2r/d of a single projection's arithmetic — ≈1.6% of the bge-m3 forward at r=8, ≈6% at r=32. Finding 3 confirms this: sweeping the *uniform* batch rank r ∈ {4,8,16,32} — i.e. forcing every adapter to that rank, precisely the worst case of pad-to-max — leaves p50 flat (40.8→40.2 ms, <2%, within seed noise) with the forward at ≈26 ms across all four ranks; the p99 spread is 5%, comparable to the between-seed s.d. A batch that pads a rank-4 tenant up to rank-32 therefore pays essentially no latency penalty. The genuine cost of higher rank is *memory*, not compute — doubling r halves the per-GPU tenant ceiling (47k→23.5k→11.75k, Finding 4) — and it is a per-adapter storage property, not a mixed-batch penalty: each adapter is stored at its own rank, and padding only inflates the transient per-batch buffer, which is freed after the forward. In deployment padding is avoidable entirely: rank is a fixed, small per-adapter integer known at registration, so rank-bucketed batch formation — an O(1) scheduling policy over the same assembler, with no kernel change — yields rank-homogeneous batches with zero padding. The masked-BMM variant we flag as future work removes even that, letting a single batch mix ranks and target modules via per-sample masking. We will sharpen the Limitations paragraph accordingly at camera-ready.
-
-### Notes
-- Same argument covers "same **target modules**": an adapter omitting a module contributes a zero delta there — bounded by the same tiny delta-path share, and eliminated by bucketing (by module set) or masked-BMM. Keep it to one clause; don't over-explain.
-- **Optional cheap confirmation** (bundle on the ELECTRA/DeBERTa pod, not required): run one *genuinely* heterogeneous batch (e.g. 50% r=4 / 50% r=32) and show it matches the homogeneous r=32 latency. Gives a literal "we tested a mixed batch" sentence and closes the paper's `% TODO (Task #8)` in the Limitations paragraph. The text answer above stands without it.
-- **Do NOT** concede this as a severe/open limitation — it reads as one in the current Limitations paragraph ("wasting compute… potentially severe"), but the data says the compute cost is ~0 in-regime and the only real axis is memory. The camera-ready edit should reframe from "wasting compute" → "trades tenant density for rank; padding is latency-neutral (Finding 3) and avoidable via rank-bucketing."
+**Future directions.** We will add a short discussion: (i) a masked-BMM variant allowing a single batch to mix ranks and target-module sets; (ii) quantitative evaluation of the replicated multi-GPU architecture of Appendix C; (iii) extending the store to fixed-capacity slotting so the packed GPU-resident assembler also supports O(1) adapter churn; and (iv) applying the decomposition to decoder-backbone embedding models.
 
 ---
 
-## Draft answer — Cold-start / registration % under churn (yeZ9 Q6)
+## Part 3a — Response to Reviewer yeZ9 (Questions)
 
-**This is a *friendly* question — the reviewer calls Finding 7 "compelling" and wants the prod
-translation. The answer is structurally clean: LateFuse registration is O(1) *and off the
-serving path*, so its share of serving time is ≈0 by construction — independent of N and churn.
-PEFT's is O(N) per add (O(N²) cumulative) and grows with the pool. Make the contrast the answer.**
+We thank the reviewer for an exceptionally thorough review. New experiments since submission address Q1, Q3, Q4, and Q5 with measurements; details in the general response.
 
-### Facts / numbers (Finding 7 / §4.4, all measured)
-- **Per-adapter registration cost.** LateFuse `AdapterStore` preload: **0.05 s @ N=100, 0.29 s @ N=1000** → ~**0.29 ms/adapter, flat** (linear-time, O(1) per add). PEFT `add_adapter`: **14.4 s @ N=100 → 1180.7 s @ N=1000** (O(N²) cumulative, exponent ≈1.91).
-- **Cold-start speedup: 288×–4071×** (14.4/0.05 = 288 at N=100; 1180.7/0.29 = 4071 at N=1000 — the gap *widens* with N).
-- **PEFT marginal add at N=1000 ≈ 2.4 s** — *projected* from the O(N²) fit (c·N, c≈2.36 ms), i.e. ~**8,000× LateFuse's 0.29 ms/add**, and rising with N.
-- **Why LateFuse's share is ≈0:** a new tenant = one store insertion (memcpy of A/B + head into the resident store); serving requests select resident adapters by *index* (O(1) gather, already counted in assembly / Finding 5). No per-request `set_adapter` swap, no ModuleDict rescan.
+**Q1 (end-to-end latency).** Our reported latency is already end-to-end, not GPU-only: every number includes CPU batch assembly (the per-sample LoRA gather) plus the full GPU forward including the batched classification head, and Finding 5 decomposes the two. For the high-QPS regime we ran the decomposition on all-MiniLM-L6-v2, where CPU assembly dominates (57–66% of latency at B≥64): the baseline assembler caps throughput at ~4.7k req/s — the CPU gather, not the GPU, is the ceiling. The remaining post-forward step, result scatter (per-tenant logit slicing + softmax), is a single O(B·c_max) tensor-indexing operation; we will report its measured share in the camera-ready alongside the assembly decomposition. Production concerns beyond the process boundary (request queueing, dynamic batching) are serving-layer properties we describe architecturally (Appendix C) but do not benchmark.
 
-### Churn translation (the "% of serving time" the reviewer asked for)
-Take an **aggressive** churn rate: the entire N=1000 pool turns over **once per hour** (1000 adds/3600 s ≈ 0.28 adds/s — far above realistic onboarding/retrain rates):
-- **LateFuse:** 0.28 × 0.29 ms ≈ **0.008 % of wall-clock**, and off the serving path entirely. At daily turnover it's ~0.0003 %.
-- **PEFT:** 0.28 × ~2.4 s ≈ **0.67 s of registration per second** — ~67 % of a core on registration alone at N=1000, and it *worsens quadratically* with pool size (at larger N, registration can't keep up with churn at all).
+**Q2 (memory footprint at 47k adapters; KV-cache headroom).** At r=8 with query+value targets over 24 layers (d=1024), one adapter is 786K params = 1.5 MB fp16, so the 47k-adapter store measures ~74 GB — the Finding 4 ceiling is precisely the resident store filling the A100's 80 GB, alongside the fp16 base model (~1.1 GB) and B=32 activations (~1–2 GB). One clarification: encoders have no KV cache — the forward is a single non-autoregressive pass — so sequence length affects only transient activations, which scale with B×L and are freed per batch; the ceiling is set by the adapter store, not by sequence length. (Our new capacity runs confirm the same accounting on other models, e.g. 68 GB resident measured at DeBERTa's 58k ceiling.)
 
-**Punchline:** LateFuse's registration share is negligible (**<0.01 %**) across any realistic churn and **flat in N**; PEFT's grows with the pool and saturates a core at moderate pools. That is the real prod impact.
+**Q3 (mitigation for the >10k req/s CPU ceiling).** It is not a hard ceiling. The GPU-resident `index_select` assembler sketched in our Limitations is now implemented and measured: it keeps adapters packed on-GPU and replaces the per-sample CPU gather with one `index_select`, in pure PyTorch. On MiniLM it lifts single-stream throughput (assemble→forward sequentially; batch size ÷ end-to-end latency) from ~4.7k to 11.7k–14.5k samples/s (2.5–3.2×), cuts assembly share to 2–5%, and removes the tail spike (p99/p50 4.6×→~1.0×); on bge-m3 it gives 1.17–1.79× end-to-end. This is the per-replica compute bound a serving layer schedules against, not a load-tested QPS figure — with the baseline assembler that bound sits below 10k req/s, and with `index_select` it clears it. The paper's numbers use the baseline assembler and are therefore conservative.
 
-### Blockquote (paste-ready)
-> **Registration under churn (Q6).** In \sysname{} the share of serving time spent on registration is ≈0 by construction, independent of pool size and churn rate. A new tenant is a single `AdapterStore` insertion — a memcpy of its A/B factors and head into the resident store — measured at ~0.29 ms/adapter and flat in N (0.05 s to preload 100, 0.29 s for 1,000). Serving requests never register or swap: they select resident adapters by index (the O(1) gather already counted in our assembly cost, Finding 5). So even under an aggressive churn rate — the entire 1,000-adapter pool replaced every hour — registration is ~0.008 % of wall-clock, and it runs off the serving path. The contrast is the production point: PEFT's `add_adapter` rescans the per-layer `ModuleDict` on every call (O(N) per add, O(N²) cumulative — the result the reviewer highlights), so at N=1,000 a single registration costs ≈2.4 s (~8,000× ours) and grows with the pool; under the same churn PEFT would spend the majority of a core on registration alone, and cannot keep pace at larger pools. Cold-start preload already reflects this end to end: 288×–4071× faster over N=100→1,000, a gap that widens by construction. We measure the per-add cost and the O(N²)-vs-linear scaling directly; to report the churn share as a single measured number we will add an interleaved add-under-load microbenchmark in the camera-ready.
+**Q4 (beyond BERT/RoBERTa).** Yes — three new encoders running the same decomposition with no architecture-specific kernels: ELECTRA-large (334M) in our native engine, and DeBERTa-v2-xlarge (884M, disentangled attention) and XLM-RoBERTa-XL (3.5B, 36 layers) via a generic HuggingFace hook wrapper that injects the batched LoRA path into the stock forward (output parity with PEFT is unit-tested). The O(1)-in-N latency and PEFT-mixed speedups replicate on all of them (p50 spread ≤0.6–3.8% across the sweep with no upward trend — at each ceiling p50 is within +1.3% of its N=1,000 value; speedups 2.5–22.6×); table in the general response. We chose a larger-encoder ladder rather than T5-small because the decomposition's premise (base-dominated compute) strengthens with scale; encoder-decoder architectures are future work.
 
-### Notes
-- **Honesty:** we measure (a) per-add cost 0.29 ms flat and (b) the O(N²)/linear cold-start scaling. We have **not** measured concurrent add-while-serving — "off the serving path" is an architectural property of the store (insertion is an independent O(1) op), and the churn % above is a *projection* from the measured primitives. The optional microbenchmark below turns it into a direct measurement.
-- **Optional cheap confirmation** (bundle on the ELECTRA/DeBERTa pod): interleave a stream of adds with the serving loop and report registration's measured share for \sysname{} vs a PEFT `add_adapter` baseline. Confirms the ≈0 % directly and gives a literal churn number. Not required for the claim.
-- **Do NOT** overclaim "0 %" — say ≈0 / <0.01 % / negligible. And keep the PEFT 2.4 s labelled as *projected from the O(N²) fit*, not measured-at-a-single-add.
-- Ties to Finding 4 (memory) and the mixed-rank answer: LateFuse's per-tenant cost is O(1) in *both* compute and registration; the only per-tenant axis that scales is resident memory.
-- **⚠️ index_select caveat:** this O(1)/off-path claim is the **BASELINE** assembler, NOT index_select — the packed-tensor path snapshots the store at construction (`batch.py:150–153`) and has no incremental-add path (naive add = O(N²)). Keep the churn and index_select threads separate; see **Framing guardrail #6**. Do not let a "we also have index_select" sentence bleed into this answer.
+**Q5 (mixed ranks in one batch).** The pad-to-max overhead the reviewer asks about is exactly the cost of running a batch at its maximum rank — and Finding 3 measures that this is latency-neutral. Padding inflates only the LoRA delta path (BᵢAᵢx); the shared base path is rank-independent and dominates: at r≪d the delta adds ~2r/d of one projection's arithmetic (~1.6% of the bge-m3 forward at r=8, ~6% at r=32). Finding 3 sweeps the uniform batch rank r∈{4,8,16,32} — forcing every adapter to that rank, precisely the pad-to-max worst case — and p50 stays flat (40.8→40.2 ms, <2%, within seed noise); this replicates on all four new configurations, so a batch that pads a rank-4 tenant up to rank-32 pays essentially no latency penalty. To be precise about the current implementation: an `AdapterStore` is rank-homogeneous, so a mixed-rank fleet is served today by keeping one store per rank and forming rank-homogeneous batches — rank-bucketed batching with zero padding, a scheduling policy that needs no kernel changes (rank is a fixed per-adapter integer known at registration). Finding 3 bounds the cost of the pad-to-max alternative for deployments that prefer a single store, and the masked-BMM variant we flag as future work would let a single batch mix ranks and target modules directly. The genuine cost of higher rank is memory, not compute: doubling r halves the tenant ceiling (47k→23.5k→11.75k, Finding 4) — a per-adapter storage property, not a mixed-batch penalty. We will reword the Limitations paragraph accordingly ("wasting compute" overstates the cost; the real trade-off is tenant density vs rank).
 
----
+**Q6 (registration share under realistic churn).** In LateFuse the share of serving time spent on registration is ≈0 by construction, independent of pool size and churn. A new tenant is a single `AdapterStore` insertion — a memcpy of its A/B factors and head into the resident store — measured at ~0.29 ms/adapter and flat in N (0.05 s to preload 100 adapters; 0.29 s for 1,000). Serving requests never register or swap: they select resident adapters by index (the O(1) gather already counted in assembly, Finding 5). Even under aggressive churn — the entire 1,000-adapter pool replaced hourly — registration is ~0.008% of wall-clock, and it runs off the serving path. The contrast is the production point: PEFT's `add_adapter` rescans per-layer ModuleDicts on every call (O(N) per add, O(N²) cumulative), so at N=1,000 a single registration costs ≈2.4 s projected from the measured O(N²) fit (~8,000× ours) and grows with the pool; under the same churn PEFT would spend most of a CPU core on registration alone. We measure the per-add cost and the O(N²)-vs-linear scaling directly; to report the churn share as a single measured number we will add an interleaved add-under-load microbenchmark at camera-ready.
 
-## Generality — §4.5 Generalization (score-mover: Q4 + 5qtX)
+## Part 3b — Response to Reviewer yeZ9 (Weaknesses)
 
-DeBERTa / a larger encoder / bge-m3 on a second GPU all belong in **one new subsection, §4.5 "Generalization Across Models and Hardware"** — already stubbed as the `% TODO (Task #4)` block in `paper/main.tex`. This is body content (uses the camera-ready +1 page).
+**W1 (uniform rank constraint).** Addressed under Q5: pad-to-max is latency-neutral (Finding 3 is its exact worst case), the true cost is per-adapter memory, and per-rank stores with rank-bucketed batching serve mixed-rank fleets today with zero padding and no kernel changes. The same argument covers uniform target modules: an adapter omitting a module contributes a zero delta there, bounded by the same small delta-path share, and eliminated by bucketing or masked-BMM.
 
-**These are generalization, NOT ablations.** Ablation = vary a component of *LateFuse* (no-LoRA path, buffers, `index_select` vs baseline, rank). Generalization = same system, different *external substrate* (model, GPU). Swapping the base model/GPU is the latter — and it must be *visible* (it answers reviewer concerns), not buried under "ablation."
+**W2 (single GPU / single node).** Partially addressed and partially conceded. New: hardware generality — the full sweep replicated on an L40S-48GB (flat p50 to the 28k ceiling, 4.3–32.4× over PEFT-mixed). Conceded: multi-GPU/multi-node serving remains architectural (Appendix C); since adapter pools shard by tenant with no cross-GPU communication, we expect replication to scale linearly, but we have not measured it and will label those claims as design, not results.
 
-| Experiment | Axis | Reviewer |
-|---|---|---|
-| DeBERTa-v3-base | multi-model (different architecture) | yeZ9 Q4 ("beyond BERT/RoBERTa") |
-| larger encoder | multi-model (scale) | 5qtX (sole weakness) |
-| bge-m3 on 2nd GPU | multi-hardware | "single A100" specificity |
+**W3 (no empirical custom-kernel comparison).** Correct that the ceiling analysis is analytic — but it is anchored in a measured quantity: the LoRA-delta share of forward FLOPs (~9%) comes from our ablation, so the bound on what any kernel could recover is grounded empirically. A direct comparison is not currently possible because no custom-kernel implementation serves encoder LoRA (that absence is the paper's motivating gap); porting a Punica/S-LoRA-style BGMV kernel to encoders to verify the bound is future work we will note.
 
-⚠️ **Different GPU ≠ multi-node.** A 2nd GPU class shows hardware generality; it does NOT address reject-#2 (multi-GPU/node cluster) — that stays future work (Appendix C). Don't conflate.
+**W4 (N=8 few-shot accuracy only).** Conceded. We follow the SetFit protocol to keep the accuracy study comparable to prior art; whether LoRA configuration choices matter more in full-data regimes is a valid open question. We note the serving contribution is orthogonal to this axis: the serving path applies whatever adapters training produces, and the paper's latency/throughput/capacity claims are independent of the training regime.
 
-### Compression rules (keeps it to ~⅓ column)
-The detailed N×B×r behavior is already in Table 2 for bge-m3; §4.5 only shows it *transfers*, so:
-1. **One row per (model, GPU)** — each row summarizes a whole sweep, not the grid.
-2. **Report only the invariants** — p50 drift as N→ceiling (≈0 ⇒ O(1)-in-N holds) and speedup vs PEFT-mixed. Not raw latency at every N/B/r.
-3. **Fix off-axis knobs** — r=8, operating-point batch. No new axes.
-Detail (flat-curve figures, full tables) → appendix, off the page clock.
+**W5 (CPU bottleneck at >10k req/s).** Now characterized experimentally — see Q1/Q3: the baseline assembler caps at ~4.7k req/s on a lightweight encoder, and the measured `index_select` assembler lifts this to 11.7k–14.5k req/s in pure PyTorch. We will move this from Limitations into the evaluation at camera-ready.
 
-### Shape A — paper §4.5 (camera-ready)
-> LateFuse's claims are properties of the late-fusion BMM decomposition, not of bge-m3 or the A100. Holding the system fixed, we vary the base encoder and the GPU class; we report only whether p50 stays flat as the pool scales (O(1)-in-N, Finding 1) and the PEFT-mixed speedup (Finding 7). Full sweeps in Appendix X.
->
-> **Finding 8: The O(1)-in-N property and PEFT speedups hold across encoder families, sizes, and GPU classes.**
-
-| Config | Params (L, d) | GPU | p50 drift (N: 100→ceiling) | Throughput (smp/s) | Speedup vs PEFT-mixed |
-|---|---|---|---|---|---|
-| **bge-m3** (ref) | 568M (24, 1024) | A100-80GB | ≤1% | 801 | 5.6–21.2× |
-| DeBERTa-v3-base | 184M (12, 768) | A100-80GB | [·] | [·] | [·]× |
-| *[larger encoder]* | [·] | A100-80GB | [·] | [·] | [·]× |
-| bge-m3 | 568M (24, 1024) | *[GPU-2]* | [·] | [·] | [·]× |
-
-### Shape B — rebuttal subset (report only MEASURED rows; no placeholders)
-> **To 5qtX and yeZ9 (Q4):** bge-m3 alone understates generality. LateFuse has no model/hardware-specific code, and we demonstrate this on **DeBERTa-v3-base** (disentangled attention, beyond BERT/RoBERTa). The O(1)-in-N property and PEFT speedups hold:
->
-> | Config | GPU | p50 drift (N: 100→ceiling) | Speedup vs PEFT-mixed |
-> |---|---|---|---|
-> | bge-m3 (paper) | A100-80GB | ≤1% | 5.6–21.2× |
-> | DeBERTa-v3-base | A100-80GB | [x]% | [x]× |
->
-> We will consolidate this into a new **§4.5 (Generalization Across Models and Hardware)** in the camera-ready, adding a larger encoder and a second GPU class.
-
-The rebuttal table is a **subset of the §4.5 table in the same shape** — measure what you can by July 29, report those rows, §4.5 adds the rest. Run via the **main serving sweep (`run.py`)**, NOT `assembly_bench.py`; results → `benchmarks/results/` as new sweep CSVs. Do NOT include accuracy or the index_select/CPU-path work here (different threads). Fallback if OpenReview mangles the table: one inline sentence per row.
+**W6 (embedding/reranking workloads not directly evaluated).** Two clarifications and a concession. bge-m3 is itself a retrieval/embedding encoder, so the benchmarked forward (shared base + per-tenant delta + pooled output) is the same compute an embedding workload executes; and the serving path is head-agnostic — the batched per-tenant head is one output choice, and replacing it with pooled-embedding output removes work rather than adding it. We concede we did not run an end-to-end retrieval or cross-encoder reranking evaluation under load, and will state this scope explicitly.
 
 ---
 
-## Framing decisions (guardrails — do NOT violate)
+## Post-checklist (for you, not for OpenReview)
 
-1. **Additive, not re-baseline.** Report index_select as a *measured optimization on the residual bottleneck*, reported alongside the baseline. Main table + Findings 1–7 + method stay unchanged. **Do not** rewire `run.py` or regenerate `sweep_main`.
-2. **Baseline is "conservative."** Frame current numbers as lower bounds that index_select widens. This turns "we didn't use the fast path" into a strength.
-3. **Promise only the additive result.** ❌ Never write "we will make index_select the default serving path" — implies a full re-baseline, signals provisional numbers, loses Finding 5, and gives **zero** acceptance upside over reporting the numbers. Re-baselining can only hurt/neutral, so don't.
-4. **Honesty caveats to keep:**
-   - assembly_bench is **single-stream** (assemble→forward sequential); "throughput" = batch/latency, not concurrent/pipelined QPS.
-   - Result scatter number is measured on-device only; host serialization is serving-layer.
-   - Never imply we measured network/queueing (production) latency.
-5. **Never** reference reviewer identity-knowledge or confirm/deny authorship. 5qtX's AIK=4 was a wrong guess; anonymization verified clean (PDF metadata, source, no self-cites). No leak, no plagiarized preprint.
-6. **index_select churn caveat — keep the Q6 (churn) and index_select (throughput) threads DECOUPLED.** The current `IndexSelectBatchAssembler` packs the store into one contiguous (N,L,H,R) tensor *at construction* and does **not** support incremental adds (`src/lora_serving/weights/batch.py:150–153`: "adapters added afterwards are not reflected"). A naive add = re-`stack` all N = **O(N) copy, O(N²) cumulative** — which would *reintroduce the PEFT pathology* Finding 7 beats. So **Q6's O(1)/off-path registration claim rests on the BASELINE assembler** (the paper's served system: per-adapter `AdapterStore`, O(1) dict insert), NOT index_select. index_select is an *assembly-throughput* optimization only (Finding 5 / CPU-path / >10k). ❌ Never claim index_select is the fast path AND O(1) under churn together — yeZ9 asks exactly these questions and would catch it. If pushed: making index_select O(1) under churn is **fixed-capacity slotting** (pre-allocate to the Finding-4 ceiling, 47k @ r=8; O(1) slot writes, eviction reuses freed rows) — note as design/future work, **NOT implemented, NOT measured**.
-
----
-
-## Open items / TODO
-
-- [ ] **ELECTRA-base serving sweep** (Q4 score-mover) — O(1) latency + throughput vs PEFT + capacity; serving sweep only, NOT accuracy. Needs a fresh GPU pod (prior A100 deleted).
-- [ ] Run **scatter instrumentation** on MiniLM (bundle with ELECTRA pod). Fill [X]/[Y] in the CPU-path draft.
-- [ ] Draft remaining reviewer answers (Q2, reject #2/#3/#4/#6, aNEv reframe, library commit). *(Q5 mixed-rank ✅, Q6 churn ✅ drafted.)*
-- [ ] Assemble the shared "what's new since submission" opening (2 small tables: generality + index_select).
-- [ ] Optional: `deberta-v3-base` as a stretch generality model (stronger claim, medium integration risk).
-
-**Camera-ready only (do NOT do now):** tighten the Limitations ">10k req/s" wording to match the per-node data; add index_select as a labeled variant row in Table 2 (optional middle path, keeps Finding 5); de-anonymize repo + add library; restore authors/acks.
+- [ ] **Push the new result CSVs (`benchmarks/results/rebuttal_*`, `assembly_bench*`) to the repo backing the anonymized 4open.science link, then remove the brackets around the repo sentence in Part 0.** If you can't push before the deadline, delete that bracketed sentence entirely — never claim it if it isn't live.
+- [ ] Verify the exact response format in the portal (single box vs per-review threads; char limits). Split points are marked above.
+- [ ] Do not mention: reviewer identity/AIK, unpublished preprints, index_select as "the new default path" (guardrail: it is an additive, measured optimization; churn/O(1) claims rest on the baseline assembler only — the two threads are deliberately decoupled above).
+- [ ] The scatter share is *not yet measured* — the text above only promises it at camera-ready. If you get a pod session before the deadline, you can fill it in, but nothing depends on it.
+- [ ] XLM-R-XL: quote p50 numbers only (3 of 5 seeds show p99 stragglers ~260 ms vs 137 ms p50 at the op point; harmless for drift claims, but don't cite its p99).
+- [ ] DeBERTa value-only rationale (share_att_key / batch-shared position embeddings; parity 2×10⁻⁵ vs 10.3% divergence) is from `benchmarks/run_rebuttal_deberta.sh` header and asserted in `tests/test_real_checkpoint_parity.py` — keep it if asked for detail.
