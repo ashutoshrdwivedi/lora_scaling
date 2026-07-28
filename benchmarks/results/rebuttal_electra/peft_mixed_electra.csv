@@ -1,0 +1,7 @@
+harness,model,dtype,num_adapters,batch_size,lora_rank,seq_len,p50_ms,p90_ms,p95_ms,p99_ms,mean_ms,throughput_samples_sec,peak_gpu_mem_gb,add_adapter_total_s,warmup,iters
+peft_mixed,google/electra-large-discriminator,float16,100,8,8,128,144.98,148.38,149.37,151.17,142.33,56.2,0.867,14.83,10,50
+peft_mixed,google/electra-large-discriminator,float16,100,32,8,128,386.27,409.91,420.45,423.33,381.2,83.9,0.961,14.83,10,50
+peft_mixed,google/electra-large-discriminator,float16,100,128,8,128,979.19,1015.86,1041.63,1069.83,982.07,130.3,1.339,14.83,10,50
+peft_mixed,google/electra-large-discriminator,float16,1000,8,8,128,484.84,497.55,500.22,507.02,486.39,16.4,2.283,1182.14,10,50
+peft_mixed,google/electra-large-discriminator,float16,1000,32,8,128,780.79,789.23,793.05,798.87,779.51,41.1,2.377,1182.14,10,50
+peft_mixed,google/electra-large-discriminator,float16,1000,128,8,128,1900.16,1932.5,1946.3,1963.41,1897.84,67.4,2.755,1182.14,10,50

@@ -1,0 +1,3 @@
+model,dtype,num_adapters,batch_size,lora_rank,seq_len,p50_ms,p90_ms,p95_ms,p99_ms,mean_ms,assemble_p50_ms,assemble_mean_ms,forward_p50_ms,forward_mean_ms,assemble_share_pct,throughput_samples_sec,peak_gpu_mem_gb,adapter_cache_gb,adapter_load_total_s,warmup,iters,seed,engine,target_modules
+google/electra-large-discriminator,float16,47000,32,8,128,38.1,38.35,38.53,41.23,38.21,12.124,12.22,25.953,25.988,32.0,837.5,75.719,73.925,34.23,50,200,,custom,query+value
+google/electra-large-discriminator,float16,49000,32,8,128,37.86,38.16,38.32,42.03,39.0,11.983,13.084,25.864,25.913,33.6,820.6,78.907,77.07,17.76,50,200,,custom,query+value
