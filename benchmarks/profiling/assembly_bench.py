@@ -15,7 +15,7 @@ assembly strategies under an otherwise identical forward pass:
 For each batch size it reports (a) end-to-end latency (assemble + encoder
 forward + LR head), the methodology-agnostic headline, (b) the assembly-only
 split that connects to Finding 5, and (c) result scatter (the per-tenant slice +
-softmax that unbatches logits back to each caller; reviewer yeZ9's Q1). Equivalence
+softmax that unbatches logits back to each caller). Equivalence
 (identical logits) is asserted before any timing, so the speedups are for a
 numerically identical computation.
 
@@ -426,7 +426,7 @@ def main():
         f.write("- Assembly share collapsing toward 0% means the CPU-side\n")
         f.write("  bottleneck is gone; the forward then bounds latency.\n")
         f.write("- 'Result scatter' is the per-tenant slice + softmax that\n")
-        f.write("  unbatches logits (reviewer yeZ9 Q1); it is variant-independent\n")
+        f.write("  unbatches logits; it is variant-independent\n")
         f.write("  (same op regardless of assembler), timed on-device. Host-side\n")
         f.write("  transfer/serialization to callers is serving-layer, excluded\n")
         f.write("  here to match the forward's boundary.\n")
