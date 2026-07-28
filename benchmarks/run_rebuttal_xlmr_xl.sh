@@ -36,10 +36,14 @@
 # DISK: the checkpoint is ~14 GB. Ensure the volume has headroom before
 # starting or the download dies mid-run (see the HF_HOME note below).
 #
-# Runtime ~7-8h -- the long pole among the rebuttal scripts. The forward is
-# ~9.4x bge-m3's (per-layer cost scales as 4d^2 + 2*d*ffn, so 2.5x width and
-# 1.5x depth compound), and run_single_config reloads the 7 GB base model for
-# every cell. Start this one FIRST. Independent of the other rebuttal scripts.
+# Runtime ~5.7h (4.7h sweep + ~1h PEFT) -- the long pole among the rebuttal
+# scripts. Extrapolated from measured A100 p50 at N=1000: 37.9 ms (B=8),
+# 136.7 ms (B=32), 584.1 ms (B=128), i.e. ~4.5-5.5x bge-m3's forward -- less
+# than the 9.4x a pure FLOP ratio predicts, since the wider model utilises the
+# A100 better. Note ~1.8h of that total is run_single_config reloading the 7 GB
+# base model once per cell (190 times); caching it across configs would be the
+# single biggest speedup available here.
+# Start this one FIRST. Independent of the other rebuttal scripts.
 set -u
 export HOME=/root
 export PATH=$HOME/.local/bin:$PATH
@@ -47,7 +51,7 @@ export PYTHONUNBUFFERED=1
 # Model downloads go to the mounted volume, not the container disk. XLM-R-XL
 # alone is ~14 GB; a default 20 GB container disk cannot hold it plus the venv.
 export HF_HOME=${HF_HOME:-/workspace/hf_cache}
-export UV_CACHE_DIR=${UV_CACHE_DIR:-/workspace/uv_cache}
+export UV_CACHE_DIR=${UV_CACHE_DIR:-/root/.cache/uv}
 export TMPDIR=${TMPDIR:-/workspace/tmp}
 mkdir -p "$HF_HOME" "$UV_CACHE_DIR" "$TMPDIR"
 cd /root/lora_scaling

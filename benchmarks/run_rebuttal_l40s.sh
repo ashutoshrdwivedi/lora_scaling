@@ -30,7 +30,7 @@ export PYTHONUNBUFFERED=1
 # Model downloads go to the mounted volume, not the container disk (see
 # run_rebuttal_deberta.sh: a default 20G container disk fills mid-sweep).
 export HF_HOME=${HF_HOME:-/workspace/hf_cache}
-export UV_CACHE_DIR=${UV_CACHE_DIR:-/workspace/uv_cache}
+export UV_CACHE_DIR=${UV_CACHE_DIR:-/root/.cache/uv}
 export TMPDIR=${TMPDIR:-/workspace/tmp}
 mkdir -p "$HF_HOME" "$UV_CACHE_DIR" "$TMPDIR"
 cd /root/lora_scaling

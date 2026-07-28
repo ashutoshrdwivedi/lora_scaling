@@ -1,0 +1,4 @@
+model,dtype,num_adapters,batch_size,lora_rank,seq_len,p50_ms,p90_ms,p95_ms,p99_ms,mean_ms,assemble_p50_ms,assemble_mean_ms,forward_p50_ms,forward_mean_ms,assemble_share_pct,throughput_samples_sec,peak_gpu_mem_gb,adapter_cache_gb,adapter_load_total_s,warmup,iters,seed,engine,target_modules
+microsoft/deberta-v2-xlarge,float16,45000,32,8,128,75.54,75.92,76.04,77.02,75.64,8.129,8.16,67.392,67.48,10.8,423.1,56.932,53.084,26.61,50,200,,hf,value
+microsoft/deberta-v2-xlarge,float16,50000,32,8,128,75.3,75.69,75.76,76.17,75.4,8.076,8.093,67.186,67.302,10.7,424.4,62.985,58.982,14.37,50,200,,hf,value
+microsoft/deberta-v2-xlarge,float16,55000,32,8,128,75.8,76.23,76.31,78.62,75.93,8.187,8.272,67.561,67.662,10.9,421.4,69.041,64.881,15.48,50,200,,hf,value

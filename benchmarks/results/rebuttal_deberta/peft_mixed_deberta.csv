@@ -1,0 +1,7 @@
+harness,model,dtype,num_adapters,batch_size,lora_rank,seq_len,p50_ms,p90_ms,p95_ms,p99_ms,mean_ms,throughput_samples_sec,peak_gpu_mem_gb,add_adapter_total_s,warmup,iters
+peft_mixed,microsoft/deberta-v2-xlarge,float16,100,8,8,128,99.26,103.31,104.0,105.79,98.97,80.8,2.063,6.99,10,50
+peft_mixed,microsoft/deberta-v2-xlarge,float16,100,32,8,128,251.96,264.97,267.83,272.8,252.06,127.0,2.548,6.99,10,50
+peft_mixed,microsoft/deberta-v2-xlarge,float16,100,128,8,128,705.3,719.25,726.53,734.35,702.95,182.1,4.486,6.99,10,50
+peft_mixed,microsoft/deberta-v2-xlarge,float16,1000,8,8,128,262.26,267.33,269.57,274.17,263.18,30.4,3.125,566.01,10,50
+peft_mixed,microsoft/deberta-v2-xlarge,float16,1000,32,8,128,444.91,450.68,453.69,455.86,444.5,72.0,3.61,566.01,10,50
+peft_mixed,microsoft/deberta-v2-xlarge,float16,1000,128,8,128,1157.17,1179.18,1182.39,1187.02,1155.74,110.8,5.548,566.01,10,50
