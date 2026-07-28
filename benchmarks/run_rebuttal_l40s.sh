@@ -48,7 +48,7 @@ export PYTHONUNBUFFERED=1
 # Model downloads go to the mounted volume, not the container disk (see
 # run_rebuttal_deberta.sh: a default 20G container disk fills mid-sweep).
 export HF_HOME=${HF_HOME:-/workspace/hf_cache}
-export UV_CACHE_DIR=${UV_CACHE_DIR:-/workspace/uv_cache}
+export UV_CACHE_DIR=${UV_CACHE_DIR:-/root/.cache/uv}
 export TMPDIR=${TMPDIR:-/workspace/tmp}
 # Required for the N=28000 cells -- see the fragmentation note in the header.
 export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}

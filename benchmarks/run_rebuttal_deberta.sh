@@ -43,7 +43,7 @@ export PYTHONUNBUFFERED=1
 # caches (deberta-v2-xlarge 3.4G, bge-m3 2.6G, electra 1.3G) plus the venv
 # (~7G) overflow a default 20G container disk and abort a sweep mid-run.
 export HF_HOME=${HF_HOME:-/workspace/hf_cache}
-export UV_CACHE_DIR=${UV_CACHE_DIR:-/workspace/uv_cache}
+export UV_CACHE_DIR=${UV_CACHE_DIR:-/root/.cache/uv}
 export TMPDIR=${TMPDIR:-/workspace/tmp}
 mkdir -p "$HF_HOME" "$UV_CACHE_DIR" "$TMPDIR"
 cd /root/lora_scaling
