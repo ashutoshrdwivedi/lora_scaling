@@ -1,3 +1,13 @@
+> [!WARNING]
+> **Superseded — working notes only. Do not paste from this file.**
+> The paste-ready rebuttal is `rebuttal/parts/*.md`, verified by
+> `rebuttal/check.py`. Numbers below predate the re-measured assembly
+> benchmark (`benchmarks/results/rebuttal_assembly/`) and the speedup/
+> aggregation convention fixes described in `rebuttal/README.md`.
+> Specifically stale here: the assembly throughput and tail figures, the
+> per-model speedup ranges, and the drift column. See `rebuttal/NUMBERS.md`
+> for the current values.
+
 # Rebuttal answers — draft (round 2)
 
 Companion to `rebuttal_response.md`. Everything here is paste-ready per

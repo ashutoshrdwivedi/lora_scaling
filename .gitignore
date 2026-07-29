@@ -20,6 +20,7 @@ eggs/
 lib/
 lib64/
 parts/
+!rebuttal/parts/
 sdist/
 var/
 wheels/
