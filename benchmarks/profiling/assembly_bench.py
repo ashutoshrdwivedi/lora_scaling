@@ -23,7 +23,7 @@ Run on the GPU node (matches benchmarks/run_sxm80.sh conventions):
     uv run python -m benchmarks.profiling.assembly_bench \\
         --model BAAI/bge-m3 --dtype fp16 --num-adapters 2000 \\
         --batch-sizes 8 16 32 64 128 --lora-rank 8 --seq-len 128 \\
-        --warmup 30 --iters 200 \\
+        --warmup 50 --iters 200 --seeds 1 2 3 4 5 \\
         --out benchmarks/results/assembly_bench.txt
 """
 
@@ -31,8 +31,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import platform
 import random
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -275,6 +278,73 @@ def fmt(cell: dict, unit: str = "", prec: int = 3, multi: bool = True) -> str:
     return f"{cell['mean']:.{prec}f}{unit}"
 
 
+def cgroup_cpu_quota() -> float | None:
+    """Effective CPU limit from the cgroup, in cores. None if uncapped.
+
+    Container runtimes usually cap CPU with a CFS quota rather than by pinning
+    cores, so sched_getaffinity happily reports every core on the host while the
+    process is throttled to a fraction of them -- on a RunPod A100 pod that is
+    192 visible versus ~20 actually granted. For a CPU-bound benchmark this gap
+    is the difference between a reproducible number and an unexplainable one.
+    """
+    try:  # cgroup v2
+        raw = Path("/sys/fs/cgroup/cpu.max").read_text().split()
+        if raw[0] != "max":
+            return int(raw[0]) / int(raw[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    try:  # cgroup v1
+        quota = int(Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us").read_text())
+        period = int(Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us").read_text())
+        if quota > 0 and period > 0:
+            return quota / period
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def env_metadata() -> dict:
+    """Hardware/software provenance for the report header and JSON.
+
+    The CPU fields carry as much weight as the GPU here: the baseline assembler
+    is CPU-bound by construction, so the throughput ceiling it reports is a
+    property of this host. Inside a container the usable core count can sit well
+    below the physical one, and it is the usable count that actually bounds the
+    per-sample gather.
+    """
+    cpu = platform.processor() or platform.machine()
+    try:
+        # Linux gives the real model string; platform.processor() only says "x86_64".
+        for line in Path("/proc/cpuinfo").read_text().splitlines():
+            if line.startswith("model name"):
+                cpu = line.split(":", 1)[1].strip()
+                break
+    except OSError:
+        pass
+    try:
+        usable = len(os.sched_getaffinity(0))  # respects the container cpuset
+    except AttributeError:  # not Linux
+        usable = os.cpu_count() or 0
+    return {
+        "gpu": torch.cuda.get_device_name(0),
+        "cpu": cpu,
+        "cpu_cores_total": os.cpu_count() or 0,
+        "cpu_cores_usable": usable,
+        "cpu_cgroup_quota": cgroup_cpu_quota(),
+        "torch_version": torch.__version__,
+        "cuda_version": torch.version.cuda or "n/a",
+        "captured_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def cpu_line(env: dict) -> str:
+    """One-line CPU description. The quota, not the visible count, is the bound."""
+    quota = env["cpu_cgroup_quota"]
+    cap = f"cgroup quota {quota:.1f}" if quota else "uncapped"
+    return (f"{env['cpu']} ({env['cpu_cores_usable']}/{env['cpu_cores_total']} "
+            f"cores visible, {cap})")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", default="BAAI/bge-m3")
@@ -284,7 +354,9 @@ def main():
     parser.add_argument("--lora-rank", type=int, default=8)
     parser.add_argument("--seq-len", type=int, default=128)
     parser.add_argument("--num-labels", type=int, default=10)
-    parser.add_argument("--warmup", type=int, default=30)
+    # 50/200 is the house protocol, shared with lora_serving.benchmark.run and
+    # every rebuttal_* sweep, so assembly numbers compose with the model sweeps.
+    parser.add_argument("--warmup", type=int, default=50)
     parser.add_argument("--iters", type=int, default=200)
     parser.add_argument(
         "--seeds", nargs="+", type=int, default=None,
@@ -303,7 +375,9 @@ def main():
 
     device = torch.device("cuda:0")
     dtype = DTYPE_MAP[args.dtype]
-    print(f"GPU: {torch.cuda.get_device_name(0)}")
+    env = env_metadata()
+    print(f"GPU: {env['gpu']}")
+    print(f"CPU: {cpu_line(env)}")
 
     # Config used only to build the store/assemblers (batch_size irrelevant here;
     # the per-batch-size model is rebuilt inside bench_one_batch_size).
@@ -360,7 +434,10 @@ def main():
     seed_str = ",".join(str(s) for s in seeds) if multi else "single run"
     with out.open("w") as f:
         f.write(f"# Batch-assembly strategies — {args.model}\n")
-        f.write(f"# GPU: {torch.cuda.get_device_name(0)}\n")
+        f.write(f"# GPU: {env['gpu']}\n")
+        # The baseline arm is CPU-bound, so the host CPU is part of the result.
+        f.write(f"# CPU: {cpu_line(env)}\n")
+        f.write(f"# torch {env['torch_version']} / CUDA {env['cuda_version']}\n")
         f.write(f"# N={args.num_adapters} r={args.lora_rank} seq={args.seq_len} "
                 f"dtype={args.dtype} warmup={args.warmup} iters={args.iters} "
                 f"seeds={seed_str}\n")
@@ -434,7 +511,8 @@ def main():
     json_path = out.with_suffix(".json")
     with json_path.open("w") as f:
         json.dump({
-            "gpu": torch.cuda.get_device_name(0),
+            "gpu": env["gpu"],  # kept at top level for back-compat with earlier runs
+            "env": env,
             "config": vars(args),
             "seeds": seeds,
             "aggregated": {str(bs): agg[bs] for bs in args.batch_sizes},
