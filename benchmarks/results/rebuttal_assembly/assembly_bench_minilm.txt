@@ -1,0 +1,74 @@
+# Batch-assembly strategies — sentence-transformers/all-MiniLM-L6-v2
+# GPU: NVIDIA A100-SXM4-80GB
+# CPU: Intel(R) Xeon(R) Platinum 8470 (192/192 cores visible, cgroup quota 20.4)
+# torch 2.11.0+cu128 / CUDA 12.8
+# N=2000 r=8 seq=128 dtype=fp16 warmup=50 iters=200 seeds=1,2,3,4,5
+# Values are mean±s.d. across seeds.
+
+## End-to-end latency (assemble + forward + LR head), mean ms
+ batch          baseline          indexsel          idx+comp   speedup
+     8       3.806±0.017       3.368±0.006       3.596±0.020     1.13x
+    16       4.526±0.033       3.490±0.033       3.721±0.017     1.30x
+    32       5.574±0.067       3.308±0.003       3.513±0.013     1.69x
+    64      10.143±0.118       5.129±0.003       5.301±0.004     1.98x
+   128      18.813±0.188       8.902±0.037       9.050±0.012     2.11x
+   256      39.386±0.481      16.687±0.005      16.843±0.006     2.36x
+
+## Assembly-only time (Finding 5 quantity), mean ms
+ batch          baseline          indexsel          idx+comp
+     8       0.575±0.003       0.164±0.001       0.320±0.009
+    16       1.090±0.003       0.168±0.003       0.332±0.006
+    32       2.180±0.040       0.193±0.002       0.332±0.001
+    64       5.109±0.116       0.208±0.002       0.344±0.001
+   128      10.004±0.182       0.255±0.016       0.390±0.006
+   256      22.814±0.473       0.301±0.003       0.443±0.006
+
+## Assembly share of end-to-end (%)
+ batch          baseline          indexsel          idx+comp
+     8         15.1±0.1%          4.9±0.0%          8.9±0.2%
+    16         24.1±0.1%          4.8±0.1%          8.9±0.2%
+    32         39.1±0.3%          5.8±0.0%          9.4±0.0%
+    64         50.4±0.6%          4.1±0.0%          6.5±0.0%
+   128         53.2±0.4%          2.9±0.2%          4.3±0.1%
+   256         57.9±0.5%          1.8±0.0%          2.6±0.0%
+
+## Result scatter (per-tenant slice + softmax), mean ms
+ batch          baseline          indexsel          idx+comp
+     8       0.113±0.001       0.112±0.000       0.112±0.001
+    16       0.198±0.002       0.198±0.002       0.197±0.001
+    32       0.371±0.003       0.365±0.002       0.368±0.003
+    64       0.711±0.004       0.702±0.008       0.707±0.007
+   128       1.409±0.034       1.424±0.099       1.381±0.022
+   256       2.722±0.016       2.698±0.013       2.706±0.032
+
+## Scatter share of end-to-end incl. scatter (%)
+ batch          baseline          indexsel          idx+comp
+     8          2.9±0.0%          3.2±0.0%          3.0±0.0%
+    16          4.2±0.1%          5.4±0.1%          5.0±0.0%
+    32          6.2±0.0%          9.9±0.0%          9.5±0.1%
+    64          6.6±0.1%         12.0±0.1%         11.8±0.1%
+   128          7.0±0.1%         13.8±0.8%         13.2±0.2%
+   256          6.5±0.1%         13.9±0.1%         13.8±0.1%
+
+## Tail ratio p99/p50 (end-to-end)
+ batch          baseline          indexsel          idx+comp
+     8        1.04±0.01x        1.06±0.03x        1.06±0.03x
+    16        1.05±0.02x        1.07±0.05x        1.04±0.03x
+    32        1.10±0.14x        1.04±0.01x        1.04±0.01x
+    64        1.09±0.10x        1.02±0.01x        1.02±0.01x
+   128        1.22±0.07x        1.01±0.01x        1.01±0.01x
+   256        5.14±0.29x        1.01±0.00x        1.01±0.00x
+
+Interpretation:
+- 'speedup' is baseline/indexsel end-to-end (ratio of seed means).
+  >1 means the index_select gather reduced total latency.
+- 'idx+comp' vs 'indexsel' isolates torch.compile's MARGINAL
+  effect on the already-vectorized gather (the id->row Python
+  lookup is eager in both, so this is the pure fusion upside).
+- Assembly share collapsing toward 0% means the CPU-side
+  bottleneck is gone; the forward then bounds latency.
+- 'Result scatter' is the per-tenant slice + softmax that
+  unbatches logits; it is variant-independent
+  (same op regardless of assembler), timed on-device. Host-side
+  transfer/serialization to callers is serving-layer, excluded
+  here to match the forward's boundary.
