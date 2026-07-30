@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 
 import torch
@@ -39,9 +41,20 @@ class LoraServingConfig:
     intermediate_size: int = field(init=False)
     layer_norm_eps: float = field(init=False)
     hidden_act: str = field(init=False)
+    model_type: str = field(init=False)
+    embedding_size: int = field(init=False)
+    type_vocab_size: int = field(init=False)
+    relative_attention: bool = field(init=False)
+    max_relative_positions: int = field(init=False)
+    position_buckets: int = field(init=False)
+    pos_att_type: list[str] = field(init=False)
+    share_att_key: bool = field(init=False)
+    position_biased_input: bool = field(init=False)
+    norm_rel_ebd: str = field(init=False)
 
     def __post_init__(self):
         hf = AutoConfig.from_pretrained(self.model_name)
+        self.model_type = hf.model_type
         self.hidden_size = hf.hidden_size
         self.num_layers = hf.num_hidden_layers
         self.num_heads = hf.num_attention_heads
@@ -49,3 +62,15 @@ class LoraServingConfig:
         self.intermediate_size = hf.intermediate_size
         self.layer_norm_eps = hf.layer_norm_eps
         self.hidden_act = getattr(hf, "hidden_act", "gelu")
+        self.embedding_size = getattr(hf, "embedding_size", hf.hidden_size)
+        self.type_vocab_size = getattr(hf, "type_vocab_size", 0)
+        self.relative_attention = getattr(hf, "relative_attention", False)
+        self.max_relative_positions = getattr(hf, "max_relative_positions", -1)
+        if self.max_relative_positions < 1:
+            self.max_relative_positions = getattr(hf, "max_position_embeddings", 0)
+        self.position_buckets = getattr(hf, "position_buckets", -1)
+        pos_att_type = getattr(hf, "pos_att_type", None)
+        self.pos_att_type = pos_att_type if pos_att_type is not None else []
+        self.share_att_key = getattr(hf, "share_att_key", False)
+        self.position_biased_input = getattr(hf, "position_biased_input", True)
+        self.norm_rel_ebd = getattr(hf, "norm_rel_ebd", "none")

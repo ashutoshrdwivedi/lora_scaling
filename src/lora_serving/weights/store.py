@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Tuple
 
 import torch
 from torch import Tensor
@@ -11,7 +11,7 @@ from lora_serving.config import LoraServingConfig
 # Callers provide this to make loading model-agnostic.
 # Example for SetFit/adapters-library format:
 #   key_fn = lambda i, mod: f"encoder.layer.{i}.attention.self.{mod}.loras.setfit_<id>.lora_A"
-KeyResolverFn = Callable[[int, str], tuple[str, str]]  # returns (key_A, key_B)
+KeyResolverFn = Callable[[int, str], Tuple[str, str]]  # returns (key_A, key_B)
 
 
 class LoraWeight:
