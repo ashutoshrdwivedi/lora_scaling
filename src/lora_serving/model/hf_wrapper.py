@@ -72,6 +72,9 @@ class HFEncoderWithLora(nn.Module):
         # per-sample content hidden states (see _make_hook). Non-zero only for
         # architectures with batch-shared projections; exposed for auditing.
         self.shared_projection_skips = 0
+        # Number of hooks registered below. encode_pooled requires all of them
+        # to fire on every adapted forward; see the check there.
+        self._num_hooks = 0
 
         suffixes = _TARGET_SUFFIXES.get(
             base.config.model_type, _TARGET_SUFFIXES["default"]
@@ -94,6 +97,7 @@ class HFEncoderWithLora(nn.Module):
                 modules[name].register_forward_hook(
                     self._make_hook(layer_idx, logical)
                 )
+                self._num_hooks += 1
 
     def _make_hook(self, layer_idx: int, logical: str):
         key = (layer_idx, logical)
@@ -155,6 +159,10 @@ class HFEncoderWithLora(nn.Module):
 
         Uses the checkpoint's own pooler when it has one (BERT/RoBERTa
         family); otherwise the raw CLS hidden state (ELECTRA, DeBERTa).
+
+        Raises RuntimeError if the adapter was not applied at every target
+        projection — an unmodelled architecture must fail loudly rather than
+        return a plausible base-only result.
         """
         B, S = input_ids.shape
         cfg = self.config
@@ -170,6 +178,7 @@ class HFEncoderWithLora(nn.Module):
         self._batch_lora = lora_weights if apply_lora else None
         self._expected_shape = (B, S, cfg.hidden_size)
         self._fired = set()
+        skips_before = self.shared_projection_skips
         try:
             kwargs = {}
             if token_type_ids is not None:
@@ -177,10 +186,29 @@ class HFEncoderWithLora(nn.Module):
             out = self.base(
                 input_ids=input_ids, attention_mask=attention_mask, **kwargs
             )
+            fired = len(self._fired)
         finally:
             self._batch_lora = None
             self._expected_shape = None
             self._fired = set()
+        # A hook whose input never matches _expected_shape returns the base
+        # output untouched, so an architecture this wrapper does not model —
+        # flattened (B*S, H) hidden states, packed sequences, a projection whose
+        # in_features != hidden_size — would run the full forward with no
+        # adapter applied and still return a well-formed (B, H) tensor. The
+        # benchmark would then record latency for a model doing no LoRA math,
+        # in a CSV row indistinguishable from a correct one. Every registered
+        # hook must fire exactly once per adapted forward, so require it.
+        if apply_lora and fired != self._num_hooks:
+            raise RuntimeError(
+                f"LoRA hooks fired {fired}/{self._num_hooks} times on "
+                f"{self.base.config.model_type}: every target projection was "
+                f"expected to be called on a tensor of shape "
+                f"{(B, S, cfg.hidden_size)}, and "
+                f"{self.shared_projection_skips - skips_before} call(s) took "
+                "the skip path instead. The base forward ran without the "
+                "adapter delta, so anything measured from it would be wrong."
+            )
         pooled = getattr(out, "pooler_output", None)
         if pooled is None:
             pooled = out.last_hidden_state[:, 0]

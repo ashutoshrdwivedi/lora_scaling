@@ -19,6 +19,9 @@ runs offline on CPU (and on GPU when available). Coverage:
      property that lets a wrapper-measured row be compared with the paper's.
   6. share_att_key accounting: the wrapper skips exactly the batch-shared
      projection calls it should, and no others.
+  7. PEFT parity, XLM-RoBERTa-XL: the pre-LN architecture the generality row
+     measures, and the all-hooks-fired guard that keeps a forward which
+     applied no delta from being reported as a timing.
 """
 
 from __future__ import annotations
@@ -33,6 +36,8 @@ from transformers import (
     DebertaV2Model,
     ElectraConfig,
     ElectraModel,
+    XLMRobertaXLConfig,
+    XLMRobertaXLModel,
 )
 
 from lora_serving.config import LoraServingConfig
@@ -391,6 +396,54 @@ def test_shared_projection_skip_accounting(tmp_path):
             f"{expected_per_layer * cfg.num_layers} skips, got "
             f"{wrapper.shared_projection_skips}"
         )
+
+
+def test_unfired_hooks_raise(tmp_path):
+    """A forward that applied no delta must fail, not return a base-only result.
+
+    The hooks only fire on an input of shape (B, S, hidden_size); an
+    architecture whose target Linear sees anything else — flattened (B*S, H)
+    hidden states, packed sequences, in_features != hidden_size — takes the
+    skip path everywhere and the forward completes with zero LoRA math. The
+    output is a well-formed (B, H) tensor, so the benchmark would happily
+    record latency for a model serving no adapter.
+
+    Corrupting hidden_size after construction is the surrogate for such an
+    architecture: it is the same mechanism (expected shape never matches) with
+    no need for a checkpoint we do not model.
+    """
+    config = BertConfig(**TINY, type_vocab_size=2)
+    path = _save_tiny(BertModel, config, tmp_path)
+    cfg = _serving_config(path, ["query", "value"])
+    store = _store_with_adapters(cfg, 1)
+    lora_w = BatchAssembler(store, cfg).assemble_lora(["adapter_0"] * BATCH_SIZE)
+    wrapper = HFEncoderWithLora.from_pretrained_serving(cfg)
+    input_ids, attention_mask = _inputs(cfg)
+
+    wrapper.config.hidden_size += 1
+    with torch.no_grad(), pytest.raises(RuntimeError, match=r"fired 0/4"):
+        wrapper.encode_pooled(input_ids, attention_mask, lora_w)
+
+    # The base-only path applies no delta by design, so it must stay allowed.
+    with torch.no_grad():
+        wrapper.encode_pooled(input_ids, attention_mask, lora_w, apply_lora=False)
+
+
+def test_parity_xlm_roberta_xl(tmp_path):
+    """PEFT parity on the pre-LN XLM-R-XL architecture.
+
+    xlm-roberta-xl is the checkpoint the generality row actually measures
+    through this wrapper, and it is the one family here that is not post-LN.
+    tests/test_real_checkpoint_parity.py pins it on the real 3.5B checkpoint,
+    but that file needs CUDA and a 14 GB download; this runs the same claim in
+    CI. It also exercises the all-hooks-fired guard on the architecture that
+    matters most, since a shape mismatch there is exactly what would go
+    unnoticed in a latency sweep.
+    """
+    config = XLMRobertaXLConfig(**TINY, type_vocab_size=2)
+    path = _save_tiny(XLMRobertaXLModel, config, tmp_path)
+    cfg = _serving_config(path, ["query", "value"])
+    _assert_parity(path, cfg, ["query", "value"], use_pooler_output=True)
 
 
 def test_electra_loads_without_pooler(tmp_path):
