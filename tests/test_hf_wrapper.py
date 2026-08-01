@@ -22,9 +22,16 @@ runs offline on CPU (and on GPU when available). Coverage:
   7. PEFT parity, XLM-RoBERTa-XL: the pre-LN architecture the generality row
      measures, and the all-hooks-fired guard that keeps a forward which
      applied no delta from being reported as a timing.
+  8. Lifetime: the hooks must not make the wrapper part of a reference cycle,
+     because the sweep drops one model per (N, B, r) cell and needs its VRAM
+     back before the next cell allocates. Plus close()/`with`, which detach
+     the hooks eagerly.
 """
 
 from __future__ import annotations
+
+import gc
+import weakref
 
 import pytest
 import torch
@@ -467,3 +474,59 @@ def test_electra_loads_without_pooler(tmp_path):
         model.embeddings["word_embeddings"].weight,
         hf.state_dict()["embeddings.word_embeddings.weight"],
     )
+
+
+def test_wrapper_is_refcount_collectable(tmp_path):
+    """Dropping the wrapper must free it and its base without a GC pass.
+
+    Each hook closure is reachable from the base model's _forward_hooks, and
+    the base is a submodule of the wrapper, so a closure that captured `self`
+    would put the wrapper in a reference cycle. It would still be collected
+    eventually, which is why this never showed up as a leak in a test — but
+    only on a gen-2 pass, long after benchmark/run.py's per-cell model went out
+    of scope. The sweep builds a fresh wrapper for every (N, B, r) cell and the
+    large-N cells sit close to the card's ceiling, so a stale base model still
+    holding VRAM turns into an OOM that the sweep records as a dropped cell.
+
+    gc is disabled here so the assertion is specifically about refcounting;
+    with the cycle present the wrapper survives the `del` and this fails.
+    """
+    path = _save_tiny(BertModel, BertConfig(**TINY, type_vocab_size=2), tmp_path)
+    model = HFEncoderWithLora.from_pretrained_serving(_serving_config(path, ["query", "value"]))
+    assert model._num_hooks > 0, "no hooks registered; the test would pass vacuously"
+    wrapper_ref, base_ref = weakref.ref(model), weakref.ref(model.base)
+
+    gc.disable()
+    try:
+        del model
+        assert wrapper_ref() is None, (
+            "wrapper survived `del` with gc off — a hook closure is holding a "
+            "strong reference to it (use weakref in _make_hook)"
+        )
+        assert base_ref() is None, "base model outlived the wrapper"
+    finally:
+        gc.enable()
+
+
+def test_close_detaches_hooks_and_forward_then_fails_loudly(tmp_path):
+    """close() removes the hooks; using a closed wrapper raises rather than
+    silently returning base-only output (the fired-count guard catches it)."""
+    path = _save_tiny(BertModel, BertConfig(**TINY, type_vocab_size=2), tmp_path)
+    cfg = _serving_config(path, ["query", "value"])
+    store = _store_with_adapters(cfg, 1)
+    lora_w = BatchAssembler(store, cfg).assemble_lora(["adapter_0"] * BATCH_SIZE)
+    ids = torch.randint(0, TINY["vocab_size"], (BATCH_SIZE, SEQ_LEN), device=DEVICE)
+    mask = torch.ones(BATCH_SIZE, SEQ_LEN, dtype=torch.long, device=DEVICE)
+
+    with HFEncoderWithLora.from_pretrained_serving(cfg) as model:
+        model.eval()
+        with torch.no_grad():
+            model.encode_pooled(ids, mask, lora_w)
+        n_hooks = model._num_hooks
+
+    assert not model._hook_handles
+    assert not any(m._forward_hooks for m in model.base.modules())
+    model.close()  # idempotent
+    with pytest.raises(RuntimeError, match=f"fired 0/{n_hooks}"):
+        with torch.no_grad():
+            model.encode_pooled(ids, mask, lora_w)

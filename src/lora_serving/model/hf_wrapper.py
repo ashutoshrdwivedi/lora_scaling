@@ -16,8 +16,11 @@ EncoderWithLora; only the base forward differs.
 
 from __future__ import annotations
 
+import weakref
+
 import torch
 from torch import Tensor, nn
+from torch.utils.hooks import RemovableHandle
 from transformers import AutoModel
 
 from lora_serving.config import LoraServingConfig
@@ -75,6 +78,8 @@ class HFEncoderWithLora(nn.Module):
         # Number of hooks registered below. encode_pooled requires all of them
         # to fire on every adapted forward; see the check there.
         self._num_hooks = 0
+        # Handles for those hooks, so close() can detach them eagerly.
+        self._hook_handles: list[RemovableHandle] = []
 
         suffixes = _TARGET_SUFFIXES.get(
             base.config.model_type, _TARGET_SUFFIXES["default"]
@@ -94,16 +99,32 @@ class HFEncoderWithLora(nn.Module):
                         f"module '{name}' not found in {base.config.model_type} "
                         f"model — cannot attach LoRA hook"
                     )
-                modules[name].register_forward_hook(
-                    self._make_hook(layer_idx, logical)
+                self._hook_handles.append(
+                    modules[name].register_forward_hook(
+                        self._make_hook(layer_idx, logical)
+                    )
                 )
                 self._num_hooks += 1
 
     def _make_hook(self, layer_idx: int, logical: str):
         key = (layer_idx, logical)
+        # The hook is stored in a base submodule's _forward_hooks, and `base`
+        # is a submodule of self, so capturing `self` here would close the loop
+        # self -> base -> Linear._forward_hooks -> hook -> self. A wrapper in
+        # that cycle is unreachable to refcounting and survives until a gen-2
+        # GC pass, keeping a dead model's weights resident in VRAM.
+        # benchmark/run.py builds one wrapper per (N, B, r) cell and relies on
+        # the drop at return to release it before the next cell allocates its
+        # adapter store, so hold a weak reference and stay refcount-collectable.
+        wref = weakref.ref(self)
 
         def hook(module: nn.Module, inputs: tuple, output: Tensor):
-            batch_lora = self._batch_lora
+            owner = wref()
+            # The wrapper is gone, so the caller is driving `base` directly and
+            # the un-adapted output is the correct result.
+            if owner is None:
+                return None
+            batch_lora = owner._batch_lora
             if batch_lora is None:
                 return None
             # Some architectures call the same projection Linear on a
@@ -119,16 +140,16 @@ class HFEncoderWithLora(nn.Module):
             # firing only on the first shape-matching call per (layer, module)
             # per forward disambiguates even that case.
             x = inputs[0]
-            if key in self._fired or x.shape != self._expected_shape:
-                self.shared_projection_skips += 1
+            if key in owner._fired or x.shape != owner._expected_shape:
+                owner.shared_projection_skips += 1
                 return None
-            self._fired.add(key)
+            owner._fired.add(key)
             layer_w = batch_lora[layer_idx]
             a = torch.cat(layer_w.a[logical], dim=0)  # (B, H, R)
             b = torch.cat(layer_w.b[logical], dim=0)  # (B, R, H)
-            self.lora_ops.shrink(x, a)
-            self.lora_ops.expand(b)
-            return output + self.lora_ops.output
+            owner.lora_ops.shrink(x, a)
+            owner.lora_ops.expand(b)
+            return output + owner.lora_ops.output
 
         return hook
 
@@ -146,6 +167,29 @@ class HFEncoderWithLora(nn.Module):
         base.eval()
         model = cls(base, serving_config)
         return model.to(serving_config.device)
+
+    def close(self) -> None:
+        """Detach every LoRA hook from the base model. Idempotent.
+
+        The wrapper is already refcount-collectable on its own (the hooks hold
+        only a weak reference back), so this is not required for correctness —
+        it is for callers that want the base weights released at a known point
+        rather than whenever the last reference happens to drop, e.g. a test
+        that builds a second multi-GB checkpoint straight after the first.
+
+        Deliberately leaves _num_hooks intact: a closed wrapper then fails the
+        fired-count check in encode_pooled instead of quietly returning
+        base-only output.
+        """
+        for handle in self._hook_handles:
+            handle.remove()
+        self._hook_handles.clear()
+
+    def __enter__(self) -> "HFEncoderWithLora":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
 
     def encode_pooled(
         self,
