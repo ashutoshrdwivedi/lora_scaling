@@ -22,10 +22,14 @@ runs offline on CPU (and on GPU when available). Coverage:
   7. PEFT parity, XLM-RoBERTa-XL: the pre-LN architecture the generality row
      measures, and the all-hooks-fired guard that keeps a forward which
      applied no delta from being reported as a timing.
-  8. Lifetime: the hooks must not make the wrapper part of a reference cycle,
+  8. Lifetime. The hooks must not make the wrapper part of a reference cycle,
      because the sweep drops one model per (N, B, r) cell and needs its VRAM
-     back before the next cell allocates. Plus close()/`with`, which detach
-     the hooks eagerly.
+     back before the next cell allocates. Hook registration is tied to the
+     wrapper's lifetime from both ends: a dropped wrapper detaches its hooks
+     from a base that outlives it, a failed __init__ unwinds the ones it had
+     already attached, and close()/`with` release the base at a known point.
+  9. Construction guards: duplicate target_modules are rejected where the
+     field is named, not as a shape assertion deep in the delta path.
 """
 
 from __future__ import annotations
@@ -496,6 +500,7 @@ def test_wrapper_is_refcount_collectable(tmp_path):
     assert model._num_hooks > 0, "no hooks registered; the test would pass vacuously"
     wrapper_ref, base_ref = weakref.ref(model), weakref.ref(model.base)
 
+    was_enabled = gc.isenabled()
     gc.disable()
     try:
         del model
@@ -505,28 +510,110 @@ def test_wrapper_is_refcount_collectable(tmp_path):
         )
         assert base_ref() is None, "base model outlived the wrapper"
     finally:
-        gc.enable()
+        # Restore what we found rather than assuming it was on: this test's
+        # own premise is that gc state is load-bearing, so it must not decide
+        # that state for whatever runs next.
+        if was_enabled:
+            gc.enable()
 
 
-def test_close_detaches_hooks_and_forward_then_fails_loudly(tmp_path):
-    """close() removes the hooks; using a closed wrapper raises rather than
-    silently returning base-only output (the fired-count guard catches it)."""
+def test_close_releases_base_weights_and_forward_then_fails_loudly(tmp_path):
+    """Leaving the `with` block must free the base model, not merely unhook it.
+
+    `with` does not unbind its target, so `model` is still a live name here.
+    That is the whole trap: a close() that only removed the forward hooks would
+    leave every parameter allocated and the next multi-GB load would still OOM,
+    while looking like it had cleaned up. Assert on the weights, via a weakref
+    that can only die if the submodule was actually dropped.
+    """
     path = _save_tiny(BertModel, BertConfig(**TINY, type_vocab_size=2), tmp_path)
     cfg = _serving_config(path, ["query", "value"])
     store = _store_with_adapters(cfg, 1)
     lora_w = BatchAssembler(store, cfg).assemble_lora(["adapter_0"] * BATCH_SIZE)
-    ids = torch.randint(0, TINY["vocab_size"], (BATCH_SIZE, SEQ_LEN), device=DEVICE)
-    mask = torch.ones(BATCH_SIZE, SEQ_LEN, dtype=torch.long, device=DEVICE)
+    ids, mask = _inputs(cfg)
 
     with HFEncoderWithLora.from_pretrained_serving(cfg) as model:
         model.eval()
         with torch.no_grad():
             model.encode_pooled(ids, mask, lora_w)
-        n_hooks = model._num_hooks
+        base_ref = weakref.ref(model.base)
+        weight_ref = weakref.ref(model.base.embeddings.word_embeddings.weight)
+        # Track our own hooks by identity. Asserting "this module has no
+        # forward hooks at all" would also fail on a hook transformers or
+        # accelerate attached (device_map/offload paths do), reporting a
+        # close() bug that isn't one.
+        ours = [(h.hooks_dict_ref(), h.id) for h in model._hook_handles]
+        assert ours, "no hooks attached; the detach assertion would be vacuous"
 
+    gc.collect()
+    assert base_ref() is None, "close() left the base model allocated"
+    assert weight_ref() is None, "close() left the base weights allocated"
     assert not model._hook_handles
-    assert not any(m._forward_hooks for m in model.base.modules())
+    assert not any(d is not None and hid in d for d, hid in ours), (
+        "close() left LoRA hooks registered"
+    )
+
     model.close()  # idempotent
-    with pytest.raises(RuntimeError, match=f"fired 0/{n_hooks}"):
+    with pytest.raises(RuntimeError, match="has been closed"):
         with torch.no_grad():
             model.encode_pooled(ids, mask, lora_w)
+
+
+def test_failed_init_strands_no_hooks(tmp_path):
+    """A __init__ that raises partway must unwind the hooks it already attached.
+
+    The half-built wrapper holds the only handles for them and is discarded
+    with the exception, so anything left on `base` is unreachable forever —
+    and this is the path a caller is most likely to retry on, having just been
+    told which target name was wrong.
+    """
+    path = _save_tiny(BertModel, BertConfig(**TINY, type_vocab_size=2), tmp_path)
+    base = AutoModel.from_pretrained(path, torch_dtype=torch.float32)
+    cfg = _serving_config(path, ["query", "value"])
+    cfg.num_layers += 1  # one more layer than the checkpoint has
+
+    with pytest.raises(ValueError, match="not found"):
+        HFEncoderWithLora(base, cfg)
+
+    gc.collect()
+    left = sum(len(m._forward_hooks) for m in base.modules())
+    assert left == 0, f"{left} hooks stranded on base by the failed __init__"
+
+    # base is still reusable: a corrected config attaches and runs cleanly.
+    cfg.num_layers -= 1
+    model = HFEncoderWithLora(base, cfg)
+    assert sum(len(m._forward_hooks) for m in base.modules()) == model._num_hooks
+
+
+def test_duplicate_target_modules_rejected(tmp_path):
+    """Two hooks on one Linear would otherwise fail as an opaque shape
+    assertion inside LoraOps, naming neither the duplicate nor the config
+    field. run.py's --target-modules takes nargs="+", so it is one typo away."""
+    path = _save_tiny(BertModel, BertConfig(**TINY, type_vocab_size=2), tmp_path)
+    base = AutoModel.from_pretrained(path, torch_dtype=torch.float32)
+    cfg = _serving_config(path, ["query", "query"])
+
+    with pytest.raises(ValueError, match="duplicate"):
+        HFEncoderWithLora(base, cfg)
+    assert sum(len(m._forward_hooks) for m in base.modules()) == 0
+
+
+def test_dropped_wrapper_detaches_hooks_from_shared_base(tmp_path):
+    """Hook lifetime is tied to the wrapper, not to the base.
+
+    Callers who pass their own `base` can outlive the wrapper with it. Without
+    the finalizer the dead closures stay in _forward_hooks and pile up with
+    every wrapper built over that base, each one running and returning None on
+    every forward thereafter.
+    """
+    path = _save_tiny(BertModel, BertConfig(**TINY, type_vocab_size=2), tmp_path)
+    base = AutoModel.from_pretrained(path, torch_dtype=torch.float32)
+    cfg = _serving_config(path, ["query", "value"])
+    count = lambda: sum(len(m._forward_hooks) for m in base.modules())
+
+    for _ in range(3):
+        model = HFEncoderWithLora(base, cfg)
+        assert count() == model._num_hooks
+        del model
+        gc.collect()
+        assert count() == 0, "dropped wrapper left its hooks on the shared base"

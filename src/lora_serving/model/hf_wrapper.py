@@ -45,17 +45,36 @@ _TARGET_SUFFIXES: dict[str, dict[str, str]] = {
 }
 
 
+def _detach_hooks(handles: tuple[RemovableHandle, ...]) -> None:
+    """Remove forward hooks. Module-level so the finalizer that holds it can
+    never reference the wrapper it is meant to detect the death of."""
+    for handle in handles:
+        handle.remove()
+
+
 class HFEncoderWithLora(nn.Module):
     """Wraps a stock HF encoder; applies per-sample LoRA deltas via hooks.
 
     Presents the same forward signature as EncoderWithLora so
     benchmark/run.py can swap engines without touching the serving pipeline.
 
+    Lifetime: dropping the wrapper frees it and its base by refcount, so the
+    ordinary case needs nothing — a local going out of scope is enough, which
+    is what benchmark/run.py relies on between sweep cells. close() (or the
+    `with` form) is optional and only buys timing: it releases the base at a
+    known point instead of whenever the last reference happens to drop, for
+    when the next allocation has to fit. It leaves the wrapper unusable.
+
     Example:
         config = LoraServingConfig(model_name="microsoft/deberta-v2-xlarge", ...)
         model = HFEncoderWithLora.from_pretrained_serving(config)
         model.eval()
         output = model(input_ids, attention_mask, lora_weights, lr_weights, output_lr)
+
+        # Or, when the weights must be gone before the next load:
+        with HFEncoderWithLora.from_pretrained_serving(config) as model:
+            model.eval()
+            output = model(input_ids, attention_mask, lora_weights, lr_weights, output_lr)
     """
 
     def __init__(self, base: nn.Module, serving_config: LoraServingConfig):
@@ -81,30 +100,70 @@ class HFEncoderWithLora(nn.Module):
         # Handles for those hooks, so close() can detach them eagerly.
         self._hook_handles: list[RemovableHandle] = []
 
+        # A repeat would register two hooks on one Linear while the assembler
+        # stacks that logical name twice, and the mismatch would not surface
+        # until a shape assertion deep in LoraOps that names neither the
+        # duplicate nor the config field it came from. run.py takes
+        # --target-modules with nargs="+", so a repeat is one typo away.
+        duplicates = sorted(
+            {t for t in serving_config.target_modules
+             if serving_config.target_modules.count(t) > 1}
+        )
+        if duplicates:
+            raise ValueError(
+                f"target_modules contains duplicate entries {duplicates}: "
+                f"{serving_config.target_modules}. Each projection may be "
+                "hooked at most once."
+            )
+
         suffixes = _TARGET_SUFFIXES.get(
             base.config.model_type, _TARGET_SUFFIXES["default"]
         )
         modules = dict(base.named_modules())
-        for logical in serving_config.target_modules:
-            if logical not in suffixes:
-                raise ValueError(
-                    f"target module '{logical}' has no mapping for "
-                    f"model_type '{base.config.model_type}' "
-                    f"(known: {sorted(suffixes)})"
-                )
-            for layer_idx in range(serving_config.num_layers):
-                name = f"encoder.layer.{layer_idx}.{suffixes[logical]}"
-                if name not in modules:
+        # Any failure below leaves already-registered hooks on `base`, and the
+        # half-built wrapper holding their only handles is about to be
+        # discarded with the exception — stranding them permanently on a base
+        # the caller may well keep and retry with. Unwind before re-raising.
+        try:
+            for logical in serving_config.target_modules:
+                if logical not in suffixes:
                     raise ValueError(
-                        f"module '{name}' not found in {base.config.model_type} "
-                        f"model — cannot attach LoRA hook"
+                        f"target module '{logical}' has no mapping for "
+                        f"model_type '{base.config.model_type}' "
+                        f"(known: {sorted(suffixes)})"
                     )
-                self._hook_handles.append(
-                    modules[name].register_forward_hook(
-                        self._make_hook(layer_idx, logical)
+                for layer_idx in range(serving_config.num_layers):
+                    name = f"encoder.layer.{layer_idx}.{suffixes[logical]}"
+                    if name not in modules:
+                        raise ValueError(
+                            f"module '{name}' not found in {base.config.model_type} "
+                            f"model — cannot attach LoRA hook"
+                        )
+                    self._hook_handles.append(
+                        modules[name].register_forward_hook(
+                            self._make_hook(layer_idx, logical)
+                        )
                     )
-                )
-                self._num_hooks += 1
+                    self._num_hooks += 1
+        except BaseException:
+            _detach_hooks(tuple(self._hook_handles))
+            self._hook_handles.clear()
+            raise
+
+        # Tie hook lifetime to wrapper lifetime. Callers who pass their own
+        # `base` may outlive the wrapper with it (the from_pretrained_serving
+        # path does not — it builds a base per wrapper), and a dropped wrapper
+        # would otherwise leave its closures in _forward_hooks forever: dead
+        # hooks that resolve wref() to None and return, once per Linear per
+        # forward, accumulating with every wrapper built over that base.
+        # The finalizer holds only the handles, and a handle holds nothing but
+        # a weak reference to the module's hook dict, so this keeps neither the
+        # wrapper nor the base alive.
+        self._finalizer = weakref.finalize(
+            self, _detach_hooks, tuple(self._hook_handles)
+        )
+        # Nothing to clean up at interpreter shutdown; the process is going.
+        self._finalizer.atexit = False
 
     def _make_hook(self, layer_idx: int, logical: str):
         key = (layer_idx, logical)
@@ -120,8 +179,13 @@ class HFEncoderWithLora(nn.Module):
 
         def hook(module: nn.Module, inputs: tuple, output: Tensor):
             owner = wref()
-            # The wrapper is gone, so the caller is driving `base` directly and
-            # the un-adapted output is the correct result.
+            # Unreachable by construction: the finalizer registered in __init__
+            # detaches every hook the moment the wrapper is collected, so a live
+            # hook always has a live owner. Kept as a belt-and-braces guard —
+            # if it ever did fire the wrapper would be gone, meaning nobody
+            # could be asking for an adapted forward and the un-adapted output
+            # is correct. Deliberately not counted in shared_projection_skips,
+            # which measures a different thing (batch-shared projections).
             if owner is None:
                 return None
             batch_lora = owner._batch_lora
@@ -169,21 +233,24 @@ class HFEncoderWithLora(nn.Module):
         return model.to(serving_config.device)
 
     def close(self) -> None:
-        """Detach every LoRA hook from the base model. Idempotent.
+        """Detach the LoRA hooks and drop the base model. Idempotent.
 
-        The wrapper is already refcount-collectable on its own (the hooks hold
-        only a weak reference back), so this is not required for correctness —
-        it is for callers that want the base weights released at a known point
-        rather than whenever the last reference happens to drop, e.g. a test
-        that builds a second multi-GB checkpoint straight after the first.
+        Releasing the weights is the point: `with` does not unbind its target,
+        so the wrapper outlives the block and refcounting alone would not free
+        anything until the caller's own name goes out of scope. Detaching the
+        hooks is not enough either — they hold only a weak reference back, so
+        they were never what kept the base alive. Dropping the submodule is.
+        Use this when the next allocation has to fit, e.g. a test that builds a
+        second multi-GB checkpoint straight after the first.
 
-        Deliberately leaves _num_hooks intact: a closed wrapper then fails the
-        fired-count check in encode_pooled instead of quietly returning
-        base-only output.
+        The wrapper is unusable afterwards, by design: encode_pooled raises
+        rather than quietly returning a base-only result.
         """
-        for handle in self._hook_handles:
-            handle.remove()
+        # Same detach the finalizer runs on an un-closed drop; calling it here
+        # marks it dead, so the hooks come off exactly once either way.
+        self._finalizer()
         self._hook_handles.clear()
+        self.base = None
 
     def __enter__(self) -> "HFEncoderWithLora":
         return self
@@ -208,6 +275,12 @@ class HFEncoderWithLora(nn.Module):
         projection — an unmodelled architecture must fail loudly rather than
         return a plausible base-only result.
         """
+        if self.base is None:
+            raise RuntimeError(
+                "this HFEncoderWithLora has been closed; its base model was "
+                "released and it cannot run a forward pass. Build a new one "
+                "with from_pretrained_serving()."
+            )
         B, S = input_ids.shape
         cfg = self.config
         # LoraOps buffers are sized from the config at construction; a batch
