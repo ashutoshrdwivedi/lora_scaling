@@ -1,0 +1,92 @@
+[
+  {
+    "file": "src/lora_serving/model/hf_wrapper.py",
+    "line": 183,
+    "summary": "encode_pooled never verifies that any hook actually fired, so an architecture whose projection input is not exactly (B, S, hidden_size) runs the whole forward with zero LoRA math and still returns a normal-looking result.",
+    "failure_scenario": "Run `--engine hf` on any encoder whose target Linear receives a reshaped/flattened or otherwise differently-shaped input (e.g. a (B*S, H) flattened hidden state, packed sequences, or a projection whose in_features != config.hidden_size). Every hook hits `x.shape != self._expected_shape` at line 118, returns None, and only bumps `shared_projection_skips`. `_batch_lora` is consumed by nobody. The base forward completes, `run_single_config` records p50/p99/throughput for a model that applied no adapter at all, and the CSV row is indistinguishable from a correct one — the measured LateFuse latency and the PEFT speedup derived from it are both silently too good. Adding `assert len(self._fired) == cfg.num_layers * len(cfg.target_modules)` before the `finally` clears state would catch it. Note this is not hypothetical coverage-wise: XLM-RoBERTa-XL is the one architecture actually measured through this wrapper (benchmarks/run_rebuttal_xlmr_xl.sh, 190 rows committed) and no test in the repo exercises it — both parity tests cover BERT and DeBERTa-v2 only."
+  },
+  {
+    "file": "src/lora_serving/model/hf_wrapper.py",
+    "line": 95,
+    "summary": "Each forward hook closure captures `self`, creating a self -> base -> Linear._forward_hooks -> closure -> self reference cycle, so an HFEncoderWithLora is never freed by refcount and its GPU weights survive until a gen-2 GC pass.",
+    "failure_scenario": "`run.py:run_single_config` builds a fresh model for every (N, B, r) cell and drops it on return. With the cycle, the previous base model's VRAM is still resident when the next `AutoModel.from_pretrained` plus up to tens of GB of adapters are allocated. For XLM-R-XL that is a stale 7 GB against an 11000 x 5.9 MB = 65 GB adapter store on an 80 GB card. The resulting allocation failure is caught by the `torch.cuda.OutOfMemoryError` handler at run.py:353, the cell is dropped, and the sweep still exits 0. Evidence that this class of loss already happened: benchmarks/results/rebuttal_deberta/sweep_deberta_a100.csv holds 165 rows / 33 cells while run_rebuttal_deberta.sh:82 asks for '38 configs x 5 seeds = 190 runs' — the entire N=60000 column is absent. The same cycle makes `del wrapper; torch.cuda.empty_cache()` in tests/test_real_checkpoint_parity.py:211-212 a no-op, so both DeBERTa real-checkpoint tests hold two 3.6 GB models live simultaneously. EncoderWithLora has no such cycle; this is new with the wrapper."
+  },
+  {
+    "file": "benchmarks/run_rebuttal_deberta.sh",
+    "line": 48,
+    "summary": "run_rebuttal_deberta.sh and run_rebuttal_xlmr_xl.sh omit the `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` export that run_rebuttal_l40s.sh documents as REQUIRED for near-ceiling adapter counts.",
+    "failure_scenario": "run_rebuttal_l40s.sh:28-32 states the failure mode verbatim: 'Without it the default caching allocator fragments during adapter generation and every N=28000 cell OOMs at ~44.5/44.5 GiB with 2.7 GiB reserved-but-unallocated -- silently dropping the entire top-N column (140 rows instead of 165) while the sweep still exits rc=0.' The DeBERTa script sweeps to N=60000 against a ~58k measured ceiling and does not set the variable; its committed CSV has 165 rows instead of 190 with the N=60000 column entirely missing — the exact documented symptom. The XLM-R-XL script sweeps to N=11000 against a 12000-fits/13000-OOM ceiling with the same omission, so it is one fragmentation event away from the same silent loss."
+  },
+  {
+    "file": "src/lora_serving/benchmark/run.py",
+    "line": 353,
+    "summary": "OOM'd configs are swallowed and the process exits 0, and every rebuttal script's only success check is `rc=$?`, so a sweep that lost whole cells is indistinguishable from a complete one.",
+    "failure_scenario": "A high-N cell OOMs, `continue` skips it, `main()` returns normally, and the shell prints 'sweep rc=0'. The only completeness signal is the new `({len(results)}/{total} configs completed)` line at run.py:381, which is redirected into `$R/sweep_*.log` and never inspected by any of the five run_rebuttal_*.sh scripts. Concretely: run_rebuttal_deberta.sh:83-92 launches a 190-run sweep, 165 land, and the script proceeds to the capacity probe and the PEFT arms reporting success. Either exit non-zero when `len(results) != total`, or have the scripts grep the completion line."
+  },
+  {
+    "file": "benchmarks/run_rebuttal_deberta.sh",
+    "line": 97,
+    "summary": "The committed capacity-probe grid (60000 64000 68000) sits entirely above the measured DeBERTa ceiling, so as written it produces no rows and never creates the output CSV — and it does not match the committed results.",
+    "failure_scenario": "benchmarks/results/rebuttal_deberta/sweep_deberta_capacity.csv contains N=45000 (56.9 GB), 50000 (63.0 GB), 55000 (69.0 GB), and sweep_deberta_capacity2.csv contains N=58000 (72.7 GB) — none of the three values the script actually passes. Extrapolating ~1.25 GB per 1000 adapters, 60000 lands at ~75 GB and 64000/68000 exceed the card; the N=60000 column already OOM'd out of the main sweep. Running the committed script therefore OOMs every probe point, `main()` hits `if not results: print('No results collected (all configs OOM\\'d?)'); return` at run.py:375-377, and `$R/sweep_deberta_capacity.csv` is never written — while the shell still echoes 'capacity rc=0'. The header claim at line 33 ('The sweep therefore runs out to 60k and the probe brackets it') is contradicted by the repo's own data."
+  },
+  {
+    "file": "src/lora_serving/model/encoder.py",
+    "line": 209,
+    "summary": "Relaxing the pooler load means a pooler-less checkpoint is served through a randomly-initialised pooler, and EncoderWithLora.forward on such a checkpoint is covered by no test.",
+    "failure_scenario": "For google/electra-large-discriminator the loader now accepts `missing=['pooler.dense.weight','pooler.dense.bias']` and `EncoderWithLora.forward:273` computes `pooled = tanh(self.pooler['dense'](x[:,0]))` with default nn.Linear init, feeding that into the LR head. HFEncoderWithLora.encode_pooled:184-186 falls back to raw CLS for the same checkpoint, so the two engines run.py advertises as interchangeable produce different pooled outputs for exactly the checkpoints this change was added to support. `test_cross_engine_equivalence_bert` only covers BERT, which has a pooler; every ELECTRA test (`test_parity_electra_vs_peft`, `test_electra_*` in test_real_checkpoint_parity.py) routes through `_custom_cls`, which stops before the pooler — so the code path the benchmark actually executes is untested. Latency is unaffected, but any future use of these rows for anything but wall-clock is silently wrong."
+  },
+  {
+    "file": "benchmarks/baselines/peft_swap.py",
+    "line": 232,
+    "summary": "The new --target-modules flag is not recorded in the output CSV, although run.py's row gained both `engine` and `target_modules` and peft_swap's docstring claims schema compatibility.",
+    "failure_scenario": "run_rebuttal_deberta.sh:106-118 runs both PEFT arms with `--target-modules value_proj`, a deliberately non-default protocol that is the entire crux of the DeBERTa row (see the script header at lines 10-20). The resulting peft_mixed_deberta.csv / peft_base_deberta.csv headers are `harness,model,dtype,num_adapters,batch_size,lora_rank,seq_len,...` with no target_modules column, so a value-only PEFT run and a query+value PEFT run are byte-identical in schema and indistinguishable downstream. Meanwhile the LateFuse CSV it is compared against does carry `target_modules=value`, so a merge of the two (which the module docstring at lines 25-26 explicitly invites) silently pairs a labelled arm with an unlabelled one."
+  },
+  {
+    "file": "src/lora_serving/benchmark/run.py",
+    "line": 60,
+    "summary": "print_memory_ceiling was generalised for target_modules but still hardcodes model_overhead_gb=2.5, so the self-documenting ceiling it prints is wrong by the base model's size for the large models the rebuttal added.",
+    "failure_scenario": "For facebook/xlm-roberta-xl the base model is ~7 GB in fp16, not 2.5 GB, so `memory_ceiling` reports (80-2.5)e9/5.90e6 = 13,140 adapters where the true budget gives ~12,300 — a ~750-adapter over-prediction printed at the top of every run and quoted in run_rebuttal_xlmr_xl.sh:29-32 as the sizing rationale. The function already constructs a LoraServingConfig from `model_name`; the parameter count (and hence the fp16 footprint) is derivable there rather than being a constant tuned for bge-m3. Deepening the fix here also removes the ad-hoc '~12% overestimate' correction each rebuttal script header re-derives by hand."
+  },
+  {
+    "file": "src/lora_serving/model/hf_wrapper.py",
+    "line": 74,
+    "summary": "shared_projection_skips is a lifetime-cumulative counter that is never reset per forward, so it cannot answer 'did this forward apply LoRA everywhere' and its test assertions depend on an unrelated early-return ordering.",
+    "failure_scenario": "`test_deberta_query_target_still_adapts_the_content_path` (tests/test_hf_wrapper.py:328) calls encode_pooled twice — once with LoRA, once with apply_lora=False — and asserts `shared_projection_skips == cfg.num_layers`. That only holds because the `batch_lora is None` early return at line 103 precedes the increment at line 119. Move or reorder that guard (e.g. to count skips in the base pass too, or to check the shape first) and the assertion breaks for a reason unrelated to what it is testing. The same coupling exists in tests/test_real_checkpoint_parity.py:207-210, which reads the counter after two encode_pooled calls. Resetting the counter in encode_pooled alongside `_fired`, and exposing a per-forward value, would both decouple the tests and give the diagnostic that finding #1 needs."
+  },
+  {
+    "file": "tests/test_hf_wrapper.py",
+    "line": 217,
+    "summary": "_custom_cls hand-reimplements EncoderWithLora's embedding + layer stack instead of calling the model, so the ELECTRA parity tests validate a copy of the forward pass rather than the shipped one.",
+    "failure_scenario": "The copy at test_hf_wrapper.py:217-232 (and again at test_real_checkpoint_parity.py:99-110) inlines word/position/token_type embedding, LayerNorm, and the layer loop. If EncoderWithLora.forward changes — a different token_type default, a new position-id branch for another model family, a pre-LN variant — the copy keeps the old behaviour and both ELECTRA parity tests keep passing green while the code the benchmark actually runs is broken. HFEncoderWithLora already has the right shape for this (`encode_pooled`); EncoderWithLora has no equivalent, which is why the tests had to inline it. Adding a pre-pooler `encode_pooled` to EncoderWithLora and calling it would make the parity tests exercise the real path."
+  },
+  {
+    "file": "tests/test_real_checkpoint_parity.py",
+    "line": 78,
+    "summary": "Four helpers are near-verbatim duplicates between the two new test files, so a fix to the LoRA-to-PEFT weight convention has to be made twice or the two suites silently disagree.",
+    "failure_scenario": "`_peft_with` (test_real_checkpoint_parity.py:78) vs `_peft_with_our_weights` (test_hf_wrapper.py:107); `_store` (:64) vs `_store_with_adapters` (test_hf_wrapper.py:86); `_custom_cls` (:99) vs (:217); `_deberta_vs_peft` (:198) vs (:275). All four encode the same wa = lora_A.weight.T / wb = lora_B.weight.T convention and the same alpha=r scaling assumption documented in both docstrings. If PEFT changes that convention (or the repo folds alpha differently), fixing only one file leaves the other passing against a stale convention — and the real-checkpoint file is the one that does not run in CI, so it would be the stale one. A shared tests/_lora_parity_helpers.py would carry all four."
+  },
+  {
+    "file": "tests/test_hf_wrapper.py",
+    "line": 268,
+    "summary": "The share_att_key=True DebertaV2Config literal is copy-pasted three times despite _deberta_shared_key_path existing precisely to hold it.",
+    "failure_scenario": "The identical six-kwarg literal (`type_vocab_size=0, relative_attention=True, position_buckets=4, pos_att_type=['p2c','c2p'], share_att_key=True, conv_kernel_size=3`) appears at lines 182-188 (test_isolation_deberta_v2_shared_att_key), 268-271 (_deberta_shared_key_path), and 373-376 (test_shared_projection_skip_accounting). The skip-accounting assertions depend on `position_buckets=4` producing a rel_embeddings length that differs from SEQ_LEN=16; change that value in one copy while tuning a test and the other two silently test a different architecture, with the shape guard at hf_wrapper.py:118 collapsing into the `_fired`-only path. Route all three through _deberta_shared_key_path."
+  },
+  {
+    "file": "tests/test_hf_wrapper.py",
+    "line": 380,
+    "summary": "_inputs() ignores its cfg argument, yet callers construct a throwaway LoraServingConfig — which does a full AutoConfig.from_pretrained — purely to satisfy the signature.",
+    "failure_scenario": "`_inputs` (line 100) reads only the module globals BATCH_SIZE, SEQ_LEN and TINY['vocab_size']; `cfg` is dead. Line 380 writes `_inputs(_serving_config(path, ['value']))`, paying a disk round-trip through AutoConfig for a value that is discarded, and misleading the reader into believing the inputs are sized from that config. Drop the parameter (or use it) — otherwise a future caller that passes a cfg with a different max_seq_len gets silently mismatched inputs and hits the batch-shape guard in encode_pooled instead of the test it meant to write."
+  },
+  {
+    "file": "tests/test_hf_wrapper.py",
+    "line": 121,
+    "summary": "The PEFT adapter is named \"a\", which PEFT 0.19.1 explicitly warns about because it is a substring of the 'lora_' prefix.",
+    "failure_scenario": "Running the suite emits, on all four PEFT-parity tests: 'peft/mapping_func.py:102: UserWarning: Adapter name \\'a\\' should not be contained in the prefix \\'lora_\\'. This may lead to reinitialization of the adapter weights during loading.' These tests overwrite lora_A/lora_B by hand right after get_peft_model, so today they pass; but they are the numerical ground truth for the entire hook path, and the failure mode PEFT warns about is silent weight reinitialisation — the parity assertion would then compare against a model that is not carrying our weights. tests/test_real_checkpoint_parity.py:88 already uses \"x\"; use the same here."
+  },
+  {
+    "file": "benchmarks/run_rebuttal_electra.sh",
+    "line": 27,
+    "summary": "The header points the operator at run_rebuttal_scatter.sh, which was deleted in commit 7c1db42 when it was renamed to run_rebuttal_assembly.sh.",
+    "failure_scenario": "An operator following the 'If you have a spare slot on this pod, run_rebuttal_scatter.sh (~20 min) pairs well here' instruction runs `bash benchmarks/run_rebuttal_scatter.sh` and gets 'No such file or directory'. The replacement, benchmarks/run_rebuttal_assembly.sh, states in its own header (lines 24-25) that it pairs with run_rebuttal_electra.sh — so the cross-reference exists in one direction only and the stale name is the one on the pod-facing script."
+  }
+]
