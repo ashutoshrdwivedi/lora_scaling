@@ -6,9 +6,11 @@ appears with *trained* weights (on a randomly initialised model the position
 bias is near-noise, and our output matches PEFT to ~1e-7). These tests
 therefore run against the actual checkpoints the rebuttal measures.
 
-Requires CUDA and multi-GB model downloads (deberta-v2-xlarge 3.4G,
-electra-large 1.3G), so they are marked `real_checkpoints`. They run by default
-on a GPU box; to skip them:
+Requires CUDA and multi-GB model downloads (xlm-roberta-xl 14G,
+deberta-v2-xlarge 3.4G, electra-large 1.3G), so they are marked
+`real_checkpoints`. The XLM-R-XL case holds two fp32 copies of a 3.5B model at
+once (ours + PEFT's, ~28 GB) and so needs an 80 GB card. They run by default on
+a GPU box; to skip them:
 
     uv run pytest tests/ -m "not real_checkpoints"
 
@@ -40,6 +42,7 @@ pytestmark = [
 
 ELECTRA = "google/electra-large-discriminator"
 DEBERTA = "microsoft/deberta-v2-xlarge"
+XLMR = "facebook/xlm-roberta-xl"
 DEVICE = torch.device("cuda:0")
 DTYPE = torch.float32
 BATCH_SIZE, SEQ_LEN, RANK = 4, 32, 8
@@ -49,6 +52,11 @@ BATCH_SIZE, SEQ_LEN, RANK = 4, 32, 8
 # accumulates more, hence the looser bound.
 TOL_TIGHT = 1e-4
 TOL_DEBERTA = 1e-3
+# xlm-roberta-xl is 3.5B over 36 pre-LN layers, but depth costs nothing here:
+# measured 1.10e-07 on 2026-07-29, in line with electra-large, so it takes the
+# tight bound. Pre-LN keeps the residual chain better conditioned than
+# deberta's post-LN stack, which is what needs the looser allowance.
+TOL_XLMR = TOL_TIGHT
 # The documented shared-position-bias gap, measured at 1.03e-1 on 2026-07-27.
 # Bounded rather than pinned so transformers version drift does not cause noise.
 MIN_KNOWN_DIVERGENCE = 1e-2
@@ -247,3 +255,62 @@ def test_deberta_query_target_diverges_from_peft(batch):
     assert rel > MIN_KNOWN_DIVERGENCE, (
         f"expected the un-adapted position bias to show up, got rel={rel:.2e}"
     )
+
+
+# --------------------------------------------------------------------------
+# XLM-RoBERTa-XL — hook wrapper vs PEFT, the largest checkpoint in the ladder
+# --------------------------------------------------------------------------
+
+def test_xlmr_xl_query_value_matches_peft(batch):
+    """Parity for the XLM-R-XL generality row (query+value, the row's config).
+
+    This is the only row whose parity used to be argued from "it shares the
+    hook path" rather than measured, so Q4's unit-tested claim rested on an
+    inference for the largest model in the ladder. It is also the strongest
+    test of the claim: at 3.5B and 36 pre-LN layers the residual chain
+    accumulates far more than anything else here, so agreement is not a
+    foregone conclusion.
+
+    XLM-R keeps BERT's attention naming and has no batch-shared projection, so
+    it takes the "default" suffix map and skips must be 0 -- unlike DeBERTa-v2,
+    the comparison against PEFT is exact rather than deliberately divergent.
+
+    Parity is taken on the CLS hidden state, not the pooled output, because
+    this checkpoint ships *no pooler weights*: HF reports `pooler.dense.weight`
+    and `pooler.dense.bias` as "newly initialized", and it initialises them
+    independently for each model instance. Comparing pooler_output therefore
+    compares two different random projections and shows a ~124% difference that
+    has nothing to do with LoRA. Dropping the pooler makes encode_pooled fall
+    back to CLS, which is also what the ELECTRA and DeBERTa cases above use.
+
+    The test additionally requires the LoRA delta to dominate the parity
+    residual, which pins the metric's resolution rather than assuming it. That
+    guard is what caught the pooler problem.
+    """
+    ids, mask = batch
+    cfg = _cfg(XLMR, ["query", "value"])
+    store = _store(cfg, ["a0"])
+    wrapper = HFEncoderWithLora.from_pretrained_serving(cfg)
+    # Untrained pooler (see docstring); None makes encode_pooled return CLS.
+    wrapper.base.pooler = None
+    wrapper.eval()
+    lora_w = BatchAssembler(store, cfg).assemble_lora(["a0"] * BATCH_SIZE)
+    pm = _peft_with(XLMR, cfg, store, "a0", ["query", "value"])
+    with torch.no_grad():
+        ours = wrapper.encode_pooled(ids, mask, lora_w)
+        theirs = pm(input_ids=ids, attention_mask=mask).last_hidden_state[:, 0]
+        base = wrapper.encode_pooled(ids, mask, lora_w, apply_lora=False)
+    rel = _rel(ours, theirs)
+    delta = float((ours - base).abs().max() / base.abs().max())
+    skips = wrapper.shared_projection_skips
+    del wrapper, pm, store, lora_w
+    torch.cuda.empty_cache()
+
+    print(f"\n  xlm-r-xl query+value vs PEFT: rel={rel:.3e}, skips={skips}, "
+          f"|lora delta|={delta:.3e}")
+    assert skips == 0, "XLM-R has no batch-shared projection; nothing should be skipped"
+    assert delta > 10 * rel, (
+        f"LoRA delta {delta:.2e} is not clearly above the parity residual "
+        f"{rel:.2e}; the metric cannot resolve a real difference"
+    )
+    assert rel < TOL_XLMR
