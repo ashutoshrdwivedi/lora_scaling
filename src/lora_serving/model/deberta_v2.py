@@ -124,7 +124,11 @@ class DisentangledAttentionWithLora(nn.Module):
         apply_lora: bool,
     ) -> Tensor:
         out = linear(x)
-        if not apply_lora or module_name not in self.target_modules or module_name not in lora_weights.a:
+        if (
+            not apply_lora
+            or module_name not in self.target_modules
+            or module_name not in lora_weights.a
+        ):
             return out
 
         a = torch.cat(lora_weights.a[module_name], dim=0)
@@ -135,15 +139,14 @@ class DisentangledAttentionWithLora(nn.Module):
             return out + self.lora_ops.output
 
         if x.size(0) == 1:
-            # Relative-position embeddings are projected as a single table in HF.
-            # Expand it per sample only when a tenant-specific LoRA delta targets
-            # that projection.
             x = x.expand(self.batch_size, -1, -1)
             out = out.expand(self.batch_size, -1, -1)
         elif x.size(0) != self.batch_size:
             raise ValueError(f"LoRA input batch {x.size(0)} does not match configured batch {self.batch_size}")
 
-        return out + torch.bmm(torch.bmm(x, a), b)
+        self.lora_ops.shrink_relative(x, a)
+        self.lora_ops.expand_relative(b)
+        return out + self.lora_ops.output_relative
 
     def transpose_for_scores(self, x: Tensor, attention_heads: int) -> Tensor:
         new_x_shape = x.size()[:-1] + (attention_heads, -1)
