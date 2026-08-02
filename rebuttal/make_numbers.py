@@ -43,6 +43,25 @@ def num(x):
 
 
 # Each config: sweep CSV, capacity CSV(s), PEFT-mixed CSV, metadata CSV.
+#
+# ONE FILE PER ARTIFACT. Every path below is written by the matching
+# benchmarks/run_rebuttal_*.sh, so the script is the single source of truth for
+# its row. Earlier revisions also listed hand-run patch files --
+# sweep_deberta_capacity2.csv, sweep_bgem3_l40s_n28k_expseg.csv -- created when
+# a probe grid missed the ceiling or a column OOM'd mid-session. They are gone
+# from this list on purpose. Do not add that kind of file back: a second source
+# for one number is how the L40S row ended up with its ceiling in one CSV, its
+# 28k latencies in another, and its provenance only in a comment.
+#
+# The capacity lists stay list-typed because one probe can legitimately have
+# several arms in one file -- see run_rebuttal_l40s.sh, which measures both
+# allocators into a single CSV keyed by 'alloc_conf'.
+#
+# TRANSITION. The committed CSVs predate this layout, so regenerating against
+# them under-reports: DeBERTa's ceiling reads 55000 instead of 58000 and the
+# L40S row 26000 instead of 28000, because the numbers the hand-run files
+# carried are no longer read. That resolves the moment the re-run lands. Until
+# then, treat a regenerated numbers.json as stale rather than as a result.
 CONFIGS = {
     "bgem3_a100": dict(
         label="bge-m3 / A100-80GB (paper)",
@@ -66,10 +85,7 @@ CONFIGS = {
         label="DeBERTa-v2-xlarge / A100-80GB",
         model="microsoft/deberta-v2-xlarge",
         sweep=RES / "rebuttal_deberta/sweep_deberta_a100.csv",
-        capacity=[
-            RES / "rebuttal_deberta/sweep_deberta_capacity.csv",
-            RES / "rebuttal_deberta/sweep_deberta_capacity2.csv",
-        ],
+        capacity=[RES / "rebuttal_deberta/sweep_deberta_capacity.csv"],
         peft_mixed=RES / "rebuttal_deberta/peft_mixed_deberta.csv",
         meta=RES / "rebuttal_deberta/model_metadata.csv",
         targets="value",
@@ -87,12 +103,7 @@ CONFIGS = {
         label="bge-m3 / L40S-48GB",
         model="BAAI/bge-m3",
         sweep=RES / "rebuttal_l40s/sweep_bgem3_l40s.csv",
-        # the 28k cell OOM'd under the default allocator and was re-run
-        # separately under PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-        capacity=[
-            RES / "rebuttal_l40s/sweep_capacity_l40s.csv",
-            RES / "rebuttal_l40s/sweep_bgem3_l40s_n28k_expseg.csv",
-        ],
+        capacity=[RES / "rebuttal_l40s/sweep_capacity_l40s.csv"],
         peft_mixed=RES / "rebuttal_l40s/peft_mixed_l40s.csv",
         meta=RES / "rebuttal_l40s/model_metadata.csv",
         targets="query+value",

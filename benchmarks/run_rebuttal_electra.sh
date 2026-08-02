@@ -24,7 +24,7 @@
 # 6 N x 5 B + 3 rank cells = 33 configs x 5 seeds = 165 runs.
 #
 # Runtime ~2h30m. Independent of the other rebuttal scripts. If you have a
-# spare slot on this pod, run_rebuttal_scatter.sh (~20 min) pairs well here.
+# spare slot on this pod, run_rebuttal_assembly.sh (~25 min) pairs well here.
 set -u
 export HOME=/root
 export PATH=$HOME/.local/bin:$PATH
@@ -34,6 +34,12 @@ export PYTHONUNBUFFERED=1
 export HF_HOME=${HF_HOME:-/workspace/hf_cache}
 export UV_CACHE_DIR=${UV_CACHE_DIR:-/root/.cache/uv}
 export TMPDIR=${TMPDIR:-/workspace/tmp}
+# Required for the N=47000 cells -- see the fragmentation note in
+# run_rebuttal_l40s.sh. The committed sweep landed all 165 rows without it, but
+# only barely: N=47000 peaks at 75.7 GB and the probe OOMs at 51000 after 49000
+# reaches 78.9/80 GB. That is well inside the fragmentation margin that cost
+# the L40S row its entire top-N column -- do not rely on the same luck.
+export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
 mkdir -p "$HF_HOME" "$UV_CACHE_DIR" "$TMPDIR"
 cd /root/lora_scaling
 R=benchmarks/results/rebuttal_electra
@@ -74,10 +80,17 @@ uv run python -m lora_serving.benchmark.run \
   --out "$R/sweep_${TAG}_a100.csv" > "$R/sweep_${TAG}_a100.log" 2>&1
 echo "  sweep rc=$?"
 
+# Extended by one cell for the expandable_segments re-run. The archived probe
+# bracketed the ceiling at 49000 fits (78.9 GB) / 51000 OOM under the DEFAULT
+# allocator; recovering the fragmentation headroom moves that up (the L40S row
+# gained 7.7% capacity from the same setting), so 51000 may now fit and 53000
+# is what keeps the ceiling bracketed. OOM cells are caught per-config and
+# skipped (src/lora_serving/benchmark/run.py:353), so a spare cell costs a few
+# minutes and can never fail the run.
 echo "=== [3/5] capacity probe (OOM ceiling) ==="
 uv run python -m lora_serving.benchmark.run \
   --model "$M" --dtype fp16 \
-  --adapters 47000 49000 51000 --batch-sizes 32 --lora-ranks 8 \
+  --adapters 47000 49000 51000 53000 --batch-sizes 32 --lora-ranks 8 \
   --seq-len 128 --warmup 50 --iters 200 \
   --out "$R/sweep_${TAG}_capacity.csv" > "$R/sweep_${TAG}_capacity.log" 2>&1
 echo "  capacity rc=$?"

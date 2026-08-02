@@ -32,6 +32,15 @@
 # saw for bge-m3 (formula 52.8k vs measured 47k) gives a practical ~62k. The
 # sweep therefore runs out to 60k and the probe brackets it.
 #
+# WHAT THE COMMITTED RESULTS ACTUALLY CONTAIN. The archived run predates the
+# expandable_segments export below, so sweep_deberta_a100.csv stops at N=40000
+# (165 rows, not 190) and the probe was re-bracketed downward mid-session --
+# hence 45k/50k/55k in sweep_deberta_capacity.csv plus 58000 (72.7 GB peak) in
+# sweep_deberta_capacity2.csv, rather than the 60k/64k/68k this script asks
+# for. The paper quotes the 58k ceiling from that re-bracketed probe. A rerun
+# with the allocator fix should recover the N=60000 column and can use the
+# probe grid as written; expect the committed and rerun capacity CSVs to differ.
+#
 # Runtime ~3h35m (DeBERTa's forward is ~2.6x bge-m3's, so the full grid costs
 # more here than the paper's 2h). Independent of the other rebuttal scripts --
 # safe to run concurrently on a separate pod.
@@ -45,6 +54,14 @@ export PYTHONUNBUFFERED=1
 export HF_HOME=${HF_HOME:-/workspace/hf_cache}
 export UV_CACHE_DIR=${UV_CACHE_DIR:-/root/.cache/uv}
 export TMPDIR=${TMPDIR:-/workspace/tmp}
+# Required for the top-N cells, not a tuning knob -- see the fragmentation note
+# in run_rebuttal_l40s.sh for the full failure mode. The committed
+# sweep_deberta_a100.csv was produced WITHOUT this and shows exactly that
+# symptom: 165 rows instead of 190, with the whole N=60000 column absent while
+# the sweep still exited rc=0. The re-bracketed probe puts the real ceiling at
+# 58000 (72.7 GB peak), so 60k is within reach once the ~GB-scale
+# reserved-but-unallocated fragmentation is recovered.
+export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
 mkdir -p "$HF_HOME" "$UV_CACHE_DIR" "$TMPDIR"
 cd /root/lora_scaling
 R=benchmarks/results/rebuttal_deberta
@@ -91,10 +108,16 @@ uv run python -m lora_serving.benchmark.run \
   --out "$R/sweep_${TAG}_a100.csv" > "$R/sweep_${TAG}_a100.log" 2>&1
 echo "  sweep rc=$?"
 
+# Widened at the bottom end so this one probe brackets the ceiling on its own.
+# The archived run needed a hand-driven second pass (45k/50k/55k, then 58000 in
+# a capacity2 file) because the grid started above where the default allocator
+# actually topped out. 56000 is below the measured 58k fit, 68000 is above any
+# plausible expandable_segments ceiling (~62k), so the bracket holds without a
+# follow-up. OOM cells are skipped per-config, so the extra cell is nearly free.
 echo "=== [3/5] capacity probe (OOM ceiling) ==="
 uv run python -m lora_serving.benchmark.run \
   --model "$M" --engine hf --dtype fp16 \
-  --adapters 60000 64000 68000 --batch-sizes 32 --lora-ranks 8 \
+  --adapters 56000 60000 64000 68000 --batch-sizes 32 --lora-ranks 8 \
   --target-modules value --seq-len 128 --warmup 50 --iters 200 \
   --out "$R/sweep_${TAG}_capacity.csv" > "$R/sweep_${TAG}_capacity.log" 2>&1
 echo "  capacity rc=$?"

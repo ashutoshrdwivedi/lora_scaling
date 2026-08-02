@@ -53,6 +53,13 @@ export PYTHONUNBUFFERED=1
 export HF_HOME=${HF_HOME:-/workspace/hf_cache}
 export UV_CACHE_DIR=${UV_CACHE_DIR:-/root/.cache/uv}
 export TMPDIR=${TMPDIR:-/workspace/tmp}
+# Required for the N=11000 cells -- see the fragmentation note in
+# run_rebuttal_l40s.sh. The committed sweep landed all 190 rows without it, but
+# the margin is thin: N=11000 peaks at 73.7 GB and the probe OOMs at 13000
+# after 12000 reaches 79.8/80 GB. One fragmentation event silently drops the
+# entire top-N column and the sweep still exits rc=0 -- which is what happened
+# to the DeBERTa row.
+export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}
 mkdir -p "$HF_HOME" "$UV_CACHE_DIR" "$TMPDIR"
 cd /root/lora_scaling
 R=benchmarks/results/rebuttal_xlmr_xl
@@ -109,10 +116,17 @@ uv run python -m lora_serving.benchmark.run \
   --out "$R/sweep_${TAG}_a100.csv" > "$R/sweep_${TAG}_a100.log" 2>&1
 echo "  sweep rc=$?"
 
+# Extended by one cell for the expandable_segments re-run. The archived probe
+# bracketed the ceiling at 12000 fits (79.8 GB) / 13000 OOM under the DEFAULT
+# allocator; recovering the fragmentation headroom moves that up (the L40S row
+# gained 7.7% capacity from the same setting), so 13000 may now fit and 14000
+# is what keeps the ceiling bracketed. OOM cells are caught per-config and
+# skipped (src/lora_serving/benchmark/run.py:353), so a spare cell costs a few
+# minutes and can never fail the run.
 echo "=== [3/5] capacity probe (OOM ceiling) ==="
 uv run python -m lora_serving.benchmark.run \
   --model "$M" --engine hf --dtype fp16 \
-  --adapters 11000 12000 13000 --batch-sizes 32 --lora-ranks 8 \
+  --adapters 11000 12000 13000 14000 --batch-sizes 32 --lora-ranks 8 \
   --target-modules query value --seq-len 128 --warmup 50 --iters 200 \
   --out "$R/sweep_${TAG}_capacity.csv" > "$R/sweep_${TAG}_capacity.log" 2>&1
 echo "  capacity rc=$?"

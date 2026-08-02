@@ -32,6 +32,20 @@ export PYTHONUNBUFFERED=1
 export HF_HOME=${HF_HOME:-/workspace/hf_cache}
 export UV_CACHE_DIR=${UV_CACHE_DIR:-/root/.cache/uv}
 export TMPDIR=${TMPDIR:-/workspace/tmp}
+# PYTORCH_CUDA_ALLOC_CONF is deliberately NOT set here, unlike every other
+# rebuttal script. Two reasons, and they both point the same way.
+#   1. No exposure. This bench runs at N=2000 (~3 GB of adapters on an 80 GB
+#      card), nowhere near the ceiling, so the setting would buy no capacity.
+#   2. It would confound the one comparison this script exists to make. Per the
+#      header, these results get diffed against the SUBMITTED
+#      benchmarks/results/assembly_bench{,_minilm}.txt and then promoted
+#      deliberately -- and those were measured under the default allocator.
+#      The baseline arm allocates a fresh assembled tensor every iteration,
+#      which is precisely the quantity being timed against index_select, so
+#      swapping the allocator changes the measured thing on one side of a
+#      before/after diff.
+# If you ever do set it, re-measure BOTH arms and do not quote the new speedups
+# next to the submitted ones.
 mkdir -p "$HF_HOME" "$UV_CACHE_DIR" "$TMPDIR"
 cd /root/lora_scaling
 R=benchmarks/results/rebuttal_assembly

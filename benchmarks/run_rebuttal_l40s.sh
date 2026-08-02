@@ -85,13 +85,46 @@ uv run python -m lora_serving.benchmark.run \
   --out "$R/sweep_bgem3_$TAG.csv" > "$R/sweep_bgem3_$TAG.log" 2>&1
 echo "  sweep rc=$?"
 
-echo "=== [3/5] capacity probe (OOM ceiling on 48GB) ==="
+# Capacity is probed TWICE, once per allocator, because the 26k-vs-28k gap is
+# itself a reported result -- rebuttal_response.md calls it "a free capacity
+# gain we had not previously quantified" (+7.7%) -- and not merely a run
+# artifact. The archived split (sweep_capacity_l40s.csv at 26000 under the
+# default allocator, sweep_capacity_l40s_expseg.csv at 28000 under
+# expandable_segments) exists only because the export landed between two
+# hand-run probes; neither file matches the grid this script asked for.
+#
+# That matters for a re-run: the export at the top is now unconditional, so a
+# single-arm probe would write expandable_segments numbers into the file whose
+# committed contents are the DEFAULT-allocator measurement, destroying the 26k
+# comparison point -- which exists nowhere else on disk. Running both arms
+# explicitly makes the A/B reproducible instead of an accident of provenance,
+# and both land in ONE CSV keyed by 'alloc_conf', so the script is the single
+# source of truth for this row and no hand-run patch file is needed.
+# Both arms write to ONE capacity CSV, told apart by the 'alloc_conf' column.
+# rm -f first so a rerun replaces the file rather than appending to the last
+# run's rows -- --append is for the second arm, not for accumulating history.
+rm -f "$R/sweep_capacity_$TAG.csv"
+
+echo "=== [3a/5] capacity probe -- expandable_segments (the shipped setting) ==="
 uv run python -m lora_serving.benchmark.run \
   --model "$M" --dtype fp16 \
   --adapters 28000 29000 30000 --batch-sizes 32 --lora-ranks 8 \
   --seq-len 128 --warmup 50 --iters 200 \
   --out "$R/sweep_capacity_$TAG.csv" > "$R/sweep_capacity_$TAG.log" 2>&1
-echo "  capacity rc=$?"
+echo "  capacity (expseg) rc=$?"
+
+# The one arm that must NOT inherit the export above. Unset inside a subshell
+# so the variable is absent from the environment `uv run` hands to the child,
+# and the export stays in effect for everything after this block.
+echo "=== [3b/5] capacity probe -- DEFAULT allocator (the 26k comparison point) ==="
+( unset PYTORCH_CUDA_ALLOC_CONF
+  uv run python -m lora_serving.benchmark.run \
+    --model "$M" --dtype fp16 \
+    --adapters 26000 27000 28000 --batch-sizes 32 --lora-ranks 8 \
+    --seq-len 128 --warmup 50 --iters 200 \
+    --append --out "$R/sweep_capacity_$TAG.csv" \
+) >> "$R/sweep_capacity_$TAG.log" 2>&1
+echo "  capacity (default) rc=$?"
 
 echo "=== [4/5] PEFT mixed baseline, same node (~40 min) ==="
 uv run python -m benchmarks.baselines.peft_swap \

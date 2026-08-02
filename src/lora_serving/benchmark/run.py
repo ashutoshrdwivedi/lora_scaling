@@ -221,6 +221,14 @@ def run_single_config(
         "seed": seed if seed is not None else "",
         "engine": engine,
         "target_modules": "+".join(target_modules),
+        # Allocator provenance, recorded per row rather than inferred from the
+        # filename. expandable_segments changes the achievable adapter ceiling
+        # (the L40S row: 26k default vs 28k with it, +7.7% at identical p50), so
+        # a capacity number is only interpretable alongside the setting it was
+        # measured under. Without this column the two are told apart only by
+        # which file they landed in, which is exactly how the L40S results ended
+        # up split across four CSVs whose provenance lived in a comment.
+        "alloc_conf": os.environ.get("PYTORCH_CUDA_ALLOC_CONF", "default"),
     }
 
 
@@ -284,6 +292,17 @@ def main():
              "behaviour).",
     )
     parser.add_argument("--out", default="results.csv")
+    parser.add_argument(
+        "--append",
+        action="store_true",
+        help="Append to --out instead of truncating it, writing the header only "
+             "if the file is new or empty. Lets one script emit several arms "
+             "into a single CSV -- the capacity probe in "
+             "benchmarks/run_rebuttal_l40s.sh runs once per allocator and needs "
+             "both arms in one file, told apart by the 'alloc_conf' column. "
+             "Use it only for arms of the same logical result: the point is one "
+             "file per artifact, not a scratch pad that survives a rerun.",
+    )
     args = parser.parse_args()
 
     if not torch.cuda.is_available():
@@ -357,9 +376,17 @@ def main():
             results.append(row)
             if writer is None:
                 Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-                csv_file = open(args.out, "w", newline="")
+                # In append mode the header goes in only when starting a fresh
+                # file, so a second arm concatenates cleanly. Checked before the
+                # open() because "a" creates the file on the spot.
+                out_path = Path(args.out)
+                write_header = not (
+                    args.append and out_path.exists() and out_path.stat().st_size > 0
+                )
+                csv_file = open(args.out, "a" if args.append else "w", newline="")
                 writer = csv.DictWriter(csv_file, fieldnames=list(row.keys()))
-                writer.writeheader()
+                if write_header:
+                    writer.writeheader()
             writer.writerow(row)
             csv_file.flush()
             os.fsync(csv_file.fileno())
