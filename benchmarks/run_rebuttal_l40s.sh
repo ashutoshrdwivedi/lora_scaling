@@ -56,6 +56,7 @@ mkdir -p "$HF_HOME" "$UV_CACHE_DIR" "$TMPDIR"
 cd /root/lora_scaling
 R=benchmarks/results/rebuttal_l40s
 mkdir -p "$R"
+SWEEP_INCOMPLETE=0
 
 M="BAAI/bge-m3"
 TAG=l40s
@@ -81,9 +82,15 @@ uv run python -m lora_serving.benchmark.run \
   --batch-sizes 8 16 32 64 128 --lora-ranks 8 \
   --extra-configs 1000:32:4 1000:32:16 1000:32:32 \
   --seq-len 128 --warmup 50 --iters 200 \
-  --seeds 1 2 3 4 5 \
+  --seeds 1 2 3 4 5 --require-complete \
   --out "$R/sweep_bgem3_$TAG.csv" > "$R/sweep_bgem3_$TAG.log" 2>&1
-echo "  sweep rc=$?"
+rc=$?; echo "  sweep rc=$rc"
+if [ $rc -ne 0 ]; then
+  SWEEP_INCOMPLETE=1
+  echo "  !! SWEEP INCOMPLETE -- cells are missing from the CSV (status=oom rows"
+  echo "     name them). Continuing so the remaining arms still land, but this"
+  echo "     script will exit non-zero at the end. See $R/sweep_*.log."
+fi
 
 # Capacity is probed TWICE, once per allocator, because the 26k-vs-28k gap is
 # itself a reported result -- rebuttal_response.md calls it "a free capacity
@@ -142,4 +149,10 @@ uv run python -m benchmarks.baselines.peft_swap \
   --out "$R/peft_base_$TAG.csv" > "$R/peft_base_$TAG.log" 2>&1
 echo "  peft base rc=$?"
 
+if [ "$SWEEP_INCOMPLETE" -ne 0 ]; then
+  echo "FAILED: the LateFuse sweep did not complete its grid -- do not publish"
+  echo "these numbers or patch the gap with a second run. Fix the cause and"
+  echo "re-run the sweep."
+  exit 1
+fi
 echo "ALL DONE ($TAG)"

@@ -26,9 +26,17 @@ BS = [8, 16, 32, 64, 128]
 
 
 def load_latefuse(d):
-    """Bucket the sweep's rows by (N, B, rank). One file, no merge step."""
+    """Bucket the sweep's measured rows by (N, B, rank). One file, no merge.
+
+    status="oom" rows record a config that was attempted and ran out of memory;
+    their metric columns are blank, so they are dropped here rather than
+    averaged. check_complete() below still counts them as missing cells, which
+    is the point -- the gap stays visible, it just does not reach a median.
+    """
     agg = defaultdict(list)
     for r in csv.DictReader((d / SWEEP).open()):
+        if r.get("status", "ok") != "ok":
+            continue
         key = (int(r["num_adapters"]), int(r["batch_size"]), int(r["lora_rank"]))
         agg[key].append(r)
     return agg

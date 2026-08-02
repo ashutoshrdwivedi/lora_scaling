@@ -229,7 +229,63 @@ def run_single_config(
         # which file they landed in, which is exactly how the L40S results ended
         # up split across four CSVs whose provenance lived in a comment.
         "alloc_conf": os.environ.get("PYTORCH_CUDA_ALLOC_CONF", "default"),
+        "status": "ok",
     }
+
+
+# Metric columns, in CSV order. A measured row fills them; an OOM row leaves
+# them blank. Both rows carry the same keys so the two write one shared header.
+METRIC_COLUMNS = (
+    "p50_ms", "p90_ms", "p95_ms", "p99_ms", "mean_ms",
+    "assemble_p50_ms", "assemble_mean_ms", "forward_p50_ms", "forward_mean_ms",
+    "assemble_share_pct", "throughput_samples_sec", "peak_gpu_mem_gb",
+    "adapter_cache_gb", "adapter_load_total_s",
+)
+
+
+def oom_row(
+    model_name: str,
+    dtype,
+    num_adapters: int,
+    batch_size: int,
+    lora_rank: int,
+    seq_len: int,
+    warmup: int,
+    iters: int,
+    seed,
+    engine: str,
+    target_modules,
+) -> dict:
+    """A row recording that this config was attempted and ran out of memory.
+
+    Written instead of skipping, because the absence of a row is ambiguous: it
+    cannot distinguish "OOM'd here" from "never asked for". That ambiguity is
+    why a capacity probe's ceiling had to be inferred from a max() over
+    whatever happened to survive, and why the committed probe CSVs could not be
+    reconciled against the grids their scripts requested.
+
+    Metric columns are blank. Consumers must skip status != "ok" before
+    aggregating -- a blank p50 is not a zero.
+    """
+    row = {
+        "model": model_name,
+        "dtype": str(dtype).replace("torch.", ""),
+        "num_adapters": num_adapters,
+        "batch_size": batch_size,
+        "lora_rank": lora_rank,
+        "seq_len": seq_len,
+    }
+    row.update(dict.fromkeys(METRIC_COLUMNS, ""))
+    row.update({
+        "warmup": warmup,
+        "iters": iters,
+        "seed": seed if seed is not None else "",
+        "engine": engine,
+        "target_modules": "+".join(target_modules),
+        "alloc_conf": os.environ.get("PYTORCH_CUDA_ALLOC_CONF", "default"),
+        "status": "oom",
+    })
+    return row
 
 
 def print_table(rows: list[dict]) -> None:
@@ -303,6 +359,15 @@ def main():
              "Use it only for arms of the same logical result: the point is one "
              "file per artifact, not a scratch pad that survives a rerun.",
     )
+    parser.add_argument(
+        "--require-complete",
+        action="store_true",
+        help="Exit non-zero if any config OOM'd, i.e. if the CSV is missing "
+             "cells the grid asked for. Use it on sweeps, whose grids are "
+             "chosen to fit -- a gap there is a fault worth failing on. Leave "
+             "it off for capacity probes, which run past the ceiling on "
+             "purpose and where an OOM is the result being measured.",
+    )
     args = parser.parse_args()
 
     if not torch.cuda.is_available():
@@ -338,6 +403,7 @@ def main():
     print(f"Sweep: {len(configs)} unique (N, B, r) configs × {len(seeds)} seed(s)\n")
 
     results = []
+    oomed: list[tuple] = []
     total = len(configs) * len(seeds)
     done = 0
     # The CSV is written incrementally, one row per completed config, flushed
@@ -372,8 +438,22 @@ def main():
             except torch.cuda.OutOfMemoryError as e:
                 print(f"  OOM at adapters={num_adapters} batch={batch_size} rank={lora_rank}: {e}")
                 torch.cuda.empty_cache()
-                continue
-            results.append(row)
+                row = oom_row(
+                    model_name=args.model,
+                    dtype=dtype,
+                    num_adapters=num_adapters,
+                    batch_size=batch_size,
+                    lora_rank=lora_rank,
+                    seq_len=args.seq_len,
+                    warmup=args.warmup,
+                    iters=args.iters,
+                    seed=seed,
+                    engine=args.engine,
+                    target_modules=args.target_modules,
+                )
+                oomed.append((num_adapters, batch_size, lora_rank, seed))
+            else:
+                results.append(row)
             if writer is None:
                 Path(args.out).parent.mkdir(parents=True, exist_ok=True)
                 # In append mode the header goes in only when starting a fresh
@@ -390,22 +470,46 @@ def main():
             writer.writerow(row)
             csv_file.flush()
             os.fsync(csv_file.fileno())
-            print(f"  p50={row['p50_ms']}ms  p95={row['p95_ms']}ms  p99={row['p99_ms']}ms  "
-                  f"asm={row['assemble_mean_ms']}ms ({row['assemble_share_pct']}%)  "
-                  f"fwd={row['forward_mean_ms']}ms  "
-                  f"tput={row['throughput_samples_sec']} samples/s  "
-                  f"peak_gpu={row['peak_gpu_mem_gb']}GB\n")
+            if row["status"] == "ok":
+                print(f"  p50={row['p50_ms']}ms  p95={row['p95_ms']}ms  p99={row['p99_ms']}ms  "
+                      f"asm={row['assemble_mean_ms']}ms ({row['assemble_share_pct']}%)  "
+                      f"fwd={row['forward_mean_ms']}ms  "
+                      f"tput={row['throughput_samples_sec']} samples/s  "
+                      f"peak_gpu={row['peak_gpu_mem_gb']}GB\n")
+            else:
+                print("  recorded as status=oom\n")
 
     if csv_file is not None:
         csv_file.close()
 
+    if oomed:
+        print(f"\n{len(oomed)} of {total} config(s) OOM'd (recorded with status=oom):")
+        for n, b, r, s in oomed:
+            print(f"    adapters={n} batch={b} rank={r} seed={s}")
+
     if not results:
         print("No results collected (all configs OOM'd?)")
+        if args.require_complete:
+            raise SystemExit("FAILED --require-complete: every config OOM'd.")
         return
 
     print("\n=== Results ===")
     print_table(results)
     print(f"\nSaved to {args.out}  ({len(results)}/{total} configs completed)")
+
+    # A sweep's grid is chosen to fit; a missing cell means something went wrong
+    # (fragmentation, eviction, a ceiling estimate that was too optimistic), so
+    # --require-complete turns that into a non-zero exit. Capacity probes leave
+    # the flag off: they deliberately run past the ceiling, and an OOM there is
+    # the measurement, not a failure.
+    if args.require_complete and len(results) != total:
+        raise SystemExit(
+            f"FAILED --require-complete: {len(results)}/{total} configs "
+            f"completed, {len(oomed)} OOM'd. The CSV is missing cells -- see the "
+            "status=oom rows above. Do not patch the gap with a second run; fix "
+            "the cause (PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True "
+            "recovers allocator fragmentation) and re-run the sweep."
+        )
 
 
 if __name__ == "__main__":

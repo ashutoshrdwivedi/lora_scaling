@@ -28,9 +28,26 @@ OUT_MD = Path(__file__).resolve().parent / "NUMBERS.md"
 # ---------------------------------------------------------------- loading
 
 
-def read_csv(path: Path) -> list[dict]:
+def read_csv(path: Path, measured_only: bool = True) -> list[dict]:
+    """Rows from a benchmark CSV, by default only the ones that measured.
+
+    The runner records an OOM'd config as a row with status="oom" and blank
+    metric columns, so the file says which cells were attempted and failed
+    rather than leaving a silent gap. Those rows must not reach an aggregate:
+    a blank p50 is not a zero, and in a capacity probe an OOM row carries the
+    HIGHEST num_adapters, so a max() over unfiltered rows would report a
+    ceiling the card demonstrably could not reach.
+
+    Pass measured_only=False to see the failures too -- the capacity check
+    below uses them to confirm the probe actually bracketed the ceiling. CSVs
+    written before the column exists have no status and are all treated as
+    measured.
+    """
     with open(path) as fh:
-        return list(csv.DictReader(fh))
+        rows = list(csv.DictReader(fh))
+    if measured_only:
+        rows = [r for r in rows if r.get("status", "ok") == "ok"]
+    return rows
 
 
 def read_json(path: Path) -> dict:
@@ -203,10 +220,34 @@ def analyse_config(cfg: dict) -> dict:
 
     # --- Ceiling: highest N that ran, from the capacity probes (B=32).
     cap_rows = []
+    cap_all = []
     for p in cfg["capacity"]:
         if p.exists():
             cap_rows += read_csv(p)
+            cap_all += read_csv(p, measured_only=False)
     cap32 = [r for r in cap_rows if int(r["batch_size"]) == 32]
+
+    # A probe is only informative if it found the edge. If every cell fit, the
+    # ceiling is a lower bound, not a measurement -- the grid stopped too low.
+    # This is the mirror of the sweep's --require-complete check: there a
+    # missing cell is the fault, here a missing FAILURE is.
+    probed = [r for r in cap_all if int(r["batch_size"]) == 32]
+    if probed and any("status" in r for r in probed):
+        if not any(r.get("status") == "oom" for r in probed):
+            top = max(int(r["num_adapters"]) for r in probed)
+            print(
+                f"  WARNING [{cfg['label']}]: capacity probe never OOM'd; every "
+                f"cell up to N={top} fit. The reported ceiling is a lower bound, "
+                "not the measured limit -- raise the probe grid and re-run."
+            )
+        elif not any(r.get("status") == "ok" for r in probed):
+            low = min(int(r["num_adapters"]) for r in probed)
+            print(
+                f"  WARNING [{cfg['label']}]: capacity probe found no fitting "
+                f"cell -- even N={low} OOM'd, so the grid starts above the "
+                "ceiling and brackets nothing. No ceiling is reported for this "
+                "config. Lower the probe grid and re-run."
+            )
     # The L40S probe measures BOTH allocator settings into one CSV, told apart
     # by 'alloc_conf'. A plain max() over that file would report whichever arm
     # happened to reach higher without naming which -- right by luck today
