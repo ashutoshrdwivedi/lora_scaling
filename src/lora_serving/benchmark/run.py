@@ -25,6 +25,7 @@ import csv
 import os
 import random
 import time
+from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
@@ -102,8 +103,17 @@ def run_single_config(
     seed: int | None = None,
     engine: str = "custom",
     target_modules: list[str] | None = None,
+    churn_num_tenants: int | None = None,
+    churn_zipf_alpha: float = 1.1,
 ) -> dict:
-    """Run one benchmark configuration and return metrics (including assembly/forward split)."""
+    """Run one benchmark configuration and return assembly, forward, and churn metrics.
+
+    ``num_adapters`` is the fixed resident AdapterStore capacity.  Setting
+    ``churn_num_tenants`` larger than that capacity switches batch selection to
+    a Zipf request stream over the larger tenant population.  A request miss
+    evicts the least-recently-used resident adapter and registers the requested
+    adapter before that batch is assembled and served.
+    """
     device = torch.device("cuda:0")
 
     if seed is not None:
@@ -112,6 +122,13 @@ def run_single_config(
         torch.manual_seed(seed)
 
     target_modules = target_modules or ["query", "value"]
+    if churn_num_tenants is not None and churn_num_tenants < num_adapters:
+        raise ValueError(
+            "churn_num_tenants must be at least num_adapters (the resident capacity)."
+        )
+    if churn_num_tenants is not None and churn_zipf_alpha <= 0:
+        raise ValueError("churn_zipf_alpha must be positive.")
+
     config = LoraServingConfig(
         model_name=model_name,
         lora_rank=lora_rank,
@@ -145,6 +162,17 @@ def run_single_config(
         lr_coefs[aid] = coef
         lr_intercepts[aid] = intercept
 
+    churn_enabled = churn_num_tenants is not None
+    resident: OrderedDict[str, None] | None = None
+    churn_rng: np.random.Generator | None = None
+    churn_probabilities: np.ndarray | None = None
+    if churn_enabled:
+        resident = OrderedDict((adapter_id, None) for adapter_id in adapter_ids)
+        churn_rng = np.random.default_rng(seed)
+        ranks = np.arange(1, churn_num_tenants + 1, dtype=np.float64)
+        churn_probabilities = 1.0 / np.power(ranks, churn_zipf_alpha)
+        churn_probabilities /= churn_probabilities.sum()
+
     assembler = BatchAssembler(store, config)
     inputs = make_synthetic_inputs(config, batch_size)
     output_lr = torch.zeros(batch_size, 1, num_labels, dtype=dtype, device=device)
@@ -156,9 +184,49 @@ def run_single_config(
     fwd_start = torch.cuda.Event(enable_timing=True)
     fwd_end = torch.cuda.Event(enable_timing=True)
 
-    def run_batch_timed() -> tuple[float, float]:
-        """Returns (assemble_ms, forward_ms). Assembly is CPU wall-clock; forward is CUDA-event timed."""
-        batch_ids = random.choices(adapter_ids, k=batch_size)
+    def run_batch_timed() -> tuple[float, float, float, float, int, int]:
+        """Returns assembly, forward, registration, eviction, hits, and misses."""
+        registration_ms = 0.0
+        eviction_ms = 0.0
+        hits = 0
+        misses = 0
+        if churn_enabled:
+            assert resident is not None
+            assert churn_rng is not None
+            assert churn_probabilities is not None
+            batch_indices = churn_rng.choice(
+                churn_num_tenants, size=batch_size, p=churn_probabilities
+            )
+            batch_ids = [f"adapter_{int(i)}" for i in batch_indices]
+            for adapter_id in batch_ids:
+                if adapter_id in resident:
+                    hits += 1
+                    resident.move_to_end(adapter_id)
+                    continue
+
+                misses += 1
+                if len(resident) == num_adapters:
+                    victim, _ = resident.popitem(last=False)
+                    torch.cuda.synchronize(device)
+                    t0 = time.perf_counter()
+                    store.evict(victim)
+                    lr_coefs.pop(victim)
+                    lr_intercepts.pop(victim)
+                    torch.cuda.synchronize(device)
+                    eviction_ms += (time.perf_counter() - t0) * 1000
+
+                torch.cuda.synchronize(device)
+                t0 = time.perf_counter()
+                tenant_index = int(adapter_id.removeprefix("adapter_"))
+                store.load_synthetic(adapter_id, seed=(seed or 0) + tenant_index)
+                coef, intercept = make_synthetic_lr_weights(config, num_labels)
+                lr_coefs[adapter_id] = coef
+                lr_intercepts[adapter_id] = intercept
+                torch.cuda.synchronize(device)
+                registration_ms += (time.perf_counter() - t0) * 1000
+                resident[adapter_id] = None
+        else:
+            batch_ids = random.choices(adapter_ids, k=batch_size)
         coefs = [lr_coefs[aid] for aid in batch_ids]
         intercepts = [lr_intercepts[aid] for aid in batch_ids]
 
@@ -178,7 +246,7 @@ def run_single_config(
         fwd_end.record()
         torch.cuda.synchronize(device)
         forward_ms = fwd_start.elapsed_time(fwd_end)
-        return assemble_ms, forward_ms
+        return assemble_ms, forward_ms, registration_ms, eviction_ms, hits, misses
 
     print(f"  Warming up ({warmup} iters)...")
     for _ in range(warmup):
@@ -187,13 +255,32 @@ def run_single_config(
     print(f"  Measuring ({iters} iters)...")
     assemble_latencies = np.empty(iters)
     forward_latencies = np.empty(iters)
+    registration_latencies = np.empty(iters)
+    eviction_latencies = np.empty(iters)
+    churn_hits = 0
+    churn_misses = 0
     for i in range(iters):
-        assemble_latencies[i], forward_latencies[i] = run_batch_timed()
+        (
+            assemble_latencies[i], forward_latencies[i], registration_latencies[i],
+            eviction_latencies[i], hits, misses,
+        ) = run_batch_timed()
+        churn_hits += hits
+        churn_misses += misses
 
     total_latencies = assemble_latencies + forward_latencies
     peak_mem_gb = torch.cuda.max_memory_allocated(device) / 1e9
     adapter_mem_gb = store.memory_gb()
     throughput = batch_size / (np.mean(total_latencies) / 1000)
+    serving_total_ms = float(np.sum(total_latencies))
+    registration_total_ms = float(np.sum(registration_latencies))
+    eviction_total_ms = float(np.sum(eviction_latencies))
+    adapter_store_total_ms = registration_total_ms + eviction_total_ms
+    end_to_end_latencies = total_latencies + registration_latencies + eviction_latencies
+    end_to_end_throughput = batch_size / (np.mean(end_to_end_latencies) / 1000)
+    adapter_store_share_pct = (
+        100 * adapter_store_total_ms / (serving_total_ms + adapter_store_total_ms)
+        if serving_total_ms + adapter_store_total_ms else 0.0
+    )
 
     return {
         "model": model_name,
@@ -216,6 +303,19 @@ def run_single_config(
         "peak_gpu_mem_gb": round(peak_mem_gb, 3),
         "adapter_cache_gb": round(adapter_mem_gb, 3),
         "adapter_load_total_s": round(adapter_load_total_s, 2),
+        "churn_enabled": churn_enabled,
+        "churn_num_tenants": churn_num_tenants if churn_enabled else "",
+        "churn_zipf_alpha": churn_zipf_alpha if churn_enabled else "",
+        "churn_request_hits": churn_hits if churn_enabled else "",
+        "churn_request_misses": churn_misses if churn_enabled else "",
+        "churn_admissions": churn_misses if churn_enabled else "",
+        "churn_evictions": churn_misses if churn_enabled else "",
+        "churn_registration_total_ms": round(registration_total_ms, 3) if churn_enabled else "",
+        "churn_eviction_total_ms": round(eviction_total_ms, 3) if churn_enabled else "",
+        "churn_adapter_store_total_ms": round(adapter_store_total_ms, 3) if churn_enabled else "",
+        "churn_adapter_store_share_pct": round(adapter_store_share_pct, 3) if churn_enabled else "",
+        "churn_end_to_end_mean_ms": round(float(np.mean(end_to_end_latencies)), 3) if churn_enabled else "",
+        "churn_end_to_end_throughput_samples_sec": round(end_to_end_throughput, 1) if churn_enabled else "",
         "warmup": warmup,
         "iters": iters,
         "seed": seed if seed is not None else "",
@@ -255,6 +355,8 @@ def oom_row(
     seed,
     engine: str,
     target_modules,
+    churn_num_tenants: int | None = None,
+    churn_zipf_alpha: float = 1.1,
 ) -> dict:
     """A row recording that this config was attempted and ran out of memory.
 
@@ -284,6 +386,19 @@ def oom_row(
         "target_modules": "+".join(target_modules),
         "alloc_conf": os.environ.get("PYTORCH_CUDA_ALLOC_CONF", "default"),
         "status": "oom",
+        "churn_enabled": churn_num_tenants is not None,
+        "churn_num_tenants": churn_num_tenants if churn_num_tenants is not None else "",
+        "churn_zipf_alpha": churn_zipf_alpha if churn_num_tenants is not None else "",
+        "churn_request_hits": "",
+        "churn_request_misses": "",
+        "churn_admissions": "",
+        "churn_evictions": "",
+        "churn_registration_total_ms": "",
+        "churn_eviction_total_ms": "",
+        "churn_adapter_store_total_ms": "",
+        "churn_adapter_store_share_pct": "",
+        "churn_end_to_end_mean_ms": "",
+        "churn_end_to_end_throughput_samples_sec": "",
     })
     return row
 
@@ -338,6 +453,15 @@ def main():
     parser.add_argument("--seq-len", type=int, default=128)
     parser.add_argument("--warmup", type=int, default=50)
     parser.add_argument("--iters", type=int, default=200)
+    parser.add_argument(
+        "--churn-num-tenants", type=int,
+        help="Enable Zipf/LRU AdapterStore churn over this many tenants. "
+        "Each --adapters value remains the fixed resident-store capacity.",
+    )
+    parser.add_argument(
+        "--churn-zipf-alpha", type=float, default=1.1,
+        help="Zipf popularity exponent used when --churn-num-tenants is set.",
+    )
     parser.add_argument("--num-labels", type=int, default=10)
     parser.add_argument(
         "--seeds", nargs="+", type=int, default=None,
@@ -434,6 +558,8 @@ def main():
                     seed=seed,
                     engine=args.engine,
                     target_modules=args.target_modules,
+                    churn_num_tenants=args.churn_num_tenants,
+                    churn_zipf_alpha=args.churn_zipf_alpha,
                 )
             except torch.cuda.OutOfMemoryError as e:
                 print(f"  OOM at adapters={num_adapters} batch={batch_size} rank={lora_rank}: {e}")
@@ -450,6 +576,8 @@ def main():
                     seed=seed,
                     engine=args.engine,
                     target_modules=args.target_modules,
+                    churn_num_tenants=args.churn_num_tenants,
+                    churn_zipf_alpha=args.churn_zipf_alpha,
                 )
                 oomed.append((num_adapters, batch_size, lora_rank, seed))
             else:
@@ -475,7 +603,14 @@ def main():
                       f"asm={row['assemble_mean_ms']}ms ({row['assemble_share_pct']}%)  "
                       f"fwd={row['forward_mean_ms']}ms  "
                       f"tput={row['throughput_samples_sec']} samples/s  "
-                      f"peak_gpu={row['peak_gpu_mem_gb']}GB\n")
+                      f"peak_gpu={row['peak_gpu_mem_gb']}GB")
+                if row["churn_enabled"]:
+                    print(f"  churn: misses={row['churn_request_misses']}  "
+                          f"register={row['churn_registration_total_ms']}ms  "
+                          f"evict={row['churn_eviction_total_ms']}ms  "
+                          f"store_share={row['churn_adapter_store_share_pct']}%\n")
+                else:
+                    print()
             else:
                 print("  recorded as status=oom\n")
 
