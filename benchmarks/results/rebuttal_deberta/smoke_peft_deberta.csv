@@ -1,2 +1,2 @@
 harness,model,dtype,num_adapters,batch_size,lora_rank,seq_len,p50_ms,p90_ms,p95_ms,p99_ms,mean_ms,throughput_samples_sec,peak_gpu_mem_gb,add_adapter_total_s,warmup,iters
-peft_mixed,microsoft/deberta-v2-xlarge,float16,2,8,8,128,48.24,48.62,48.72,48.8,48.31,165.6,1.948,0.04,2,5
+peft_mixed,microsoft/deberta-v2-xlarge,float16,2,8,8,128,48.91,49.63,49.78,49.89,48.72,164.2,1.945,0.07,2,5

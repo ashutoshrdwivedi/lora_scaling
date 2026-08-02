@@ -1,3 +1,5 @@
-model,dtype,num_adapters,batch_size,lora_rank,seq_len,p50_ms,p90_ms,p95_ms,p99_ms,mean_ms,assemble_p50_ms,assemble_mean_ms,forward_p50_ms,forward_mean_ms,assemble_share_pct,throughput_samples_sec,peak_gpu_mem_gb,adapter_cache_gb,adapter_load_total_s,warmup,iters,seed,engine,target_modules
-facebook/xlm-roberta-xl,float16,11000,32,8,128,137.61,138.1,138.38,138.97,137.66,20.724,20.794,116.837,116.865,15.1,232.5,73.741,64.881,5.23,50,200,,hf,query+value
-facebook/xlm-roberta-xl,float16,12000,32,8,128,137.6,138.02,138.41,142.19,138.53,20.724,21.719,116.774,116.81,15.7,231.0,79.793,70.779,3.65,50,200,,hf,query+value
+model,dtype,num_adapters,batch_size,lora_rank,seq_len,p50_ms,p90_ms,p95_ms,p99_ms,mean_ms,assemble_p50_ms,assemble_mean_ms,forward_p50_ms,forward_mean_ms,assemble_share_pct,throughput_samples_sec,peak_gpu_mem_gb,adapter_cache_gb,adapter_load_total_s,warmup,iters,seed,engine,target_modules,alloc_conf,status
+facebook/xlm-roberta-xl,float16,11000,32,8,128,121.91,122.11,122.23,122.57,122.72,10.49,11.316,111.408,111.406,9.2,260.8,72.698,64.881,4.01,50,200,,hf,query+value,expandable_segments:True,ok
+facebook/xlm-roberta-xl,float16,12000,32,8,128,122.17,122.43,122.49,122.63,122.82,10.484,11.173,111.659,111.649,9.1,260.5,78.648,70.779,2.84,50,200,,hf,query+value,expandable_segments:True,ok
+facebook/xlm-roberta-xl,float16,13000,32,8,128,,,,,,,,,,,,,,,50,200,,hf,query+value,expandable_segments:True,oom
+facebook/xlm-roberta-xl,float16,14000,32,8,128,,,,,,,,,,,,,,,50,200,,hf,query+value,expandable_segments:True,oom
