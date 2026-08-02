@@ -66,6 +66,7 @@ mkdir -p "$HF_HOME" "$UV_CACHE_DIR" "$TMPDIR"
 cd /root/lora_scaling
 R=benchmarks/results/rebuttal_deberta
 mkdir -p "$R"
+SWEEP_INCOMPLETE=0
 
 M="microsoft/deberta-v2-xlarge"
 TAG=deberta
@@ -104,16 +105,23 @@ uv run python -m lora_serving.benchmark.run \
   --batch-sizes 8 16 32 64 128 --lora-ranks 8 --target-modules value \
   --extra-configs 1000:32:4 1000:32:16 1000:32:32 \
   --seq-len 128 --warmup 50 --iters 200 \
-  --seeds 1 2 3 4 5 \
+  --seeds 1 2 3 4 5 --require-complete \
   --out "$R/sweep_${TAG}_a100.csv" > "$R/sweep_${TAG}_a100.log" 2>&1
-echo "  sweep rc=$?"
+rc=$?; echo "  sweep rc=$rc"
+if [ $rc -ne 0 ]; then
+  SWEEP_INCOMPLETE=1
+  echo "  !! SWEEP INCOMPLETE -- cells are missing from the CSV (status=oom rows"
+  echo "     name them). Continuing so the remaining arms still land, but this"
+  echo "     script will exit non-zero at the end. See $R/sweep_*.log."
+fi
 
 # Widened at the bottom end so this one probe brackets the ceiling on its own.
 # The archived run needed a hand-driven second pass (45k/50k/55k, then 58000 in
 # a capacity2 file) because the grid started above where the default allocator
 # actually topped out. 56000 is below the measured 58k fit, 68000 is above any
 # plausible expandable_segments ceiling (~62k), so the bracket holds without a
-# follow-up. OOM cells are skipped per-config, so the extra cell is nearly free.
+# follow-up. An OOM cell is recorded as a status=oom row, and this probe omits
+# --require-complete, so the extra cell is nearly free and self-documenting.
 echo "=== [3/5] capacity probe (OOM ceiling) ==="
 uv run python -m lora_serving.benchmark.run \
   --model "$M" --engine hf --dtype fp16 \
@@ -141,4 +149,10 @@ uv run python -m benchmarks.baselines.peft_swap \
   --out "$R/peft_base_$TAG.csv" > "$R/peft_base_$TAG.log" 2>&1
 echo "  peft base rc=$?"
 
+if [ "$SWEEP_INCOMPLETE" -ne 0 ]; then
+  echo "FAILED: the LateFuse sweep did not complete its grid -- do not publish"
+  echo "these numbers or patch the gap with a second run. Fix the cause and"
+  echo "re-run the sweep."
+  exit 1
+fi
 echo "ALL DONE ($TAG)"

@@ -115,8 +115,16 @@ OUT     = REPO / "paper"
 # ===========================================================================
 
 def load_csv(path: Path) -> list[dict[str, str]]:
+    """Measured rows only.
+
+    The benchmark runner records an OOM'd config as a row with status="oom" and
+    blank metric columns, so a capacity probe's failures are visible in the data
+    instead of showing up as an unexplained gap. Those rows carry no numbers and
+    must never reach an aggregate. CSVs predating the column have no status and
+    are all treated as measured, so the paper's committed results are unaffected.
+    """
     with path.open() as f:
-        return list(csv.DictReader(f))
+        return [r for r in csv.DictReader(f) if r.get("status", "ok") == "ok"]
 
 
 def find_row(rows: list[dict[str, str]], **filters: Any) -> dict[str, str]:
