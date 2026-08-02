@@ -112,6 +112,11 @@ CONFIGS = {
 
 BASE_RANK = 8
 
+# The allocator setting the rebuttal scripts ship, and therefore the one the
+# reported ceilings are measured under. Rows carry it in 'alloc_conf'; see the
+# two-arm capacity probe in benchmarks/run_rebuttal_l40s.sh.
+SHIPPED_ALLOC_CONF = "expandable_segments:True"
+
 
 # ---------------------------------------------------------------- helpers
 
@@ -202,6 +207,22 @@ def analyse_config(cfg: dict) -> dict:
         if p.exists():
             cap_rows += read_csv(p)
     cap32 = [r for r in cap_rows if int(r["batch_size"]) == 32]
+    # The L40S probe measures BOTH allocator settings into one CSV, told apart
+    # by 'alloc_conf'. A plain max() over that file would report whichever arm
+    # happened to reach higher without naming which -- right by luck today
+    # (expandable_segments always wins) but not something to leave implicit in
+    # a number that goes to reviewers. Pin the ceiling to the shipped setting.
+    # CSVs written before the column exists fall through unchanged.
+    if any("alloc_conf" in r for r in cap32):
+        shipped = [r for r in cap32 if r.get("alloc_conf") == SHIPPED_ALLOC_CONF]
+        if shipped:
+            cap32 = shipped
+        else:
+            print(
+                f"  WARNING [{cfg['label']}]: no capacity rows at "
+                f"{SHIPPED_ALLOC_CONF!r}; ceiling falls back to whatever ran. "
+                "Did the sweep script export PYTORCH_CUDA_ALLOC_CONF?"
+            )
     if cap32:
         top = max(cap32, key=lambda r: int(r["num_adapters"]))
         ceil_n = int(top["num_adapters"])
@@ -223,6 +244,25 @@ def analyse_config(cfg: dict) -> dict:
         out["ceiling_n"] = ceil_n
         out["ceiling_p50_ms_b32"] = round(ceil_p50, 2)
         out["ceiling_peak_mem_gb"] = round(ceil_mem, 1)
+
+        # Default-allocator ceiling, when the probe measured both arms (today
+        # only L40S). This is the 26k side of the "+7.7% free capacity" claim,
+        # which otherwise lives in prose with nothing to trace back to. Emitting
+        # it lets rebuttal/check.py verify the comparison instead of
+        # whitelisting the number. Absent on CSVs without an 'alloc_conf'
+        # column, in which case the claim is unverifiable and check.py must
+        # keep the literal allowed.
+        default32 = [
+            r
+            for r in cap_rows
+            if int(r["batch_size"]) == 32 and r.get("alloc_conf") == "default"
+        ]
+        if default32:
+            ceil_default = max(int(r["num_adapters"]) for r in default32)
+            out["ceiling_n_default_alloc"] = ceil_default
+            out["ceiling_gain_from_expandable_segments_pct"] = round(
+                100.0 * (ceil_n - ceil_default) / ceil_default, 1
+            )
         base = cell_p50(sweep, 1000, 32)
         out["n1000_p50_ms_b32"] = round(base, 2)
         out["at_ceiling_vs_n1000_pct"] = round(100.0 * (ceil_p50 - base) / base, 2)

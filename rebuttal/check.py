@@ -34,10 +34,22 @@ SAFE_LIMIT = 4900
 ALLOWED = {
     # experimental grid coordinates (batch sizes, ranks, seeds, seq len)
     4, 5, 8, 16, 32, 64, 128, 256, 200, 50, 10,
-    # pool sizes actually swept
-    100, 1000, 2000, 4000, 5000, 6000, 8000, 10000, 11000, 12000, 20000,
-    26000, 28000, 29000, 40000, 45000, 47000, 49000, 50000, 51000, 55000,
-    58000, 60000, 13000,
+    # Pool sizes that are grid COORDINATES -- values a script asked for, which
+    # say nothing about what the hardware achieved.
+    #
+    # Measured ceilings are deliberately NOT here: 47000, 49000, 58000, 28000
+    # and 12000 were removed so they must trace to a ceiling_n in numbers.json.
+    # They are the numbers a re-run moves, and whitelisting them meant a stale
+    # ceiling in the prose passed silently -- the checker only ever caught
+    # invented values, never superseded ones. Do not add a ceiling back here to
+    # quiet a failure; regenerate numbers.json and fix the prose instead.
+    100, 1000, 2000, 4000, 5000, 6000, 8000, 10000, 11000, 20000,
+    40000, 45000, 50000, 51000, 55000, 60000, 13000,
+    # 26000/29000 are measured L40S results, not coordinates: the
+    # default-allocator ceiling and the count that fails under both. They stay
+    # allowed only until a re-run populates ceiling_n_default_alloc (the probe
+    # now measures both arms); drop them once numbers.json carries that field.
+    26000, 29000,
     # small counting numbers used in prose ("three encoders", "two GPU classes")
     0, 1, 2, 3, 6, 7, 9,
     # parity tolerances quoted from the test suite
