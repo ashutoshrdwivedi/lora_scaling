@@ -275,11 +275,19 @@ def run_single_config(
     registration_total_ms = float(np.sum(registration_latencies))
     eviction_total_ms = float(np.sum(eviction_latencies))
     adapter_store_total_ms = registration_total_ms + eviction_total_ms
-    end_to_end_latencies = total_latencies + registration_latencies + eviction_latencies
+    adapter_store_latencies = registration_latencies + eviction_latencies
+    end_to_end_latencies = total_latencies + adapter_store_latencies
+    end_to_end_total_ms = float(np.sum(end_to_end_latencies))
     end_to_end_throughput = batch_size / (np.mean(end_to_end_latencies) / 1000)
+    adapter_store_share_pcts = np.divide(
+        100 * adapter_store_latencies,
+        end_to_end_latencies,
+        out=np.zeros_like(end_to_end_latencies),
+        where=end_to_end_latencies != 0,
+    )
     adapter_store_share_pct = (
-        100 * adapter_store_total_ms / (serving_total_ms + adapter_store_total_ms)
-        if serving_total_ms + adapter_store_total_ms else 0.0
+        100 * adapter_store_total_ms / end_to_end_total_ms
+        if end_to_end_total_ms else 0.0
     )
 
     return {
@@ -294,6 +302,7 @@ def run_single_config(
         "p95_ms": round(float(np.percentile(total_latencies, 95)), 2),
         "p99_ms": round(float(np.percentile(total_latencies, 99)), 2),
         "mean_ms": round(float(np.mean(total_latencies)), 2),
+        "serving_total_ms": round(serving_total_ms, 3),
         "assemble_p50_ms": round(float(np.percentile(assemble_latencies, 50)), 3),
         "assemble_mean_ms": round(float(np.mean(assemble_latencies)), 3),
         "forward_p50_ms": round(float(np.percentile(forward_latencies, 50)), 3),
@@ -310,11 +319,25 @@ def run_single_config(
         "churn_request_misses": churn_misses if churn_enabled else "",
         "churn_admissions": churn_misses if churn_enabled else "",
         "churn_evictions": churn_misses if churn_enabled else "",
+        "churn_registration_p50_ms": round(float(np.percentile(registration_latencies, 50)), 3) if churn_enabled else "",
+        "churn_registration_mean_ms": round(float(np.mean(registration_latencies)), 3) if churn_enabled else "",
         "churn_registration_total_ms": round(registration_total_ms, 3) if churn_enabled else "",
+        "churn_eviction_p50_ms": round(float(np.percentile(eviction_latencies, 50)), 3) if churn_enabled else "",
+        "churn_eviction_mean_ms": round(float(np.mean(eviction_latencies)), 3) if churn_enabled else "",
         "churn_eviction_total_ms": round(eviction_total_ms, 3) if churn_enabled else "",
         "churn_adapter_store_total_ms": round(adapter_store_total_ms, 3) if churn_enabled else "",
-        "churn_adapter_store_share_pct": round(adapter_store_share_pct, 3) if churn_enabled else "",
+        "churn_adapter_store_overall_share_pct": round(adapter_store_share_pct, 3) if churn_enabled else "",
+        "churn_adapter_store_share_p50_pct": round(float(np.percentile(adapter_store_share_pcts, 50)), 3) if churn_enabled else "",
+        "churn_adapter_store_share_p90_pct": round(float(np.percentile(adapter_store_share_pcts, 90)), 3) if churn_enabled else "",
+        "churn_adapter_store_share_p95_pct": round(float(np.percentile(adapter_store_share_pcts, 95)), 3) if churn_enabled else "",
+        "churn_adapter_store_share_p99_pct": round(float(np.percentile(adapter_store_share_pcts, 99)), 3) if churn_enabled else "",
+        "churn_adapter_store_share_mean_pct": round(float(np.mean(adapter_store_share_pcts)), 3) if churn_enabled else "",
+        "churn_end_to_end_p50_ms": round(float(np.percentile(end_to_end_latencies, 50)), 3) if churn_enabled else "",
+        "churn_end_to_end_p90_ms": round(float(np.percentile(end_to_end_latencies, 90)), 3) if churn_enabled else "",
+        "churn_end_to_end_p95_ms": round(float(np.percentile(end_to_end_latencies, 95)), 3) if churn_enabled else "",
+        "churn_end_to_end_p99_ms": round(float(np.percentile(end_to_end_latencies, 99)), 3) if churn_enabled else "",
         "churn_end_to_end_mean_ms": round(float(np.mean(end_to_end_latencies)), 3) if churn_enabled else "",
+        "churn_end_to_end_total_ms": round(end_to_end_total_ms, 3) if churn_enabled else "",
         "churn_end_to_end_throughput_samples_sec": round(end_to_end_throughput, 1) if churn_enabled else "",
         "warmup": warmup,
         "iters": iters,
@@ -336,7 +359,7 @@ def run_single_config(
 # Metric columns, in CSV order. A measured row fills them; an OOM row leaves
 # them blank. Both rows carry the same keys so the two write one shared header.
 METRIC_COLUMNS = (
-    "p50_ms", "p90_ms", "p95_ms", "p99_ms", "mean_ms",
+    "p50_ms", "p90_ms", "p95_ms", "p99_ms", "mean_ms", "serving_total_ms",
     "assemble_p50_ms", "assemble_mean_ms", "forward_p50_ms", "forward_mean_ms",
     "assemble_share_pct", "throughput_samples_sec", "peak_gpu_mem_gb",
     "adapter_cache_gb", "adapter_load_total_s",
@@ -393,11 +416,25 @@ def oom_row(
         "churn_request_misses": "",
         "churn_admissions": "",
         "churn_evictions": "",
+        "churn_registration_p50_ms": "",
+        "churn_registration_mean_ms": "",
         "churn_registration_total_ms": "",
+        "churn_eviction_p50_ms": "",
+        "churn_eviction_mean_ms": "",
         "churn_eviction_total_ms": "",
         "churn_adapter_store_total_ms": "",
-        "churn_adapter_store_share_pct": "",
+        "churn_adapter_store_overall_share_pct": "",
+        "churn_adapter_store_share_p50_pct": "",
+        "churn_adapter_store_share_p90_pct": "",
+        "churn_adapter_store_share_p95_pct": "",
+        "churn_adapter_store_share_p99_pct": "",
+        "churn_adapter_store_share_mean_pct": "",
+        "churn_end_to_end_p50_ms": "",
+        "churn_end_to_end_p90_ms": "",
+        "churn_end_to_end_p95_ms": "",
+        "churn_end_to_end_p99_ms": "",
         "churn_end_to_end_mean_ms": "",
+        "churn_end_to_end_total_ms": "",
         "churn_end_to_end_throughput_samples_sec": "",
     })
     return row
@@ -435,7 +472,7 @@ def main():
              "--extra-configs 1000:32:4 1000:32:16 1000:32:32",
     )
     parser.add_argument(
-        "--engine", choices=["custom", "hf"], default="custom",
+        "--engine", choices=["custom", "hf"], default="hf",
         help="Base-model forward: 'custom' = the repo's EncoderWithLora "
              "(BERT-family reimplementation, strict weight load); 'hf' = stock "
              "HuggingFace AutoModel with LoRA injected via forward hooks "
@@ -454,9 +491,15 @@ def main():
     parser.add_argument("--warmup", type=int, default=50)
     parser.add_argument("--iters", type=int, default=200)
     parser.add_argument(
+        "--churn",
+        action="store_true",
+        help="Enable the Zipf/LRU tenant-churn path. Requires "
+        "--churn-num-tenants; leave unset for the normal resident-store benchmark.",
+    )
+    parser.add_argument(
         "--churn-num-tenants", type=int,
-        help="Enable Zipf/LRU AdapterStore churn over this many tenants. "
-        "Each --adapters value remains the fixed resident-store capacity.",
+        help="Zipf tenant population used by --churn. Each --adapters value "
+        "remains the fixed resident-store capacity.",
     )
     parser.add_argument(
         "--churn-zipf-alpha", type=float, default=1.1,
@@ -493,6 +536,11 @@ def main():
              "purpose and where an OOM is the result being measured.",
     )
     args = parser.parse_args()
+
+    if args.churn and args.churn_num_tenants is None:
+        parser.error("--churn requires --churn-num-tenants")
+    if args.churn_num_tenants is not None and not args.churn:
+        parser.error("--churn-num-tenants requires --churn")
 
     if not torch.cuda.is_available():
         print("WARNING: No CUDA GPU detected. Benchmark requires a GPU.")
@@ -558,7 +606,7 @@ def main():
                     seed=seed,
                     engine=args.engine,
                     target_modules=args.target_modules,
-                    churn_num_tenants=args.churn_num_tenants,
+                    churn_num_tenants=args.churn_num_tenants if args.churn else None,
                     churn_zipf_alpha=args.churn_zipf_alpha,
                 )
             except torch.cuda.OutOfMemoryError as e:
@@ -576,7 +624,7 @@ def main():
                     seed=seed,
                     engine=args.engine,
                     target_modules=args.target_modules,
-                    churn_num_tenants=args.churn_num_tenants,
+                    churn_num_tenants=args.churn_num_tenants if args.churn else None,
                     churn_zipf_alpha=args.churn_zipf_alpha,
                 )
                 oomed.append((num_adapters, batch_size, lora_rank, seed))
@@ -605,10 +653,24 @@ def main():
                       f"tput={row['throughput_samples_sec']} samples/s  "
                       f"peak_gpu={row['peak_gpu_mem_gb']}GB")
                 if row["churn_enabled"]:
+                    print(f"  churn e2e: p50={row['churn_end_to_end_p50_ms']}ms  "
+                          f"p95={row['churn_end_to_end_p95_ms']}ms  "
+                          f"p99={row['churn_end_to_end_p99_ms']}ms  "
+                          f"mean={row['churn_end_to_end_mean_ms']}ms  "
+                          f"tput={row['churn_end_to_end_throughput_samples_sec']} samples/s")
                     print(f"  churn: misses={row['churn_request_misses']}  "
-                          f"register={row['churn_registration_total_ms']}ms  "
-                          f"evict={row['churn_eviction_total_ms']}ms  "
-                          f"store_share={row['churn_adapter_store_share_pct']}%\n")
+                          f"register=p50 {row['churn_registration_p50_ms']}ms, "
+                          f"mean {row['churn_registration_mean_ms']}ms, "
+                          f"total {row['churn_registration_total_ms']}ms  "
+                          f"evict=p50 {row['churn_eviction_p50_ms']}ms, "
+                          f"mean {row['churn_eviction_mean_ms']}ms, "
+                          f"total {row['churn_eviction_total_ms']}ms  "
+                          f"store_total={row['churn_adapter_store_total_ms']}ms  "
+                          f"store_share_overall={row['churn_adapter_store_overall_share_pct']}%\n")
+                    print(f"  per-batch store-share: p50={row['churn_adapter_store_share_p50_pct']}%  "
+                          f"p95={row['churn_adapter_store_share_p95_pct']}%  "
+                          f"p99={row['churn_adapter_store_share_p99_pct']}%  "
+                          f"mean={row['churn_adapter_store_share_mean_pct']}%\n")
                 else:
                     print()
             else:
