@@ -23,9 +23,9 @@ We thank all reviewers for their careful reading. All three reviews rate Soundne
 * **GPU-Resident Assembler (`index_select`):** We evaluated the GPU-resident assembler proposed in our Limitations. Built in pure PyTorch (`index_select`), it shifts assembly directly onto the GPU: throughput reaches **12,152–15,315 samples/s** (2.47–3.12× speedup), assembly overhead falls to 1.8–4.4%, and tail latency stabilizes (p99/p50 drops from 5.28× to 1.03×). On bge-m3, throughput improves by 1.14× ($B{=}8$) to 1.80× ($B{=}128$).
 * **Validation & Conservatism:** Testing across two host CPUs confirms baseline throughput tracks CPU speed, whereas the GPU assembler reproduces identical high throughput on both. Our paper uses the baseline assembler and is therefore conservative.
 
-**Notes on the table above:**
-* **Ceiling Probes:** Only the ceiling points for the three new A100 configs are single-seed probes at $B{=}32$; only `bge-m3` and `L40S` evaluate all five batch sizes at ceiling.
-* **L40S Allocator Optimization:** PyTorch's default caching allocator tops out at 27,000 adapters. Setting `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` reclaims fragmented VRAM to reach 28,000 at identical p50 (**3.7% more tenants for free**). Table figures use this setting.
-* **DeBERTa Target Modules:** Adapters target value projections (`value_proj`) only, as DeBERTa-v2 shares `query_proj` with batch-shared relative-position embeddings (`share_att_key`). Value-only output matches PEFT to $2\times10^{-5}$ relative tolerance (unit-tested). Because fewer modules are wrapped, PEFT incurs less mixed-batch overhead, making our speedup row conservative.
-
 At camera-ready (+1 page) we will consolidate (a)+(b) into a new subsection, "Generalization Across Models and Hardware", and fold (c) into Finding 5 and the Limitations. We hope these address the main concerns.
+
+**Notes on the table above:**
+* **Ceiling Probes:** The ceiling probes for the new configs are single-seed at $B{=}32$;
+* **PyTorch Allocator:** Every new result in the table uses `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`. Quantified on L40S against PyTorch's default caching allocator (27,000 adapters), expandable segments reclaims VRAM fragmentation to fit 28,000 adapters at identical p50 (**3.7% more tenants for free**).
+* **DeBERTa Target Modules:** Adapters target value projections (`value_proj`) only, as DeBERTa-v2 shares `query_proj` with batch-shared relative-position embeddings (`share_att_key`). Value-only output matches PEFT to $2\times10^{-5}$ relative tolerance (unit-tested). Because fewer modules are wrapped, PEFT incurs less mixed-batch overhead, making our speedup row conservative.
