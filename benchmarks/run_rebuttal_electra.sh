@@ -5,13 +5,21 @@
 # ELECTRA is a replaced-token-detection discriminator, a different pretraining
 # family from bge-m3's masked-LM XLM-RoBERTa, with WordPiece 30k vs
 # SentencePiece 250k vocabulary and absolute (arange) position ids rather than
-# RoBERTa's mask-offset scheme -- so it exercises the other branch of
-# EncoderWithLora.position_ids.
+# RoBERTa's mask-offset scheme. (The position-id scheme is the checkpoint's own
+# under --engine hf; EncoderWithLora.position_ids is not on this path.)
 #
-# Crucially this row runs on the PAPER'S OWN engine (the custom encoder), not
-# the HF hook wrapper, so it is direct evidence about the shipped system.
-# ELECTRA checkpoints have no pooler; from_pretrained_serving tolerates exactly
-# that gap and stays strict about everything else.
+# This row runs on the HF hook wrapper (--engine hf), like the DeBERTa and
+# XLM-R-XL rows. ELECTRA checkpoints ship no pooler, and the custom encoder's
+# loader is strict about every parameter it declares, so it rejects them (see
+# src/lora_serving/model/encoder.py:205) rather than serving CLS through a
+# randomly-initialised pooler. The wrapper falls back to the raw CLS state,
+# which is what a pooler-less checkpoint's own HF forward returns.
+#
+# NOTE: the committed CSVs in benchmarks/results/rebuttal_electra/ predate this
+# switch and were measured on the custom encoder. They are valid as wall-clock
+# (the pooler is one B x H x H GEMM out of 24 layers and was never read for
+# anything but latency), but re-run this script before citing the row as
+# wrapper-measured, and keep rebuttal_response.md's engine attribution in sync.
 #
 # Same L=24, d=1024 adapter geometry as bge-m3 -> identical 1.57 MB/adapter and
 # the same ~47k ceiling, which is itself a clean confirmation that Finding 4's
@@ -50,7 +58,7 @@ TAG=electra
 
 echo "=== [0/5] smoke test (fail fast before burning the pod) ==="
 uv run python -m lora_serving.benchmark.run \
-  --model "$M" --dtype fp16 --adapters 100 --batch-sizes 8 \
+  --model "$M" --dtype fp16 --engine hf --adapters 100 --batch-sizes 8 \
   --lora-ranks 8 --seq-len 128 --warmup 5 --iters 10 \
   --out "$R/smoke_$TAG.csv" > "$R/smoke_$TAG.log" 2>&1
 rc=$?; echo "  latefuse smoke rc=$rc"
@@ -71,7 +79,7 @@ echo "  metadata rc=$?"
 
 echo "=== [2/5] LateFuse sweep, full grid, 5 seeds (~1h50m) ==="
 uv run python -m lora_serving.benchmark.run \
-  --model "$M" --dtype fp16 \
+  --model "$M" --dtype fp16 --engine hf \
   --adapters 100 1000 5000 10000 20000 47000 \
   --batch-sizes 8 16 32 64 128 --lora-ranks 8 \
   --extra-configs 1000:32:4 1000:32:16 1000:32:32 \
@@ -89,7 +97,7 @@ echo "  sweep rc=$?"
 # minutes and can never fail the run.
 echo "=== [3/5] capacity probe (OOM ceiling) ==="
 uv run python -m lora_serving.benchmark.run \
-  --model "$M" --dtype fp16 \
+  --model "$M" --dtype fp16 --engine hf \
   --adapters 47000 49000 51000 53000 --batch-sizes 32 --lora-ranks 8 \
   --seq-len 128 --warmup 50 --iters 200 \
   --out "$R/sweep_${TAG}_capacity.csv" > "$R/sweep_${TAG}_capacity.log" 2>&1

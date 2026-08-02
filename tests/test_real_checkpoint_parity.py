@@ -27,7 +27,6 @@ import torch
 from transformers import AutoModel
 
 from lora_serving.config import LoraServingConfig
-from lora_serving.model.encoder import EncoderWithLora
 from lora_serving.model.hf_wrapper import HFEncoderWithLora
 from lora_serving.weights.batch import BatchAssembler
 from lora_serving.weights.store import AdapterStore
@@ -104,20 +103,6 @@ def _peft_with(name, cfg, store, aid, peft_targets):
     return model.to(DEVICE).eval()
 
 
-def _custom_cls(model, input_ids, attention_mask, lora_w):
-    """EncoderWithLora forward up to the CLS state, before the pooler (ELECTRA
-    checkpoints ship no pooler, so parity is taken pre-pooler)."""
-    B, S = input_ids.shape
-    tt = torch.zeros(B, S, dtype=torch.long, device=input_ids.device)
-    x = (model.embeddings["word_embeddings"](input_ids)
-         + model.embeddings["position_embeddings"](model.position_ids(input_ids))
-         + model.embeddings["token_type_embeddings"](tt))
-    x = model.embeddings["LayerNorm"](x)
-    for layer, lw in zip(model.encoder["layer"], lora_w):
-        x = layer(x, attention_mask, lw)
-    return x[:, 0]
-
-
 def _rel(ours: torch.Tensor, theirs: torch.Tensor) -> float:
     return float((ours - theirs).abs().max() / theirs.abs().max())
 
@@ -131,29 +116,35 @@ def batch():
 
 
 # --------------------------------------------------------------------------
-# ELECTRA-large — the paper's own engine (EncoderWithLora) vs PEFT
+# ELECTRA-large — hook wrapper vs PEFT
+#
+# This row moved from the custom encoder to HFEncoderWithLora: ELECTRA
+# discriminators ship no pooler, and EncoderWithLora declares one, so its
+# strict loader rejects the checkpoint rather than running CLS through a
+# randomly initialised projection. Parity is taken on the CLS hidden state,
+# which is what encode_pooled returns when the base has no pooler.
 # --------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
 def electra():
     cfg = _cfg(ELECTRA, ["query", "value"])
-    model = EncoderWithLora.from_pretrained_serving(cfg)
-    model.eval()
+    wrapper = HFEncoderWithLora.from_pretrained_serving(cfg)
+    wrapper.eval()
     store = _store(cfg, [f"a{i}" for i in range(BATCH_SIZE)])
-    yield cfg, model, store
-    del model, store
+    yield cfg, wrapper, store
+    del wrapper, store
     torch.cuda.empty_cache()
 
 
 def test_electra_zero_delta_matches_bare_hf(electra, batch):
     """With B=0 the LoRA path must vanish, reproducing the stock HF model."""
-    cfg, model, _ = electra
+    cfg, wrapper, _ = electra
     ids, mask = batch
     zstore = _store(cfg, ["z"], nonzero=False)
     lora_w = BatchAssembler(zstore, cfg).assemble_lora(["z"] * BATCH_SIZE)
     hf = AutoModel.from_pretrained(ELECTRA, dtype=DTYPE).to(DEVICE).eval()
     with torch.no_grad():
-        ours = _custom_cls(model, ids, mask, lora_w)
+        ours = wrapper.encode_pooled(ids, mask, lora_w)
         theirs = hf(input_ids=ids, attention_mask=mask).last_hidden_state[:, 0]
     del hf
     torch.cuda.empty_cache()
@@ -164,28 +155,39 @@ def test_electra_zero_delta_matches_bare_hf(electra, batch):
 
 def test_electra_shared_adapter_matches_peft(electra, batch):
     """One adapter replicated across the batch vs PEFT's batched forward."""
-    cfg, model, store = electra
+    cfg, wrapper, store = electra
     ids, mask = batch
     lora_w = BatchAssembler(store, cfg).assemble_lora(["a0"] * BATCH_SIZE)
     pm = _peft_with(ELECTRA, cfg, store, "a0", ["query", "value"])
     with torch.no_grad():
-        ours = _custom_cls(model, ids, mask, lora_w)
+        ours = wrapper.encode_pooled(ids, mask, lora_w)
         theirs = pm(input_ids=ids, attention_mask=mask).last_hidden_state[:, 0]
+        base = wrapper.encode_pooled(ids, mask, lora_w, apply_lora=False)
     del pm
     torch.cuda.empty_cache()
     rel = _rel(ours, theirs)
-    print(f"\n  electra shared adapter vs PEFT: rel={rel:.3e}")
+    delta = float((ours - base).abs().max() / base.abs().max())
+    skips = wrapper.shared_projection_skips
+    print(f"\n  electra shared adapter vs PEFT: rel={rel:.3e}, skips={skips}, "
+          f"|lora delta|={delta:.3e}")
+    # ELECTRA keeps BERT's attention naming and has no batch-shared projection,
+    # so it takes the "default" suffix map and nothing may be skipped.
+    assert skips == 0
+    assert delta > 10 * rel, (
+        f"LoRA delta {delta:.2e} is not clearly above the parity residual "
+        f"{rel:.2e}; the metric cannot resolve a real difference"
+    )
     assert rel < TOL_TIGHT
 
 
 def test_electra_mixed_tenant_matches_peft_loop(electra, batch):
     """The multi-tenant claim: one mixed batch must equal a per-sample PEFT loop."""
-    cfg, model, store = electra
+    cfg, wrapper, store = electra
     ids, mask = batch
     aids = [f"a{i}" for i in range(BATCH_SIZE)]
     lora_w = BatchAssembler(store, cfg).assemble_lora(aids)
     with torch.no_grad():
-        ours = _custom_cls(model, ids, mask, lora_w)
+        ours = wrapper.encode_pooled(ids, mask, lora_w)
         rows = []
         for i, aid in enumerate(aids):
             pm = _peft_with(ELECTRA, cfg, store, aid, ["query", "value"])

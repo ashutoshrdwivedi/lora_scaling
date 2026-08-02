@@ -13,7 +13,10 @@ runs offline on CPU (and on GPU when available). Coverage:
      reproduce the base forward exactly; nonzero samples diverge. Also
      exercises the hook guard that skips the shared relative-position
      projection calls.
-  4. EncoderWithLora loader tolerates pooler-less checkpoints (ELECTRA).
+  4. Pooler-less checkpoints (ELECTRA): PEFT parity on the wrapper, which is
+     the engine that row runs on, plus the guard that the custom encoder's
+     strict loader rejects them rather than serving CLS through a randomly
+     initialised pooler.
   5. Cross-engine equivalence: on a checkpoint both engines can load, the hook
      path and the specialized encoder produce the same pooled output — the
      property that lets a wrapper-measured row be compared with the paper's.
@@ -230,53 +233,19 @@ def test_isolation_deberta_v2_shared_att_key(tmp_path):
     assert not torch.allclose(mixed[[0, 2]], base[[0, 2]], atol=ATOL, rtol=RTOL)
 
 
-def _custom_cls(model: EncoderWithLora, input_ids, attention_mask, lora_w):
-    """EncoderWithLora forward up to the CLS hidden state, before the pooler.
-
-    ELECTRA checkpoints carry no pooler, so parity against HF must be taken at
-    the pre-pooler hidden state.
-    """
-    B, S = input_ids.shape
-    tt = torch.zeros(B, S, dtype=torch.long, device=input_ids.device)
-    x = (
-        model.embeddings["word_embeddings"](input_ids)
-        + model.embeddings["position_embeddings"](model.position_ids(input_ids))
-        + model.embeddings["token_type_embeddings"](tt)
-    )
-    x = model.embeddings["LayerNorm"](x)
-    for layer, lw in zip(model.encoder["layer"], lora_w):
-        x = layer(x, attention_mask, lw)
-    return x[:, 0]
-
-
 def test_parity_electra_vs_peft(tmp_path):
-    """ELECTRA on the paper's own engine must match PEFT.
+    """ELECTRA on the hook wrapper must match PEFT.
 
-    The ELECTRA generality row runs on EncoderWithLora, not the hook wrapper,
-    so its parity has to be pinned against PEFT separately from the wrapper
-    tests. Mirrors the real-checkpoint check in
+    The ELECTRA generality row runs on HFEncoderWithLora (the checkpoint ships
+    no pooler, which the custom encoder's strict loader rejects — see
+    test_electra_rejected_by_custom_encoder). Pooled output is the raw CLS
+    state on both sides. Mirrors the real-checkpoint check in
     tests/test_real_checkpoint_parity.py.
     """
     config = ElectraConfig(**TINY, type_vocab_size=2, embedding_size=TINY["hidden_size"])
     path = _save_tiny(ElectraModel, config, tmp_path)
     cfg = _serving_config(path, ["query", "value"])
-    store = _store_with_adapters(cfg, 1)
-    custom = EncoderWithLora.from_pretrained_serving(cfg)
-    custom.eval()
-    lora_w = BatchAssembler(store, cfg).assemble_lora(["adapter_0"] * BATCH_SIZE)
-    input_ids, attention_mask = _inputs(cfg)
-
-    with torch.no_grad():
-        ours = _custom_cls(custom, input_ids, attention_mask, lora_w)
-    peft_model = _peft_with_our_weights(
-        path, cfg, store, "adapter_0", ["query", "value"], "attention.self"
-    )
-    with torch.no_grad():
-        theirs = peft_model(
-            input_ids=input_ids, attention_mask=attention_mask
-        ).last_hidden_state[:, 0]
-
-    torch.testing.assert_close(ours, theirs, atol=ATOL, rtol=RTOL)
+    _assert_parity(path, cfg, ["query", "value"], use_pooler_output=False)
 
 
 def _deberta_shared_key_path(tmp_path):
@@ -457,9 +426,15 @@ def test_parity_xlm_roberta_xl(tmp_path):
     _assert_parity(path, cfg, ["query", "value"], use_pooler_output=True)
 
 
-def test_electra_loads_without_pooler(tmp_path):
-    """ELECTRA checkpoints have no pooler; the strict-except-pooler loader must
-    accept them and keep everything else strict."""
+def test_electra_rejected_by_custom_encoder(tmp_path):
+    """ELECTRA checkpoints have no pooler, so the custom encoder must refuse them.
+
+    Loading anyway would leave EncoderWithLora's pooler at its random
+    initialisation and run CLS through it, while HFEncoderWithLora returns the
+    raw CLS state for the same checkpoint — two engines the benchmark presents
+    as interchangeable silently disagreeing. Failing here is what routes
+    pooler-less checkpoints to --engine hf, and the message has to say so.
+    """
     config = ElectraConfig(**TINY, type_vocab_size=2, embedding_size=TINY["hidden_size"])
     path = _save_tiny(ElectraModel, config, tmp_path)
     cfg = LoraServingConfig(
@@ -471,13 +446,9 @@ def test_electra_loads_without_pooler(tmp_path):
         device=torch.device("cpu"),
         dtype=torch.float32,
     )
-    model = EncoderWithLora.from_pretrained_serving(cfg)
-    # base weights must have loaded (not stayed at init): compare one tensor
-    hf = AutoModel.from_pretrained(path, torch_dtype=torch.float32)
-    torch.testing.assert_close(
-        model.embeddings["word_embeddings"].weight,
-        hf.state_dict()["embeddings.word_embeddings.weight"],
-    )
+    with pytest.raises(RuntimeError, match="pooler") as exc:
+        EncoderWithLora.from_pretrained_serving(cfg)
+    assert "--engine hf" in str(exc.value)
 
 
 def test_wrapper_is_refcount_collectable(tmp_path):
