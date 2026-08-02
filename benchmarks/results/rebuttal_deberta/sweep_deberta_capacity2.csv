@@ -1,2 +1,0 @@
-model,dtype,num_adapters,batch_size,lora_rank,seq_len,p50_ms,p90_ms,p95_ms,p99_ms,mean_ms,assemble_p50_ms,assemble_mean_ms,forward_p50_ms,forward_mean_ms,assemble_share_pct,throughput_samples_sec,peak_gpu_mem_gb,adapter_cache_gb,adapter_load_total_s,warmup,iters,seed,engine,target_modules
-microsoft/deberta-v2-xlarge,float16,58000,32,8,128,75.19,75.59,75.7,78.83,76.57,7.807,9.108,67.359,67.463,11.9,417.9,72.674,68.42,33.54,50,200,,hf,value

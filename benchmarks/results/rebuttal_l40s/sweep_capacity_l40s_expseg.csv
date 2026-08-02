@@ -1,2 +1,0 @@
-model,dtype,num_adapters,batch_size,lora_rank,seq_len,p50_ms,p90_ms,p95_ms,p99_ms,mean_ms,assemble_p50_ms,assemble_mean_ms,forward_p50_ms,forward_mean_ms,assemble_share_pct,throughput_samples_sec,peak_gpu_mem_gb,adapter_cache_gb,adapter_load_total_s,warmup,iters,seed,engine,target_modules
-BAAI/bge-m3,float16,28000,32,8,128,33.06,33.8,33.94,35.78,34.42,8.735,10.045,24.285,24.371,29.2,929.8,45.901,44.04,15.07,50,200,,custom,query+value
