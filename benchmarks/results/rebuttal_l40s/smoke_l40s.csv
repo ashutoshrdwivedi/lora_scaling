@@ -1,2 +1,2 @@
-model,dtype,num_adapters,batch_size,lora_rank,seq_len,p50_ms,p90_ms,p95_ms,p99_ms,mean_ms,assemble_p50_ms,assemble_mean_ms,forward_p50_ms,forward_mean_ms,assemble_share_pct,throughput_samples_sec,peak_gpu_mem_gb,adapter_cache_gb,adapter_load_total_s,warmup,iters,seed,engine,target_modules
-BAAI/bge-m3,float16,100,8,8,128,14.78,14.98,15.01,15.04,14.82,2.209,2.212,12.558,12.61,14.9,539.8,1.336,0.157,0.06,5,10,,custom,query+value
+model,dtype,num_adapters,batch_size,lora_rank,seq_len,p50_ms,p90_ms,p95_ms,p99_ms,mean_ms,assemble_p50_ms,assemble_mean_ms,forward_p50_ms,forward_mean_ms,assemble_share_pct,throughput_samples_sec,peak_gpu_mem_gb,adapter_cache_gb,adapter_load_total_s,warmup,iters,seed,engine,target_modules,alloc_conf,status
+BAAI/bge-m3,float16,100,8,8,128,11.36,11.39,11.4,11.41,11.35,1.734,1.736,9.616,9.616,15.3,704.7,1.336,0.157,0.05,5,10,,custom,query+value,expandable_segments:True,ok

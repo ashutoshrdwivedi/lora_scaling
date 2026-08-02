@@ -1,2 +1,2 @@
-model,dtype,num_adapters,batch_size,lora_rank,seq_len,p50_ms,p90_ms,p95_ms,p99_ms,mean_ms,assemble_p50_ms,assemble_mean_ms,forward_p50_ms,forward_mean_ms,assemble_share_pct,throughput_samples_sec,peak_gpu_mem_gb,adapter_cache_gb,adapter_load_total_s,warmup,iters,seed,engine,target_modules
-google/electra-large-discriminator,float16,100,8,8,128,20.49,20.74,20.75,20.75,20.52,3.056,3.07,17.417,17.452,15.0,389.8,0.872,0.157,0.13,5,10,,custom,query+value
+model,dtype,num_adapters,batch_size,lora_rank,seq_len,p50_ms,p90_ms,p95_ms,p99_ms,mean_ms,assemble_p50_ms,assemble_mean_ms,forward_p50_ms,forward_mean_ms,assemble_share_pct,throughput_samples_sec,peak_gpu_mem_gb,adapter_cache_gb,adapter_load_total_s,warmup,iters,seed,engine,target_modules,alloc_conf,status
+google/electra-large-discriminator,float16,100,8,8,128,23.16,23.44,23.5,23.55,23.22,3.136,3.173,19.99,20.045,13.7,344.6,0.871,0.157,0.24,5,10,,hf,query+value,expandable_segments:True,ok
