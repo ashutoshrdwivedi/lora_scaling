@@ -350,6 +350,7 @@ def analyse_config(cfg: dict) -> dict:
         out["hidden_size"] = int(meta["hidden_size"])
         out["num_layers"] = int(meta["num_layers"])
         out["total_params_m"] = round(int(meta["total_params"]) / 1e6, 1)
+        out["base_fp16_gb"] = round(int(meta["total_params"]) * 2 / 1e9, 2)
         b8 = int(meta["lora_bytes_fp16_r8"])
         out["bytes_per_adapter_r8"] = b8
         out["params_per_adapter_r8"] = int(meta["lora_params_r8"])
