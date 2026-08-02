@@ -8,10 +8,10 @@ the rebuttal must trace to a line here.
 | Config | Params (L, d) | Spread across sweep | At ceiling vs N=1,000 | Speedup vs PEFT-mixed | Ceiling @ r=8 | MB/adapter | Peak mem @ ceiling |
 |---|---|---|---|---|---|---|---|
 | bge-m3 / A100-80GB (paper) | 567.8M (24, 1024) | 3.31% (B=128) | -0.37% | 5.6–21.2× | 47,000 | 1.57 | 76.2 GB |
-| ELECTRA-large / A100-80GB | 334.1M (24, 1024) | 2.97% (B=128) | -2.57% | 6.2–22.8× | 49,000 | 1.57 | 78.9 GB |
-| DeBERTa-v2-xlarge / A100-80GB | 884.6M (24, 1536) | 1.32% (B=8) | -0.25% | 2.4–7.3× | 58,000 | 1.18 | 72.7 GB |
+| ELECTRA-large / A100-80GB | 334.1M (24, 1024) | 1.36% (B=8) | -0.16% | 6.2–20.9× | 51,000 | 1.57 | 82.1 GB |
+| DeBERTa-v2-xlarge / A100-80GB | 884.6M (24, 1536) | 1.32% (B=8) | +0.55% | 2.4–7.3× | 55,000 | 1.18 | 69.0 GB |
 | XLM-RoBERTa-XL / A100-80GB | 3482.5M (36, 2560) | 0.69% (B=16) | +0.22% | 2.9–19.9× | 12,000 | 5.9 | 79.8 GB |
-| bge-m3 / L40S-48GB | 567.8M (24, 1024) | 2.9% (B=32) | -0.87% | 4.1–32.4× | 28,000 | 1.57 | 45.9 GB |
+| bge-m3 / L40S-48GB | 567.8M (24, 1024) | 1.6% (B=8) | +0.20% | 3.1–32.7× | 28,000 | 1.57 | 45.9 GB |
 
 ### bgem3_a100 — bge-m3 / A100-80GB (paper)
 - targets: `query+value`, sweep N=[100, 1000, 5000, 10000, 20000, 40000, 47000], B=[8, 16, 32, 64, 128]
@@ -32,32 +32,32 @@ the rebuttal must trace to a line here.
 ### electra — ELECTRA-large / A100-80GB
 - targets: `query+value`, sweep N=[100, 1000, 5000, 10000, 20000, 47000], B=[8, 16, 32, 64, 128]
 - rows: 165 (5 seeds x N x B, plus rank cells r=[4, 8, 16, 32])
-- spread by batch: {'8': 2.22, '16': 2.33, '32': 0.84, '64': 2.15, '128': 2.97}
-- ceiling 49,000: p50 37.86 ms vs 38.86 ms at N=1,000 -> -2.57%
-- rank cells (N=1000, B=32): {'4': 39.01, '8': 38.86, '16': 38.62, '32': 38.61} -> spread 1.04%
-- speedup cells (throughput ratio, paper convention): {'N100_B8': 6.68, 'N100_B32': 9.38, 'N100_B128': 6.2, 'N1000_B8': 22.82, 'N1000_B32': 19.62, 'N1000_B128': 12.05}
-- speedup cells (p50-latency ratio, for reference): {'N100_B8': 6.83, 'N100_B32': 9.94, 'N100_B128': 6.64, 'N1000_B8': 22.75, 'N1000_B32': 20.09, 'N1000_B128': 13.26}
-- worst between-seed s.d.: 3.63% at N=100, B=16
-- peak mem vs batch at N=47,000: {'8': 75.6, '16': 75.7, '32': 75.7, '64': 75.8, '128': 76.1} (delta 0.5 GB)
-- at ceiling by batch: {'32': -2.57} (worst -2.57% at B=32)
+- spread by batch: {'8': 1.36, '16': 1.06, '32': 1.18, '64': 1.21, '128': 0.77}
+- ceiling 51,000: p50 36.95 ms vs 37.01 ms at N=1,000 -> -0.16%
+- rank cells (N=1000, B=32): {'4': 37.28, '8': 37.01, '16': 37.01, '32': 37.27} -> spread 0.73%
+- speedup cells (throughput ratio, paper convention): {'N100_B8': 6.21, 'N100_B32': 10.2, 'N100_B128': 6.59, 'N1000_B8': 20.49, 'N1000_B32': 20.88, 'N1000_B128': 13.19}
+- speedup cells (p50-latency ratio, for reference): {'N100_B8': 6.3, 'N100_B32': 10.62, 'N100_B128': 7.18, 'N1000_B8': 20.8, 'N1000_B32': 21.41, 'N1000_B128': 14.22}
+- worst between-seed s.d.: 2.87% at N=47000, B=16
+- peak mem vs batch at N=47,000: {'8': 75.6, '16': 75.7, '32': 75.7, '64': 75.9, '128': 76.1} (delta 0.5 GB)
+- at ceiling by batch: {'32': -0.16} (worst -0.16% at B=32)
 - MB/adapter r=8: 1.57 MB = 1.5 MiB (786,432 params)
-- store at ceiling: 71.8 GB; 3d/r = 384
-- registration: 0.34 ms/adapter at N=1,000
-- PEFT add_adapter totals: {'100': 14.8, '1000': 1182.1} s
+- store at ceiling: 74.7 GB; 3d/r = 384
+- registration: 0.32 ms/adapter at N=1,000
+- PEFT add_adapter totals: {'100': 15.6, '1000': 1208.5} s
 
 ### deberta — DeBERTa-v2-xlarge / A100-80GB
 - targets: `value`, sweep N=[100, 1000, 5000, 10000, 20000, 40000], B=[8, 16, 32, 64, 128]
 - rows: 165 (5 seeds x N x B, plus rank cells r=[4, 8, 16, 32])
 - spread by batch: {'8': 1.32, '16': 0.65, '32': 0.55, '64': 0.48, '128': 0.34}
-- ceiling 58,000: p50 75.19 ms vs 75.38 ms at N=1,000 -> -0.25%
+- ceiling 55,000: p50 75.8 ms vs 75.38 ms at N=1,000 -> +0.55%
 - rank cells (N=1000, B=32): {'4': 75.64, '8': 75.38, '16': 75.42, '32': 75.61} -> spread 0.35%
 - speedup cells (throughput ratio, paper convention): {'N100_B8': 2.72, 'N100_B32': 3.34, 'N100_B128': 2.42, 'N1000_B8': 7.26, 'N1000_B32': 5.88, 'N1000_B128': 3.98}
 - speedup cells (p50-latency ratio, for reference): {'N100_B8': 2.75, 'N100_B32': 3.35, 'N100_B128': 2.46, 'N1000_B8': 7.25, 'N1000_B32': 5.9, 'N1000_B128': 4.04}
 - worst between-seed s.d.: 0.36% at N=100, B=8
 - peak mem vs batch at N=40,000: {'8': 50.4, '16': 50.5, '32': 50.9, '64': 51.5, '128': 52.9} (delta 2.5 GB)
-- at ceiling by batch: {'32': -0.25} (worst -0.25% at B=32)
+- at ceiling by batch: {'32': 0.55} (worst 0.55% at B=32)
 - MB/adapter r=8: 1.18 MB = 1.12 MiB (589,824 params)
-- store at ceiling: 63.7 GB; 3d/r = 576
+- store at ceiling: 60.4 GB; 3d/r = 576
 - registration: 0.24 ms/adapter at N=1,000
 - PEFT add_adapter totals: {'100': 7.0, '1000': 566.0} s
 
@@ -78,34 +78,34 @@ the rebuttal must trace to a line here.
 - PEFT add_adapter totals: {'100': 26.8, '1000': 1904.5} s
 
 ### l40s — bge-m3 / L40S-48GB
-- targets: `query+value`, sweep N=[100, 1000, 5000, 10000, 20000], B=[8, 16, 32, 64, 128]
-- rows: 140 (5 seeds x N x B, plus rank cells r=[4, 8, 16, 32])
-- spread by batch: {'8': 1.78, '16': 1.83, '32': 2.9, '64': 0.34, '128': 0.7}
-- ceiling 28,000: p50 33.21 ms vs 33.5 ms at N=1,000 -> -0.87%
-- rank cells (N=1000, B=32): {'4': 33.47, '8': 33.5, '16': 33.69, '32': 34.29} -> spread 2.46%
-- speedup cells (throughput ratio, paper convention): {'N100_B8': 7.5, 'N100_B32': 8.25, 'N100_B128': 4.05, 'N1000_B8': 32.4, 'N1000_B32': 19.49, 'N1000_B128': 8.45}
-- speedup cells (p50-latency ratio, for reference): {'N100_B8': 7.57, 'N100_B32': 8.34, 'N100_B128': 4.33, 'N1000_B8': 32.41, 'N1000_B32': 19.9, 'N1000_B128': 9.03}
-- worst between-seed s.d.: 1.67% at N=100, B=32
-- peak mem vs batch at N=20,000: {'8': 33.1, '16': 33.1, '32': 33.1, '64': 33.3, '128': 33.5} (delta 0.5 GB)
-- at ceiling by batch: {'8': 1.27, '16': 1.14, '32': -0.35, '64': 0.65, '128': 0.5} (worst 1.27% at B=8)
+- targets: `query+value`, sweep N=[100, 1000, 5000, 10000, 20000, 28000], B=[8, 16, 32, 64, 128]
+- rows: 165 (5 seeds x N x B, plus rank cells r=[4, 8, 16, 32])
+- spread by batch: {'8': 1.6, '16': 1.05, '32': 0.84, '64': 0.99, '128': 0.23}
+- ceiling 28,000: p50 39.3 ms vs 39.22 ms at N=1,000 -> +0.20%
+- rank cells (N=1000, B=32): {'4': 39.22, '8': 39.22, '16': 39.22, '32': 39.25} -> spread 0.07%
+- speedup cells (throughput ratio, paper convention): {'N100_B8': 7.67, 'N100_B32': 5.53, 'N100_B128': 3.06, 'N1000_B8': 32.67, 'N1000_B32': 13.09, 'N1000_B128': 6.21}
+- speedup cells (p50-latency ratio, for reference): {'N100_B8': 7.83, 'N100_B32': 5.65, 'N100_B128': 3.26, 'N1000_B8': 33.05, 'N1000_B32': 13.31, 'N1000_B128': 6.62}
+- worst between-seed s.d.: 3.41% at N=100, B=16
+- peak mem vs batch at N=28,000: {'8': 45.8, '16': 45.8, '32': 45.9, '64': 46.0, '128': 46.3} (delta 0.5 GB)
+- at ceiling by batch: {'8': 1.29, '16': -0.61, '32': 0.2, '64': 0.11, '128': -0.09} (worst 1.29% at B=8)
 - MB/adapter r=8: 1.57 MB = 1.5 MiB (786,432 params)
 - store at ceiling: 41.0 GB; 3d/r = 384
-- registration: 0.26 ms/adapter at N=1,000
-- PEFT add_adapter totals: {'100': 14.3, '1000': 1201.0} s
+- registration: 0.21 ms/adapter at N=1,000
+- PEFT add_adapter totals: {'100': 10.6, '1000': 918.8} s
 
 ## Roll-ups used in prose
 
 - `spread_pct_min_over_new`: 0.69
-- `spread_pct_max_over_new`: 2.97
-- `at_ceiling_max_over_new`: 1.27
-- `at_ceiling_min_over_new`: -2.57
-- `at_ceiling_max_all`: 1.27
+- `spread_pct_max_over_new`: 1.6
+- `at_ceiling_max_over_new`: 1.29
+- `at_ceiling_min_over_new`: -0.16
+- `at_ceiling_max_all`: 1.29
 - `speedup_min_over_new`: 2.4
-- `speedup_max_over_new`: 32.4
-- `speedup_max_a100`: 22.8
+- `speedup_max_over_new`: 32.7
+- `speedup_max_a100`: 20.9
 - `params_min_m`: 334.1
 - `params_max_m`: 3482.5
-- `rank_spread_max_over_new`: 2.46
+- `rank_spread_max_over_new`: 0.75
 - `flop_ratios`: {'electra': 384, 'deberta': 576, 'xlmr_xl': 960}
 - `flop_recoverable_pct`: {'electra': 0.26, 'deberta': 0.17, 'xlmr_xl': 0.1}
 
