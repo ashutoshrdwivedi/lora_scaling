@@ -73,12 +73,6 @@ def num(x):
 # The capacity lists stay list-typed because one probe can legitimately have
 # several arms in one file -- see run_rebuttal_l40s.sh, which measures both
 # allocators into a single CSV keyed by 'alloc_conf'.
-#
-# TRANSITION. The committed CSVs predate this layout, so regenerating against
-# them under-reports: DeBERTa's ceiling reads 55000 instead of 58000 and the
-# L40S row 26000 instead of 28000, because the numbers the hand-run files
-# carried are no longer read. That resolves the moment the re-run lands. Until
-# then, treat a regenerated numbers.json as stale rather than as a result.
 CONFIGS = {
     "bgem3_a100": dict(
         label="bge-m3 / A100-80GB (paper)",

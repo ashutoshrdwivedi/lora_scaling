@@ -9,8 +9,8 @@ the rebuttal must trace to a line here.
 |---|---|---|---|---|---|---|---|
 | bge-m3 / A100-80GB (paper) | 567.8M (24, 1024) | 3.31% (B=128) | -0.37% | 5.6–21.2× | 47,000 | 1.57 | 76.2 GB |
 | ELECTRA-large / A100-80GB | 334.1M (24, 1024) | 1.36% (B=8) | -0.16% | 6.2–20.9× | 51,000 | 1.57 | 82.1 GB |
-| DeBERTa-v2-xlarge / A100-80GB | 884.6M (24, 1536) | 1.32% (B=8) | +0.55% | 2.4–7.3× | 55,000 | 1.18 | 69.0 GB |
-| XLM-RoBERTa-XL / A100-80GB | 3482.5M (36, 2560) | 0.69% (B=16) | +0.22% | 2.9–19.9× | 12,000 | 5.9 | 79.8 GB |
+| DeBERTa-v2-xlarge / A100-80GB | 884.6M (24, 1536) | 1.16% (B=8) | +0.43% | 2.4–7.1× | 64,000 | 1.18 | 79.9 GB |
+| XLM-RoBERTa-XL / A100-80GB | 3482.5M (36, 2560) | 0.7% (B=128) | -0.38% | 2.3–19.5× | 12,000 | 5.9 | 78.6 GB |
 | bge-m3 / L40S-48GB | 567.8M (24, 1024) | 1.6% (B=8) | +0.20% | 3.1–32.7× | 28,000 | 1.57 | 45.9 GB |
 
 ### bgem3_a100 — bge-m3 / A100-80GB (paper)
@@ -46,36 +46,36 @@ the rebuttal must trace to a line here.
 - PEFT add_adapter totals: {'100': 15.6, '1000': 1208.5} s
 
 ### deberta — DeBERTa-v2-xlarge / A100-80GB
-- targets: `value`, sweep N=[100, 1000, 5000, 10000, 20000, 40000], B=[8, 16, 32, 64, 128]
-- rows: 165 (5 seeds x N x B, plus rank cells r=[4, 8, 16, 32])
-- spread by batch: {'8': 1.32, '16': 0.65, '32': 0.55, '64': 0.48, '128': 0.34}
-- ceiling 55,000: p50 75.8 ms vs 75.38 ms at N=1,000 -> +0.55%
-- rank cells (N=1000, B=32): {'4': 75.64, '8': 75.38, '16': 75.42, '32': 75.61} -> spread 0.35%
-- speedup cells (throughput ratio, paper convention): {'N100_B8': 2.72, 'N100_B32': 3.34, 'N100_B128': 2.42, 'N1000_B8': 7.26, 'N1000_B32': 5.88, 'N1000_B128': 3.98}
-- speedup cells (p50-latency ratio, for reference): {'N100_B8': 2.75, 'N100_B32': 3.35, 'N100_B128': 2.46, 'N1000_B8': 7.25, 'N1000_B32': 5.9, 'N1000_B128': 4.04}
-- worst between-seed s.d.: 0.36% at N=100, B=8
-- peak mem vs batch at N=40,000: {'8': 50.4, '16': 50.5, '32': 50.9, '64': 51.5, '128': 52.9} (delta 2.5 GB)
-- at ceiling by batch: {'32': 0.55} (worst 0.55% at B=32)
+- targets: `value`, sweep N=[100, 1000, 5000, 10000, 20000, 40000, 60000], B=[8, 16, 32, 64, 128]
+- rows: 190 (5 seeds x N x B, plus rank cells r=[4, 8, 16, 32])
+- spread by batch: {'8': 1.16, '16': 0.35, '32': 0.43, '64': 0.47, '128': 0.29}
+- ceiling 64,000: p50 76.09 ms vs 75.76 ms at N=1,000 -> +0.43%
+- rank cells (N=1000, B=32): {'4': 75.92, '8': 75.76, '16': 75.84, '32': 76.08} -> spread 0.41%
+- speedup cells (throughput ratio, paper convention): {'N100_B8': 2.71, 'N100_B32': 3.33, 'N100_B128': 2.37, 'N1000_B8': 7.12, 'N1000_B32': 5.77, 'N1000_B128': 3.91}
+- speedup cells (p50-latency ratio, for reference): {'N100_B8': 2.72, 'N100_B32': 3.34, 'N100_B128': 2.41, 'N1000_B8': 7.15, 'N1000_B32': 5.82, 'N1000_B128': 3.96}
+- worst between-seed s.d.: 2.26% at N=5000, B=8
+- peak mem vs batch at N=60,000: {'8': 74.6, '16': 74.8, '32': 75.1, '64': 75.8, '128': 77.1} (delta 2.5 GB)
+- at ceiling by batch: {'32': 0.43} (worst 0.43% at B=32)
 - MB/adapter r=8: 1.18 MB = 1.12 MiB (589,824 params)
-- store at ceiling: 60.4 GB; 3d/r = 576
-- registration: 0.24 ms/adapter at N=1,000
-- PEFT add_adapter totals: {'100': 7.0, '1000': 566.0} s
+- store at ceiling: 70.3 GB; 3d/r = 576
+- registration: 0.3 ms/adapter at N=1,000
+- PEFT add_adapter totals: {'100': 7.7, '1000': 564.2} s
 
 ### xlmr_xl — XLM-RoBERTa-XL / A100-80GB
 - targets: `query+value`, sweep N=[100, 1000, 2000, 4000, 6000, 8000, 11000], B=[8, 16, 32, 64, 128]
 - rows: 190 (5 seeds x N x B, plus rank cells r=[4, 8, 16, 32])
-- spread by batch: {'8': 0.66, '16': 0.69, '32': 0.62, '64': 0.62, '128': 0.56}
-- ceiling 12,000: p50 137.6 ms vs 137.29 ms at N=1,000 -> +0.22%
-- rank cells (N=1000, B=32): {'4': 138.16, '8': 137.29, '16': 137.58, '32': 138.33} -> spread 0.75%
-- speedup cells (throughput ratio, paper convention): {'N100_B8': 5.93, 'N100_B32': 4.86, 'N100_B128': 2.92, 'N1000_B8': 19.89, 'N1000_B32': 9.16, 'N1000_B128': 5.31}
-- speedup cells (p50-latency ratio, for reference): {'N100_B8': 6.1, 'N100_B32': 4.94, 'N100_B128': 3.04, 'N1000_B8': 19.82, 'N1000_B32': 9.3, 'N1000_B128': 5.5}
-- worst between-seed s.d.: 0.49% at N=8000, B=64
-- peak mem vs batch at N=11,000: {'8': 73.5, '16': 73.6, '32': 73.7, '64': 74.0, '128': 74.5} (delta 1.0 GB)
-- at ceiling by batch: {'32': 0.22} (worst 0.22% at B=32)
+- spread by batch: {'8': 0.47, '16': 0.41, '32': 0.31, '64': 0.31, '128': 0.7}
+- ceiling 12,000: p50 122.17 ms vs 122.64 ms at N=1,000 -> -0.38%
+- rank cells (N=1000, B=32): {'4': 123.35, '8': 122.64, '16': 122.95, '32': 123.46} -> spread 0.67%
+- speedup cells (throughput ratio, paper convention): {'N100_B8': 4.53, 'N100_B32': 3.5, 'N100_B128': 2.28, 'N1000_B8': 19.52, 'N1000_B32': 8.14, 'N1000_B128': 4.18}
+- speedup cells (p50-latency ratio, for reference): {'N100_B8': 4.61, 'N100_B32': 3.55, 'N100_B128': 2.34, 'N1000_B8': 19.7, 'N1000_B32': 8.18, 'N1000_B128': 4.3}
+- worst between-seed s.d.: 0.59% at N=100, B=8
+- peak mem vs batch at N=11,000: {'8': 72.5, '16': 72.6, '32': 72.7, '64': 73.0, '128': 73.5} (delta 1.0 GB)
+- at ceiling by batch: {'32': -0.38} (worst -0.38% at B=32)
 - MB/adapter r=8: 5.9 MB = 5.62 MiB (2,949,120 params)
 - store at ceiling: 65.9 GB; 3d/r = 960
-- registration: 0.28 ms/adapter at N=1,000
-- PEFT add_adapter totals: {'100': 26.8, '1000': 1904.5} s
+- registration: 0.23 ms/adapter at N=1,000
+- PEFT add_adapter totals: {'100': 21.3, '1000': 1742.5} s
 
 ### l40s — bge-m3 / L40S-48GB
 - targets: `query+value`, sweep N=[100, 1000, 5000, 10000, 20000, 28000], B=[8, 16, 32, 64, 128]
@@ -95,49 +95,49 @@ the rebuttal must trace to a line here.
 
 ## Roll-ups used in prose
 
-- `spread_pct_min_over_new`: 0.69
+- `spread_pct_min_over_new`: 0.7
 - `spread_pct_max_over_new`: 1.6
 - `at_ceiling_max_over_new`: 1.29
-- `at_ceiling_min_over_new`: -0.16
+- `at_ceiling_min_over_new`: -0.38
 - `at_ceiling_max_all`: 1.29
-- `speedup_min_over_new`: 2.4
+- `speedup_min_over_new`: 2.3
 - `speedup_max_over_new`: 32.7
 - `speedup_max_a100`: 20.9
 - `params_min_m`: 334.1
 - `params_max_m`: 3482.5
-- `rank_spread_max_over_new`: 0.75
+- `rank_spread_max_over_new`: 0.73
 - `flop_ratios`: {'electra': 384, 'deberta': 576, 'xlmr_xl': 960}
 - `flop_recoverable_pct`: {'electra': 0.26, 'deberta': 0.17, 'xlmr_xl': 0.1}
 
 ## Assembly benchmark (re-measured at the house 50/200 protocol)
 
 ### minilm — sentence-transformers/all-MiniLM-L6-v2
-- NVIDIA A100-SXM4-80GB, Intel(R) Xeon(R) Platinum 8470 (cgroup quota 20.4)
+- NVIDIA A100-SXM4-80GB, AMD EPYC 7742 64-Core Processor (cgroup quota 27.2)
 - N=2000, warmup 50 / iters 200, 5 seeds, B=[8, 16, 32, 64, 128, 256]
-- baseline single-stream throughput: {'8': 2102, '16': 3535, '32': 5741, '64': 6309, '128': 6804, '256': 6500}
-- index_select throughput: {'8': 2375, '16': 4585, '32': 9675, '64': 12479, '128': 14378, '256': 15342}
-- end-to-end speedup: {'8': 1.13, '16': 1.3, '32': 1.69, '64': 1.98, '128': 2.11, '256': 2.36} (range 1.13–2.36x)
-- assembly share, baseline: {'8': 15.1, '16': 24.1, '32': 39.1, '64': 50.4, '128': 53.2, '256': 57.9}
-- assembly share, index_select: {'8': 4.9, '16': 4.8, '32': 5.8, '64': 4.1, '128': 2.9, '256': 1.8}
-- tail p99/p50, baseline: {'8': 1.04, '16': 1.05, '32': 1.1, '64': 1.09, '128': 1.22, '256': 5.14}
-- tail p99/p50, index_select: {'8': 1.06, '16': 1.07, '32': 1.04, '64': 1.02, '128': 1.01, '256': 1.01}
-- result-scatter share, baseline: {'8': 2.9, '16': 4.2, '32': 6.2, '64': 6.6, '128': 7.0, '256': 6.5}
-- result-scatter share, index_select: {'8': 3.2, '16': 5.4, '32': 9.9, '64': 12.0, '128': 13.8, '256': 13.9}
-- result-scatter time (ms), baseline: {'8': 0.11, '16': 0.2, '32': 0.37, '64': 0.71, '128': 1.41, '256': 2.72}
+- baseline single-stream throughput: {'8': 1463, '16': 2445, '32': 4051, '64': 4925, '128': 5192, '256': 4912}
+- index_select throughput: {'8': 1647, '16': 3156, '32': 6713, '64': 12152, '128': 14255, '256': 15315}
+- end-to-end speedup: {'8': 1.13, '16': 1.29, '32': 1.66, '64': 2.47, '128': 2.75, '256': 3.12} (range 1.13–3.12x)
+- assembly share, baseline: {'8': 15.3, '16': 24.8, '32': 40.7, '64': 58.0, '128': 61.6, '256': 65.3}
+- assembly share, index_select: {'8': 4.1, '16': 3.9, '32': 4.6, '64': 4.4, '128': 3.1, '256': 1.8}
+- tail p99/p50, baseline: {'8': 1.2, '16': 1.21, '32': 1.17, '64': 1.24, '128': 1.48, '256': 5.28}
+- tail p99/p50, index_select: {'8': 1.13, '16': 1.17, '32': 1.13, '64': 1.11, '128': 1.06, '256': 1.03}
+- result-scatter share, baseline: {'8': 2.7, '16': 4.0, '32': 6.1, '64': 7.2, '128': 7.5, '256': 7.1}
+- result-scatter share, index_select: {'8': 3.0, '16': 5.1, '32': 9.6, '64': 16.1, '128': 18.1, '256': 18.8}
+- result-scatter time (ms), baseline: {'8': 0.15, '16': 0.27, '32': 0.51, '64': 1.0, '128': 2.0, '256': 3.97}
 
 ### bgem3 — BAAI/bge-m3
-- NVIDIA A100-SXM4-80GB, Intel(R) Xeon(R) Platinum 8470 (cgroup quota 20.4)
+- NVIDIA A100-SXM4-80GB, AMD EPYC 7742 64-Core Processor (cgroup quota 27.2)
 - N=2000, warmup 50 / iters 200, 5 seeds, B=[8, 16, 32, 64, 128]
-- baseline single-stream throughput: {'8': 514, '16': 806, '32': 885, '64': 910, '128': 925}
-- index_select throughput: {'8': 601, '16': 1052, '32': 1214, '64': 1336, '128': 1401}
-- end-to-end speedup: {'8': 1.17, '16': 1.3, '32': 1.37, '64': 1.47, '128': 1.51} (range 1.17–1.51x)
-- assembly share, baseline: {'8': 16.1, '16': 25.3, '32': 28.4, '64': 32.7, '128': 34.5}
-- assembly share, index_select: {'8': 2.5, '16': 2.2, '32': 1.4, '64': 0.8, '128': 0.5}
-- tail p99/p50, baseline: {'8': 1.11, '16': 1.08, '32': 2.84, '64': 3.42, '128': 2.38}
-- tail p99/p50, index_select: {'8': 1.08, '16': 1.03, '32': 1.0, '64': 1.0, '128': 1.0}
-- result-scatter share, baseline: {'8': 0.8, '16': 1.1, '32': 1.2, '64': 1.1, '128': 1.2}
-- result-scatter share, index_select: {'8': 0.9, '16': 1.5, '32': 1.6, '64': 1.6, '128': 1.7}
-- result-scatter time (ms), baseline: {'8': 0.13, '16': 0.23, '32': 0.42, '64': 0.81, '128': 1.63}
+- baseline single-stream throughput: {'8': 374, '16': 596, '32': 776, '64': 766, '128': 768}
+- index_select throughput: {'8': 427, '16': 838, '32': 1202, '64': 1322, '128': 1379}
+- end-to-end speedup: {'8': 1.14, '16': 1.41, '32': 1.55, '64': 1.73, '128': 1.8} (range 1.14–1.8x)
+- assembly share, baseline: {'8': 14.8, '16': 29.8, '32': 36.8, '64': 42.8, '128': 45.0}
+- assembly share, index_select: {'8': 2.2, '16': 2.2, '32': 1.8, '64': 1.0, '128': 0.5}
+- tail p99/p50, baseline: {'8': 1.12, '16': 1.14, '32': 1.18, '64': 4.29, '128': 2.76}
+- tail p99/p50, index_select: {'8': 1.08, '16': 1.1, '32': 1.02, '64': 1.02, '128': 1.01}
+- result-scatter share, baseline: {'8': 0.7, '16': 1.0, '32': 1.3, '64': 1.3, '128': 1.3}
+- result-scatter share, index_select: {'8': 0.8, '16': 1.4, '32': 2.0, '64': 2.1, '128': 2.1}
+- result-scatter time (ms), baseline: {'8': 0.15, '16': 0.27, '32': 0.53, '64': 1.08, '128': 2.12}
 
 ## LoRA-path ablation (Finding 6)
 

@@ -44,12 +44,15 @@ ALLOWED = {
     # invented values, never superseded ones. Do not add a ceiling back here to
     # quiet a failure; regenerate numbers.json and fix the prose instead.
     100, 1000, 2000, 4000, 5000, 6000, 8000, 10000, 11000, 20000,
-    40000, 45000, 50000, 51000, 55000, 60000, 13000,
-    # 26000/29000 are measured L40S results, not coordinates: the
-    # default-allocator ceiling and the count that fails under both. They stay
-    # allowed only until a re-run populates ceiling_n_default_alloc (the probe
-    # now measures both arms); drop them once numbers.json carries that field.
-    26000, 29000,
+    40000, 45000, 50000, 60000, 13000,
+    # 26000/29000 were the L40S default-allocator ceiling and the count that
+    # failed under both -- measured results, not coordinates. The re-run's
+    # two-arm probe now populates ceiling_n_default_alloc (27,000), so they are
+    # dropped per the note above: the default-allocator ceiling must trace to
+    # the registry like every other measurement. 51000/55000 went the same way
+    # -- 51,000 is now ELECTRA's measured ceiling_n and 55,000 is a superseded
+    # DeBERTa ceiling, which is precisely the stale value this list must not
+    # wave through.
     # small counting numbers used in prose ("three encoders", "two GPU classes")
     0, 1, 2, 3, 6, 7, 9,
     # parity tolerances quoted from the test suite

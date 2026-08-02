@@ -2,54 +2,54 @@
   "assembly": {
     "bgem3": {
       "baseline_assemble_share_b64plus": [
-        32.7,
-        34.5
+        42.8,
+        45.0
       ],
-      "baseline_assemble_share_max": 34.5,
-      "baseline_assemble_share_min": 16.1,
+      "baseline_assemble_share_max": 45.0,
+      "baseline_assemble_share_min": 14.8,
       "baseline_assemble_share_pct": {
-        "128": 34.5,
-        "16": 25.3,
-        "32": 28.4,
-        "64": 32.7,
-        "8": 16.1
+        "128": 45.0,
+        "16": 29.8,
+        "32": 36.8,
+        "64": 42.8,
+        "8": 14.8
       },
       "baseline_scatter_ms": {
-        "128": 1.63,
-        "16": 0.23,
-        "32": 0.42,
-        "64": 0.81,
-        "8": 0.13
+        "128": 2.12,
+        "16": 0.27,
+        "32": 0.53,
+        "64": 1.08,
+        "8": 0.15
       },
-      "baseline_scatter_share_max": 1.2,
-      "baseline_scatter_share_min": 0.8,
+      "baseline_scatter_share_max": 1.3,
+      "baseline_scatter_share_min": 0.7,
       "baseline_scatter_share_pct": {
-        "128": 1.2,
-        "16": 1.1,
-        "32": 1.2,
-        "64": 1.1,
-        "8": 0.8
+        "128": 1.3,
+        "16": 1.0,
+        "32": 1.3,
+        "64": 1.3,
+        "8": 0.7
       },
       "baseline_tail_ratio": {
-        "128": 2.38,
-        "16": 1.08,
-        "32": 2.84,
-        "64": 3.42,
-        "8": 1.11
+        "128": 2.76,
+        "16": 1.14,
+        "32": 1.18,
+        "64": 4.29,
+        "8": 1.12
       },
-      "baseline_tail_ratio_max": 3.42,
+      "baseline_tail_ratio_max": 4.29,
       "baseline_tput_at_large_batches": [
-        910,
-        925
+        766,
+        768
       ],
       "baseline_tput_by_batch": {
-        "128": 925,
-        "16": 806,
-        "32": 885,
-        "64": 910,
-        "8": 514
+        "128": 768,
+        "16": 596,
+        "32": 776,
+        "64": 766,
+        "8": 374
       },
-      "baseline_tput_max": 925,
+      "baseline_tput_max": 776,
       "batch_sizes": [
         8,
         16,
@@ -57,141 +57,141 @@
         64,
         128
       ],
-      "cpu": "Intel(R) Xeon(R) Platinum 8470",
-      "cpu_cgroup_quota": 20.4,
+      "cpu": "AMD EPYC 7742 64-Core Processor",
+      "cpu_cgroup_quota": 27.2,
       "gpu": "NVIDIA A100-SXM4-80GB",
       "indexsel_assemble_share_b64plus": [
         0.5,
-        0.8
+        1.0
       ],
-      "indexsel_assemble_share_max": 2.5,
+      "indexsel_assemble_share_max": 2.2,
       "indexsel_assemble_share_min": 0.5,
       "indexsel_assemble_share_pct": {
         "128": 0.5,
         "16": 2.2,
-        "32": 1.4,
-        "64": 0.8,
-        "8": 2.5
+        "32": 1.8,
+        "64": 1.0,
+        "8": 2.2
       },
       "indexsel_compile_tput_at_large_batches": [
-        1330,
-        1397
+        1314,
+        1372
       ],
       "indexsel_compile_tput_by_batch": {
-        "128": 1397,
-        "16": 1038,
-        "32": 1206,
-        "64": 1330,
-        "8": 596
+        "128": 1372,
+        "16": 829,
+        "32": 1195,
+        "64": 1314,
+        "8": 421
       },
-      "indexsel_compile_tput_max": 1397,
+      "indexsel_compile_tput_max": 1372,
       "indexsel_scatter_ms": {
-        "128": 1.6,
-        "16": 0.23,
-        "32": 0.42,
-        "64": 0.8,
-        "8": 0.13
+        "128": 1.98,
+        "16": 0.27,
+        "32": 0.54,
+        "64": 1.02,
+        "8": 0.15
       },
-      "indexsel_scatter_share_max": 1.7,
-      "indexsel_scatter_share_min": 0.9,
+      "indexsel_scatter_share_max": 2.1,
+      "indexsel_scatter_share_min": 0.8,
       "indexsel_scatter_share_pct": {
-        "128": 1.7,
-        "16": 1.5,
-        "32": 1.6,
-        "64": 1.6,
-        "8": 0.9
+        "128": 2.1,
+        "16": 1.4,
+        "32": 2.0,
+        "64": 2.1,
+        "8": 0.8
       },
       "indexsel_tail_ratio": {
-        "128": 1.0,
-        "16": 1.03,
-        "32": 1.0,
-        "64": 1.0,
+        "128": 1.01,
+        "16": 1.1,
+        "32": 1.02,
+        "64": 1.02,
         "8": 1.08
       },
-      "indexsel_tail_ratio_max": 1.08,
+      "indexsel_tail_ratio_max": 1.1,
       "indexsel_tput_at_large_batches": [
-        1336,
-        1401
+        1322,
+        1379
       ],
       "indexsel_tput_by_batch": {
-        "128": 1401,
-        "16": 1052,
-        "32": 1214,
-        "64": 1336,
-        "8": 601
+        "128": 1379,
+        "16": 838,
+        "32": 1202,
+        "64": 1322,
+        "8": 427
       },
-      "indexsel_tput_max": 1401,
+      "indexsel_tput_max": 1379,
       "iters": 200,
       "model": "BAAI/bge-m3",
       "num_adapters": 2000,
       "seeds": 5,
       "speedup_by_batch": {
-        "128": 1.51,
-        "16": 1.3,
-        "32": 1.37,
-        "64": 1.47,
-        "8": 1.17
+        "128": 1.8,
+        "16": 1.41,
+        "32": 1.55,
+        "64": 1.73,
+        "8": 1.14
       },
-      "speedup_max": 1.51,
-      "speedup_min": 1.17,
+      "speedup_max": 1.8,
+      "speedup_min": 1.14,
       "warmup": 50
     },
     "minilm": {
       "baseline_assemble_share_b64plus": [
-        50.4,
-        57.9
+        58.0,
+        65.3
       ],
-      "baseline_assemble_share_max": 57.9,
-      "baseline_assemble_share_min": 15.1,
+      "baseline_assemble_share_max": 65.3,
+      "baseline_assemble_share_min": 15.3,
       "baseline_assemble_share_pct": {
-        "128": 53.2,
-        "16": 24.1,
-        "256": 57.9,
-        "32": 39.1,
-        "64": 50.4,
-        "8": 15.1
+        "128": 61.6,
+        "16": 24.8,
+        "256": 65.3,
+        "32": 40.7,
+        "64": 58.0,
+        "8": 15.3
       },
       "baseline_scatter_ms": {
-        "128": 1.41,
-        "16": 0.2,
-        "256": 2.72,
-        "32": 0.37,
-        "64": 0.71,
-        "8": 0.11
+        "128": 2.0,
+        "16": 0.27,
+        "256": 3.97,
+        "32": 0.51,
+        "64": 1.0,
+        "8": 0.15
       },
-      "baseline_scatter_share_max": 7.0,
-      "baseline_scatter_share_min": 2.9,
+      "baseline_scatter_share_max": 7.5,
+      "baseline_scatter_share_min": 2.7,
       "baseline_scatter_share_pct": {
-        "128": 7.0,
-        "16": 4.2,
-        "256": 6.5,
-        "32": 6.2,
-        "64": 6.6,
-        "8": 2.9
+        "128": 7.5,
+        "16": 4.0,
+        "256": 7.1,
+        "32": 6.1,
+        "64": 7.2,
+        "8": 2.7
       },
       "baseline_tail_ratio": {
-        "128": 1.22,
-        "16": 1.05,
-        "256": 5.14,
-        "32": 1.1,
-        "64": 1.09,
-        "8": 1.04
+        "128": 1.48,
+        "16": 1.21,
+        "256": 5.28,
+        "32": 1.17,
+        "64": 1.24,
+        "8": 1.2
       },
-      "baseline_tail_ratio_max": 5.14,
+      "baseline_tail_ratio_max": 5.28,
       "baseline_tput_at_large_batches": [
-        6309,
-        6804,
-        6500
+        4925,
+        5192,
+        4912
       ],
       "baseline_tput_by_batch": {
-        "128": 6804,
-        "16": 3535,
-        "256": 6500,
-        "32": 5741,
-        "64": 6309,
-        "8": 2102
+        "128": 5192,
+        "16": 2445,
+        "256": 4912,
+        "32": 4051,
+        "64": 4925,
+        "8": 1463
       },
-      "baseline_tput_max": 6804,
+      "baseline_tput_max": 5192,
       "batch_sizes": [
         8,
         16,
@@ -200,91 +200,91 @@
         128,
         256
       ],
-      "cpu": "Intel(R) Xeon(R) Platinum 8470",
-      "cpu_cgroup_quota": 20.4,
+      "cpu": "AMD EPYC 7742 64-Core Processor",
+      "cpu_cgroup_quota": 27.2,
       "gpu": "NVIDIA A100-SXM4-80GB",
       "indexsel_assemble_share_b64plus": [
         1.8,
-        4.1
+        4.4
       ],
-      "indexsel_assemble_share_max": 5.8,
+      "indexsel_assemble_share_max": 4.6,
       "indexsel_assemble_share_min": 1.8,
       "indexsel_assemble_share_pct": {
-        "128": 2.9,
-        "16": 4.8,
+        "128": 3.1,
+        "16": 3.9,
         "256": 1.8,
-        "32": 5.8,
-        "64": 4.1,
-        "8": 4.9
+        "32": 4.6,
+        "64": 4.4,
+        "8": 4.1
       },
       "indexsel_compile_tput_at_large_batches": [
-        12073,
-        14143,
-        15199
+        11863,
+        14122,
+        15200
       ],
       "indexsel_compile_tput_by_batch": {
-        "128": 14143,
-        "16": 4300,
-        "256": 15199,
-        "32": 9108,
-        "64": 12073,
-        "8": 2225
+        "128": 14122,
+        "16": 3093,
+        "256": 15200,
+        "32": 6525,
+        "64": 11863,
+        "8": 1609
       },
-      "indexsel_compile_tput_max": 15199,
+      "indexsel_compile_tput_max": 15200,
       "indexsel_scatter_ms": {
-        "128": 1.42,
-        "16": 0.2,
-        "256": 2.7,
-        "32": 0.37,
-        "64": 0.7,
-        "8": 0.11
+        "128": 1.98,
+        "16": 0.27,
+        "256": 3.87,
+        "32": 0.51,
+        "64": 1.01,
+        "8": 0.15
       },
-      "indexsel_scatter_share_max": 13.9,
-      "indexsel_scatter_share_min": 3.2,
+      "indexsel_scatter_share_max": 18.8,
+      "indexsel_scatter_share_min": 3.0,
       "indexsel_scatter_share_pct": {
-        "128": 13.8,
-        "16": 5.4,
-        "256": 13.9,
-        "32": 9.9,
-        "64": 12.0,
-        "8": 3.2
+        "128": 18.1,
+        "16": 5.1,
+        "256": 18.8,
+        "32": 9.6,
+        "64": 16.1,
+        "8": 3.0
       },
       "indexsel_tail_ratio": {
-        "128": 1.01,
-        "16": 1.07,
-        "256": 1.01,
-        "32": 1.04,
-        "64": 1.02,
-        "8": 1.06
+        "128": 1.06,
+        "16": 1.17,
+        "256": 1.03,
+        "32": 1.13,
+        "64": 1.11,
+        "8": 1.13
       },
-      "indexsel_tail_ratio_max": 1.07,
+      "indexsel_tail_ratio_max": 1.17,
       "indexsel_tput_at_large_batches": [
-        12479,
-        14378,
-        15342
+        12152,
+        14255,
+        15315
       ],
       "indexsel_tput_by_batch": {
-        "128": 14378,
-        "16": 4585,
-        "256": 15342,
-        "32": 9675,
-        "64": 12479,
-        "8": 2375
+        "128": 14255,
+        "16": 3156,
+        "256": 15315,
+        "32": 6713,
+        "64": 12152,
+        "8": 1647
       },
-      "indexsel_tput_max": 15342,
+      "indexsel_tput_max": 15315,
       "iters": 200,
       "model": "sentence-transformers/all-MiniLM-L6-v2",
       "num_adapters": 2000,
       "seeds": 5,
       "speedup_by_batch": {
-        "128": 2.11,
-        "16": 1.3,
-        "256": 2.36,
-        "32": 1.69,
-        "64": 1.98,
+        "128": 2.75,
+        "16": 1.29,
+        "256": 3.12,
+        "32": 1.66,
+        "64": 2.47,
         "8": 1.13
       },
-      "speedup_max": 2.36,
+      "speedup_max": 3.12,
       "speedup_min": 1.13,
       "warmup": 50
     }
@@ -424,15 +424,15 @@
         32
       ],
       "at_ceiling_pct_by_batch": {
-        "32": 0.55
+        "32": 0.43
       },
-      "at_ceiling_pct_worst": 0.55,
-      "at_ceiling_vs_n1000_pct": 0.55,
+      "at_ceiling_pct_worst": 0.43,
+      "at_ceiling_vs_n1000_pct": 0.43,
       "at_ceiling_worst_batch": 32,
       "bytes_per_adapter_r8": 1179648,
-      "ceiling_n": 55000,
-      "ceiling_p50_ms_b32": 75.8,
-      "ceiling_peak_mem_gb": 69.0,
+      "ceiling_n": 64000,
+      "ceiling_p50_ms_b32": 76.09,
+      "ceiling_peak_mem_gb": 79.9,
       "flop_ratio_3d_over_r": 576,
       "hidden_size": 1536,
       "label": "DeBERTa-v2-xlarge / A100-80GB",
@@ -440,68 +440,68 @@
       "mb_per_adapter_r8": 1.18,
       "mem_vs_batch_delta_gb": 2.5,
       "mem_vs_batch_gb": {
-        "128": 52.9,
-        "16": 50.5,
-        "32": 50.9,
-        "64": 51.5,
-        "8": 50.4
+        "128": 77.1,
+        "16": 74.8,
+        "32": 75.1,
+        "64": 75.8,
+        "8": 74.6
       },
-      "mem_vs_batch_n": 40000,
+      "mem_vs_batch_n": 60000,
       "mib_per_adapter_r8": 1.12,
-      "n1000_p50_ms_b32": 75.38,
+      "n1000_p50_ms_b32": 75.76,
       "num_layers": 24,
       "params_per_adapter_r8": 589824,
-      "peft_add_growth_ratio": 8.1,
+      "peft_add_growth_ratio": 7.4,
       "peft_add_total_s": {
-        "100": 7.0,
-        "1000": 566.0
+        "100": 7.7,
+        "1000": 564.2
       },
       "peft_marginal_add_s_at_top": 1.1,
-      "peft_vs_ours_add_ratio": 4700,
+      "peft_vs_ours_add_ratio": 3800,
       "rank_p50_ms": {
-        "16": 75.42,
-        "32": 75.61,
-        "4": 75.64,
-        "8": 75.38
+        "16": 75.84,
+        "32": 76.08,
+        "4": 75.92,
+        "8": 75.76
       },
-      "rank_spread_pct": 0.35,
-      "register_ms_per_adapter_at_n1000": 0.24,
-      "seed_sd_pct_worst": 0.36,
+      "rank_spread_pct": 0.41,
+      "register_ms_per_adapter_at_n1000": 0.3,
+      "seed_sd_pct_worst": 2.26,
       "seed_sd_pct_worst_cell": {
         "b": 8,
-        "n": 100
+        "n": 5000
       },
       "speedup_basis": "throughput ratio (paper convention)",
       "speedup_cells": {
-        "N1000_B128": 3.98,
-        "N1000_B32": 5.88,
-        "N1000_B8": 7.26,
-        "N100_B128": 2.42,
+        "N1000_B128": 3.91,
+        "N1000_B32": 5.77,
+        "N1000_B8": 7.12,
+        "N100_B128": 2.37,
+        "N100_B32": 3.33,
+        "N100_B8": 2.71
+      },
+      "speedup_latency_cells": {
+        "N1000_B128": 3.96,
+        "N1000_B32": 5.82,
+        "N1000_B8": 7.15,
+        "N100_B128": 2.41,
         "N100_B32": 3.34,
         "N100_B8": 2.72
       },
-      "speedup_latency_cells": {
-        "N1000_B128": 4.04,
-        "N1000_B32": 5.9,
-        "N1000_B8": 7.25,
-        "N100_B128": 2.46,
-        "N100_B32": 3.35,
-        "N100_B8": 2.75
-      },
-      "speedup_latency_max": 7.3,
-      "speedup_latency_min": 2.5,
-      "speedup_max": 7.3,
+      "speedup_latency_max": 7.1,
+      "speedup_latency_min": 2.4,
+      "speedup_max": 7.1,
       "speedup_min": 2.4,
       "spread_pct_by_batch": {
-        "128": 0.34,
-        "16": 0.65,
-        "32": 0.55,
-        "64": 0.48,
-        "8": 1.32
+        "128": 0.29,
+        "16": 0.35,
+        "32": 0.43,
+        "64": 0.47,
+        "8": 1.16
       },
-      "spread_pct_worst": 1.32,
+      "spread_pct_worst": 1.16,
       "spread_pct_worst_batch": 8,
-      "store_gb_at_ceiling": 60.4,
+      "store_gb_at_ceiling": 70.3,
       "sweep_batch_sizes": [
         8,
         16,
@@ -515,7 +515,8 @@
         5000,
         10000,
         20000,
-        40000
+        40000,
+        60000
       ],
       "sweep_ranks": [
         4,
@@ -523,7 +524,7 @@
         16,
         32
       ],
-      "sweep_rows": 165,
+      "sweep_rows": 190,
       "targets": "value",
       "total_params_m": 884.6
     },
@@ -758,15 +759,15 @@
         32
       ],
       "at_ceiling_pct_by_batch": {
-        "32": 0.22
+        "32": -0.38
       },
-      "at_ceiling_pct_worst": 0.22,
-      "at_ceiling_vs_n1000_pct": 0.22,
+      "at_ceiling_pct_worst": -0.38,
+      "at_ceiling_vs_n1000_pct": -0.38,
       "at_ceiling_worst_batch": 32,
       "bytes_per_adapter_r8": 5898240,
       "ceiling_n": 12000,
-      "ceiling_p50_ms_b32": 137.6,
-      "ceiling_peak_mem_gb": 79.8,
+      "ceiling_p50_ms_b32": 122.17,
+      "ceiling_peak_mem_gb": 78.6,
       "flop_ratio_3d_over_r": 960,
       "hidden_size": 2560,
       "label": "XLM-RoBERTa-XL / A100-80GB",
@@ -774,67 +775,67 @@
       "mb_per_adapter_r8": 5.9,
       "mem_vs_batch_delta_gb": 1.0,
       "mem_vs_batch_gb": {
-        "128": 74.5,
-        "16": 73.6,
-        "32": 73.7,
-        "64": 74.0,
-        "8": 73.5
+        "128": 73.5,
+        "16": 72.6,
+        "32": 72.7,
+        "64": 73.0,
+        "8": 72.5
       },
       "mem_vs_batch_n": 11000,
       "mib_per_adapter_r8": 5.62,
-      "n1000_p50_ms_b32": 137.29,
+      "n1000_p50_ms_b32": 122.64,
       "num_layers": 36,
       "params_per_adapter_r8": 2949120,
-      "peft_add_growth_ratio": 7.1,
+      "peft_add_growth_ratio": 8.2,
       "peft_add_total_s": {
-        "100": 26.8,
-        "1000": 1904.5
+        "100": 21.3,
+        "1000": 1742.5
       },
-      "peft_marginal_add_s_at_top": 3.8,
-      "peft_vs_ours_add_ratio": 13600,
+      "peft_marginal_add_s_at_top": 3.5,
+      "peft_vs_ours_add_ratio": 15200,
       "rank_p50_ms": {
-        "16": 137.58,
-        "32": 138.33,
-        "4": 138.16,
-        "8": 137.29
+        "16": 122.95,
+        "32": 123.46,
+        "4": 123.35,
+        "8": 122.64
       },
-      "rank_spread_pct": 0.75,
-      "register_ms_per_adapter_at_n1000": 0.28,
-      "seed_sd_pct_worst": 0.49,
+      "rank_spread_pct": 0.67,
+      "register_ms_per_adapter_at_n1000": 0.23,
+      "seed_sd_pct_worst": 0.59,
       "seed_sd_pct_worst_cell": {
-        "b": 64,
-        "n": 8000
+        "b": 8,
+        "n": 100
       },
       "speedup_basis": "throughput ratio (paper convention)",
       "speedup_cells": {
-        "N1000_B128": 5.31,
-        "N1000_B32": 9.16,
-        "N1000_B8": 19.89,
-        "N100_B128": 2.92,
-        "N100_B32": 4.86,
-        "N100_B8": 5.93
+        "N1000_B128": 4.18,
+        "N1000_B32": 8.14,
+        "N1000_B8": 19.52,
+        "N100_B128": 2.28,
+        "N100_B32": 3.5,
+        "N100_B8": 4.53
       },
       "speedup_latency_cells": {
-        "N1000_B128": 5.5,
-        "N1000_B32": 9.3,
-        "N1000_B8": 19.82,
-        "N100_B128": 3.04,
-        "N100_B32": 4.94,
-        "N100_B8": 6.1
+        "N1000_B128": 4.3,
+        "N1000_B32": 8.18,
+        "N1000_B8": 19.7,
+        "N100_B128": 2.34,
+        "N100_B32": 3.55,
+        "N100_B8": 4.61
       },
-      "speedup_latency_max": 19.8,
-      "speedup_latency_min": 3.0,
-      "speedup_max": 19.9,
-      "speedup_min": 2.9,
+      "speedup_latency_max": 19.7,
+      "speedup_latency_min": 2.3,
+      "speedup_max": 19.5,
+      "speedup_min": 2.3,
       "spread_pct_by_batch": {
-        "128": 0.56,
-        "16": 0.69,
-        "32": 0.62,
-        "64": 0.62,
-        "8": 0.66
+        "128": 0.7,
+        "16": 0.41,
+        "32": 0.31,
+        "64": 0.31,
+        "8": 0.47
       },
-      "spread_pct_worst": 0.69,
-      "spread_pct_worst_batch": 16,
+      "spread_pct_worst": 0.7,
+      "spread_pct_worst_batch": 128,
       "store_gb_at_ceiling": 65.9,
       "sweep_batch_sizes": [
         8,
@@ -875,14 +876,14 @@
     "delta_share_of_projection_pct_r8": 1.56,
     "peft_marginal_add_s": 2.5,
     "peft_vs_ours_add_ratio": 8500,
-    "pool_growth_vs_n1000_max": 55,
-    "pool_growth_vs_n100_max": 550,
+    "pool_growth_vs_n1000_max": 64,
+    "pool_growth_vs_n100_max": 640,
     "store_gb_at_ceiling": 68.8
   },
   "rollup": {
     "at_ceiling_max_all": 1.29,
     "at_ceiling_max_over_new": 1.29,
-    "at_ceiling_min_over_new": -0.16,
+    "at_ceiling_min_over_new": -0.38,
     "flop_ratios": {
       "deberta": 576,
       "electra": 384,
@@ -895,11 +896,11 @@
     },
     "params_max_m": 3482.5,
     "params_min_m": 334.1,
-    "rank_spread_max_over_new": 0.75,
+    "rank_spread_max_over_new": 0.73,
     "speedup_max_a100": 20.9,
     "speedup_max_over_new": 32.7,
-    "speedup_min_over_new": 2.4,
+    "speedup_min_over_new": 2.3,
     "spread_pct_max_over_new": 1.6,
-    "spread_pct_min_over_new": 0.69
+    "spread_pct_min_over_new": 0.7
   }
 }
