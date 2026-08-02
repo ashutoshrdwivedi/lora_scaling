@@ -1,7 +1,7 @@
 harness,model,dtype,num_adapters,batch_size,lora_rank,seq_len,p50_ms,p90_ms,p95_ms,p99_ms,mean_ms,throughput_samples_sec,peak_gpu_mem_gb,add_adapter_total_s,warmup,iters
-peft_mixed,facebook/xlm-roberta-xl,float16,100,8,8,128,232.94,237.52,238.56,242.27,227.88,35.1,7.628,26.81,10,50
-peft_mixed,facebook/xlm-roberta-xl,float16,100,32,8,128,677.72,708.73,715.65,740.2,676.41,47.3,7.817,26.81,10,50
-peft_mixed,facebook/xlm-roberta-xl,float16,100,128,8,128,1788.39,1854.05,1863.62,1887.91,1781.78,71.8,8.572,26.81,10,50
-peft_mixed,facebook/xlm-roberta-xl,float16,1000,8,8,128,757.55,763.97,766.57,768.74,758.35,10.5,12.937,1904.49,10,50
-peft_mixed,facebook/xlm-roberta-xl,float16,1000,32,8,128,1277.32,1287.64,1288.17,1291.76,1274.49,25.1,13.126,1904.49,10,50
-peft_mixed,facebook/xlm-roberta-xl,float16,1000,128,8,128,3241.95,3281.44,3300.97,3331.11,3237.48,39.5,13.881,1904.49,10,50
+peft_mixed,facebook/xlm-roberta-xl,float16,100,8,8,128,159.67,161.81,162.57,165.22,157.69,50.7,7.627,21.29,10,50
+peft_mixed,facebook/xlm-roberta-xl,float16,100,32,8,128,434.28,449.33,455.46,473.42,431.63,74.1,7.816,21.29,10,50
+peft_mixed,facebook/xlm-roberta-xl,float16,100,128,8,128,1237.15,1279.37,1285.09,1291.45,1240.17,103.2,8.571,21.29,10,50
+peft_mixed,facebook/xlm-roberta-xl,float16,1000,8,8,128,685.1,712.35,717.48,722.25,685.19,11.7,12.936,1742.51,10,50
+peft_mixed,facebook/xlm-roberta-xl,float16,1000,32,8,128,1002.63,1026.11,1031.17,1070.08,1002.63,31.9,13.125,1742.51,10,50
+peft_mixed,facebook/xlm-roberta-xl,float16,1000,128,8,128,2271.57,2321.3,2345.46,2444.45,2276.2,56.2,13.88,1742.51,10,50
