@@ -885,6 +885,218 @@
     "pool_growth_vs_n100_max": 640,
     "store_gb_at_ceiling": 68.8
   },
+  "mixed_rank": {
+    "bgem3_4_16": {
+      "adapters": [
+        100,
+        1000,
+        5000,
+        10000,
+        20000
+      ],
+      "assembler": "indexsel",
+      "batch_size": 32,
+      "batches_at_fleet_max_pct_min": 100.0,
+      "by_mix": {
+        "4+16": {
+          "by_n": {
+            "100": {
+              "batches_at_fleet_max_pct": 100.0,
+              "native_padding_tax_pct": 1.02,
+              "native_store_vs_padded": 0.625,
+              "overhead_vs_rmax_pct": 0.19,
+              "padding_tax_forward_pct": -0.39,
+              "padding_tax_pct": -0.37,
+              "uniform_rank_delta_pct": -0.56
+            },
+            "1000": {
+              "batches_at_fleet_max_pct": 100.0,
+              "native_padding_tax_pct": 0.98,
+              "native_store_vs_padded": 0.625,
+              "overhead_vs_rmax_pct": 0.06,
+              "padding_tax_forward_pct": -0.79,
+              "padding_tax_pct": -0.77,
+              "uniform_rank_delta_pct": -0.83
+            },
+            "10000": {
+              "batches_at_fleet_max_pct": 100.0,
+              "native_padding_tax_pct": 1.03,
+              "native_store_vs_padded": 0.625,
+              "overhead_vs_rmax_pct": -0.21,
+              "padding_tax_forward_pct": -0.78,
+              "padding_tax_pct": -0.76,
+              "uniform_rank_delta_pct": -0.54
+            },
+            "20000": {
+              "batches_at_fleet_max_pct": 100.0,
+              "native_padding_tax_pct": 0.82,
+              "native_store_vs_padded": 0.625,
+              "overhead_vs_rmax_pct": -0.21,
+              "padding_tax_forward_pct": -0.83,
+              "padding_tax_pct": -0.79,
+              "uniform_rank_delta_pct": -0.58
+            },
+            "5000": {
+              "batches_at_fleet_max_pct": 100.0,
+              "native_padding_tax_pct": 1.06,
+              "native_store_vs_padded": 0.625,
+              "overhead_vs_rmax_pct": -0.15,
+              "padding_tax_forward_pct": -0.78,
+              "padding_tax_pct": -0.82,
+              "uniform_rank_delta_pct": -0.68
+            }
+          },
+          "p50_ms_by_n": {
+            "100": 26.8,
+            "1000": 26.85,
+            "10000": 26.87,
+            "20000": 26.77,
+            "5000": 26.88
+          },
+          "spread_pct_over_n": 0.41
+        }
+      },
+      "exactness_gate_dtype": "fp32",
+      "exactness_max_abs_delta": 0.0,
+      "exactness_serving_dtype_max_abs_delta": 0.5234375,
+      "exactness_serving_dtype_pct_of_logit_scale": 4.82361411087113,
+      "gpu": "NVIDIA A100-SXM4-80GB",
+      "iters": 200,
+      "mixes": [
+        "4+16"
+      ],
+      "model": "BAAI/bge-m3",
+      "native_store_vs_padded_min": 0.625,
+      "overhead_vs_rmax_pct_max": 0.19,
+      "overhead_vs_rmax_pct_min": -0.21,
+      "padding_tax_forward_pct_max": -0.39,
+      "padding_tax_pct_max": -0.37,
+      "padding_tax_pct_min": -0.82,
+      "seeds": 5,
+      "spread_pct_over_n_max": 0.41,
+      "warmup": 50
+    },
+    "bgem3_4_16_cpuasm": {
+      "adapters": [
+        1000
+      ],
+      "assembler": "baseline",
+      "batch_size": 32,
+      "batches_at_fleet_max_pct_min": 100.0,
+      "by_mix": {
+        "4+16": {
+          "by_n": {
+            "1000": {
+              "batches_at_fleet_max_pct": 100.0,
+              "native_padding_tax_pct": -34.77,
+              "native_store_vs_padded": 0.625,
+              "overhead_vs_rmax_pct": 0.56,
+              "padding_tax_forward_pct": -0.57,
+              "padding_tax_pct": -1.96,
+              "uniform_rank_delta_pct": -2.51
+            }
+          }
+        }
+      },
+      "exactness_gate_dtype": "fp32",
+      "exactness_max_abs_delta": 0.0,
+      "exactness_serving_dtype_max_abs_delta": 0.5234375,
+      "exactness_serving_dtype_pct_of_logit_scale": 4.82361411087113,
+      "gpu": "NVIDIA A100-SXM4-80GB",
+      "iters": 200,
+      "mixes": [
+        "4+16"
+      ],
+      "model": "BAAI/bge-m3",
+      "native_store_vs_padded_min": 0.625,
+      "overhead_vs_rmax_pct_max": 0.56,
+      "overhead_vs_rmax_pct_min": 0.56,
+      "padding_tax_forward_pct_max": -0.57,
+      "padding_tax_pct_max": -1.96,
+      "padding_tax_pct_min": -1.96,
+      "seeds": 5,
+      "warmup": 50
+    },
+    "bgem3_spread": {
+      "adapters": [
+        100,
+        1000,
+        5000,
+        10000
+      ],
+      "assembler": "indexsel",
+      "batch_size": 32,
+      "batches_at_fleet_max_pct_min": 100.0,
+      "by_mix": {
+        "4+8+16+32": {
+          "by_n": {
+            "100": {
+              "batches_at_fleet_max_pct": 100.0,
+              "native_padding_tax_pct": 4.9,
+              "native_store_vs_padded": 0.469,
+              "overhead_vs_rmax_pct": 0.14,
+              "padding_tax_forward_pct": 0.61,
+              "padding_tax_pct": 0.59,
+              "uniform_rank_delta_pct": 0.44
+            },
+            "1000": {
+              "batches_at_fleet_max_pct": 100.0,
+              "native_padding_tax_pct": 4.56,
+              "native_store_vs_padded": 0.469,
+              "overhead_vs_rmax_pct": 0.21,
+              "padding_tax_forward_pct": 0.71,
+              "padding_tax_pct": 0.68,
+              "uniform_rank_delta_pct": 0.46
+            },
+            "10000": {
+              "batches_at_fleet_max_pct": 100.0,
+              "native_padding_tax_pct": 4.55,
+              "native_store_vs_padded": 0.469,
+              "overhead_vs_rmax_pct": 0.06,
+              "padding_tax_forward_pct": 0.29,
+              "padding_tax_pct": 0.39,
+              "uniform_rank_delta_pct": 0.33
+            },
+            "5000": {
+              "batches_at_fleet_max_pct": 100.0,
+              "native_padding_tax_pct": 4.98,
+              "native_store_vs_padded": 0.469,
+              "overhead_vs_rmax_pct": 0.21,
+              "padding_tax_forward_pct": 0.6,
+              "padding_tax_pct": 0.65,
+              "uniform_rank_delta_pct": 0.44
+            }
+          },
+          "p50_ms_by_n": {
+            "100": 27.08,
+            "1000": 27.3,
+            "10000": 27.18,
+            "5000": 27.22
+          },
+          "spread_pct_over_n": 0.78
+        }
+      },
+      "exactness_gate_dtype": "fp32",
+      "exactness_max_abs_delta": 0.0,
+      "exactness_serving_dtype_max_abs_delta": 4.140625,
+      "exactness_serving_dtype_pct_of_logit_scale": 35.61827956989247,
+      "gpu": "NVIDIA A100-SXM4-80GB",
+      "iters": 200,
+      "mixes": [
+        "4+8+16+32"
+      ],
+      "model": "BAAI/bge-m3",
+      "native_store_vs_padded_min": 0.469,
+      "overhead_vs_rmax_pct_max": 0.21,
+      "overhead_vs_rmax_pct_min": 0.06,
+      "padding_tax_forward_pct_max": 0.71,
+      "padding_tax_pct_max": 0.68,
+      "padding_tax_pct_min": 0.39,
+      "seeds": 5,
+      "spread_pct_over_n_max": 0.78,
+      "warmup": 50
+    }
+  },
   "rollup": {
     "at_ceiling_max_all": 1.29,
     "at_ceiling_max_over_new": 1.29,

@@ -1,0 +1,60 @@
+# Mixed-rank serving — BAAI/bge-m3
+# GPU: NVIDIA A100-SXM4-80GB
+# CPU: AMD EPYC 7742 64-Core Processor (255/255 cores visible, cgroup quota 27.2)
+# torch 2.11.0+cu128 / CUDA 12.8
+# B=32 seq=128 dtype=fp16 engine=custom assembler=baseline warmup=50 iters=200 seeds=1,2,3,4,5
+# targets=query+value
+# Values are mean±s.d. across seeds.
+#
+# Padding exactness, asserted before any timing:
+#   mix 4+16         max|delta logit|  padded-vs-native=0.00e+00 [fp32]  layouts=0.00e+00  vs-shipped-assembler=0.00e+00  (tol 1e-03)
+#
+# Same check in the serving dtype (fp16), reported not gated —
+# accumulation order, not padding:
+#   mix 4+16         max|delta logit|=5.23e-01  mean|logit|=1.09e+01  (4.82% of scale)
+
+
+## Mix 4+16  (r_min=4, r_max=16, fractions [0.5, 0.5])
+
+### End-to-end p50 latency (assemble + forward), ms
+       N             uniform_r4            uniform_r16      mixed_4+16_padded      mixed_4+16_native
+    1000             38.81±0.21             38.52±0.17             38.85±0.40             27.42±0.08
+
+### Forward-only mean, ms (the rank-sensitive component)
+       N             uniform_r4            uniform_r16      mixed_4+16_padded      mixed_4+16_native
+    1000             26.34±0.06             26.14±0.06             26.19±0.11             26.57±0.09
+
+### Assembly mean, ms
+       N             uniform_r4            uniform_r16      mixed_4+16_padded      mixed_4+16_native
+    1000           15.794±0.240           14.941±0.596           15.118±0.637            0.914±0.016
+
+### Adapter store, GB
+       N             uniform_r4            uniform_r16      mixed_4+16_padded      mixed_4+16_native
+    1000              0.79±0.00              3.15±0.00              3.15±0.00              1.97±0.00
+
+### Verdict (per N)
+       N   pad tax vs r_min    (forward only)   vs uniform r_max   store vs padded   batches @ r_max
+    1000             -1.96%            -0.57%             +0.56%             0.63x            100.0%
+
+
+Interpretation:
+- 'pad tax vs r_min' is the cost a LOW-rank tenant pays for sharing a
+  batch with high-rank tenants: the mixed batch against a batch where
+  every tenant runs at the fleet's lowest rank and nothing is padded.
+  This is the quantity the uniform-rank limitation is about.
+- 'vs uniform r_max' isolates whether a mixed batch costs anything
+  BEYOND its padded shape. Zero-padding makes the batch tensors
+  bit-identically shaped to a uniform r_max batch, so this should sit
+  at ~0; a positive value is gather cost, not arithmetic.
+- 'store vs padded' is the native-rank layout's footprint relative to
+  pre-padding every adapter to r_max. Below 1.0x means padding can be
+  confined to the transient batch tensor, so a mixed fleet's tenant
+  ceiling is set by MEAN rank, not max.
+- 'batches @ r_max' is the share of timed batches whose maximum native
+  rank equals the fleet maximum. Near 100% means padding to the batch
+  max is, in practice, padding to the fleet max — the pessimistic
+  reading of these numbers is the realistic one, and rank-bucketed
+  routing is the only thing that would change it.
+- Latency flat down each N column is Finding 1 surviving a mixed-rank
+  fleet: pool size enters no tensor shape, rank enters the batch
+  tensors only, and the two axes stay independent.

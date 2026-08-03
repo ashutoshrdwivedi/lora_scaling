@@ -139,6 +139,53 @@ the rebuttal must trace to a line here.
 - result-scatter share, index_select: {'8': 0.8, '16': 1.4, '32': 2.0, '64': 2.1, '128': 2.1}
 - result-scatter time (ms), baseline: {'8': 0.15, '16': 0.27, '32': 0.53, '64': 1.08, '128': 2.12}
 
+## Mixed-rank serving (yeZ9 Q5 / W1)
+
+Padding tax = mixed batch vs a uniform batch at the fleet's LOWEST rank (what a low-rank tenant pays for sharing a batch). Overhead vs r_max = cost beyond the padded shape; ~0 means padding adds nothing the uniform max-rank sweep did not already measure.
+
+### bgem3_4_16 — BAAI/bge-m3
+- NVIDIA A100-SXM4-80GB, B=32, assembler=indexsel
+- N=[100, 1000, 5000, 10000, 20000], warmup 50 / iters 200, 5 seeds, mixes=['4+16']
+- padding exactness: max|delta logit| = 0.00e+00 (asserted before timing)
+- mix 4+16:
+    - p50 by N: {'100': 26.8, '1000': 26.85, '5000': 26.88, '10000': 26.87, '20000': 26.77}
+    - spread across N: 0.41%
+    - N=100: padding tax -0.37% (forward -0.39%), vs uniform r_max +0.19%, uniform r_min->r_max -0.56%, native store 0.625x, batches at fleet max 100.0%
+    - N=1000: padding tax -0.77% (forward -0.79%), vs uniform r_max +0.06%, uniform r_min->r_max -0.83%, native store 0.625x, batches at fleet max 100.0%
+    - N=5000: padding tax -0.82% (forward -0.78%), vs uniform r_max -0.15%, uniform r_min->r_max -0.68%, native store 0.625x, batches at fleet max 100.0%
+    - N=10000: padding tax -0.76% (forward -0.78%), vs uniform r_max -0.21%, uniform r_min->r_max -0.54%, native store 0.625x, batches at fleet max 100.0%
+    - N=20000: padding tax -0.79% (forward -0.83%), vs uniform r_max -0.21%, uniform r_min->r_max -0.58%, native store 0.625x, batches at fleet max 100.0%
+- worst padding tax: -0.37% (best -0.82%); worst forward-only -0.39%
+- overhead vs uniform r_max: -0.21% to +0.19%
+- native store vs pre-padded: 0.625x; batches at fleet max rank >= 100.0%
+- worst mixed-fleet spread across N: 0.41%
+
+### bgem3_spread — BAAI/bge-m3
+- NVIDIA A100-SXM4-80GB, B=32, assembler=indexsel
+- N=[100, 1000, 5000, 10000], warmup 50 / iters 200, 5 seeds, mixes=['4+8+16+32']
+- padding exactness: max|delta logit| = 0.00e+00 (asserted before timing)
+- mix 4+8+16+32:
+    - p50 by N: {'100': 27.08, '1000': 27.3, '5000': 27.22, '10000': 27.18}
+    - spread across N: 0.78%
+    - N=100: padding tax +0.59% (forward +0.61%), vs uniform r_max +0.14%, uniform r_min->r_max +0.44%, native store 0.469x, batches at fleet max 100.0%
+    - N=1000: padding tax +0.68% (forward +0.71%), vs uniform r_max +0.21%, uniform r_min->r_max +0.46%, native store 0.469x, batches at fleet max 100.0%
+    - N=5000: padding tax +0.65% (forward +0.6%), vs uniform r_max +0.21%, uniform r_min->r_max +0.44%, native store 0.469x, batches at fleet max 100.0%
+    - N=10000: padding tax +0.39% (forward +0.29%), vs uniform r_max +0.06%, uniform r_min->r_max +0.33%, native store 0.469x, batches at fleet max 100.0%
+- worst padding tax: +0.68% (best +0.39%); worst forward-only +0.71%
+- overhead vs uniform r_max: +0.06% to +0.21%
+- native store vs pre-padded: 0.469x; batches at fleet max rank >= 100.0%
+- worst mixed-fleet spread across N: 0.78%
+
+### bgem3_4_16_cpuasm — BAAI/bge-m3
+- NVIDIA A100-SXM4-80GB, B=32, assembler=baseline
+- N=[1000], warmup 50 / iters 200, 5 seeds, mixes=['4+16']
+- padding exactness: max|delta logit| = 0.00e+00 (asserted before timing)
+- mix 4+16:
+    - N=1000: padding tax -1.96% (forward -0.57%), vs uniform r_max +0.56%, uniform r_min->r_max -2.51%, native store 0.625x, batches at fleet max 100.0%
+- worst padding tax: -1.96% (best -1.96%); worst forward-only -0.57%
+- overhead vs uniform r_max: +0.56% to +0.56%
+- native store vs pre-padded: 0.625x; batches at fleet max rank >= 100.0%
+
 ## LoRA-path ablation (Finding 6)
 
 - `ablation_lora_on_ms`: 26.4
