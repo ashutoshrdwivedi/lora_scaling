@@ -1,0 +1,100 @@
+The 1,000-resident-adapter / 1,500-tenant churn experiment reinforces the residency qualification from the larger overcommitted sweep. Even with a Zipf-skewed workload and a request-level miss rate of only about 5%, synchronous adapter registration materially increases end-to-end latency and reduces throughput.
+
+This file contains two seeds with 1,000 measured batches per run. It includes a batch-size sweep at LoRA rank 8 and a rank sweep at batch size 32. Values below are arithmetic means across the two seeds unless noted otherwise.
+
+### Batch size 32 comparison
+
+Batch size 32 is the paper's principal operating point. The rank-8 comparison is:
+
+| Metric | Resident serving | Churn end-to-end | Change |
+|---|---:|---:|---:|
+| Request miss rate | — | 5.0% | — |
+| p50 latency | 27.9 ms | 37.3 ms | +34% |
+| p95 latency | 29.3 ms | 54.5 ms | +87% |
+| p99 latency | 32.2 ms | 66.1 ms | +106% |
+| Throughput | 1,088.0 samples/s | 810.3 samples/s | −25.3% |
+
+The result is consistent across the two seeds at the main operating point. Rank-8 end-to-end p99 is 71.4 ms in seed 1 and 60.9 ms in seed 2, while throughput falls by 29.9% and 20.7%, respectively.
+
+### Batch-size sweep
+
+For rank 8, the two-seed averages are:
+
+| Batch size | Miss rate | Serving p50 | Churn E2E p50 | Serving p95 | Churn E2E p95 | Throughput change | Registration share |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 8 | 5.8% | 19.0 ms | 19.8 ms | 20.5 ms | 32.6 ms | 419.1 → 357.0/s, −14.7% | 11.2% |
+| 16 | 5.3% | 21.7 ms | 26.8 ms | 23.3 ms | 39.8 ms | 723.1 → 580.8/s, −19.5% | 16.1% |
+| 32 | 5.0% | 27.9 ms | 37.3 ms | 29.3 ms | 54.5 ms | 1,088.0 → 810.3/s, −25.3% | 22.8% |
+| 64 | 5.0% | 54.2 ms | 69.6 ms | 59.4 ms | 95.2 ms | 1,056.9 → 827.9/s, −21.7% | 21.7% |
+| 128 | 4.9% | 107.6 ms | 146.6 ms | 323.7 ms | 423.2 ms | 1,002.6 → 707.6/s, −29.5% | 25.4% |
+
+The share uses `churn_adapter_store_share_mean_pct`: the benchmark computes the admission-time fraction separately for every batch and averages those fractions, after which the table averages the two seed-level means. Thus every batch—and every request, since all requests in a batch experience the same latency—receives equal weight rather than unusually slow batches dominating a ratio of totals.
+
+The CSV's per-batch share combines registration and eviction. It cannot be separated retrospectively, but eviction is negligible (at most about 0.17 ms per batch on average), so the value is effectively the registration share.
+
+A miss rate near 5% does not mean only 5% of batches pay admission overhead. Assuming requests are approximately independent, a batch of 32 has an approximately `1 - 0.95^32 = 80.6%` chance of containing at least one miss. Larger batches admit more adapters at once, so registration can consume roughly one-quarter to one-third of total wall time even though only about one request in twenty misses.
+
+The zero registration p50 reported for batch 8 is therefore expected rather than evidence that registration is free. At a 5–6% request miss rate, more than half of eight-request batches can contain no miss, placing zero at the median; the nonzero registration mean captures the actual cost.
+
+### Rank sweep at batch size 32
+
+| LoRA rank | Miss rate | Serving p50 | Churn E2E p50 | Serving p95 | Churn E2E p95 | Churn E2E p99 | Throughput change | Registration share |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 4 | 5.0% | 28.4 ms | 38.0 ms | 30.4 ms | 56.5 ms | 155.0 ms | 1,077.6 → 778.3/s, −27.7% | 23.3% |
+| 8 | 5.0% | 27.9 ms | 37.3 ms | 29.3 ms | 54.5 ms | 66.1 ms | 1,088.0 → 810.3/s, −25.3% | 22.8% |
+| 16 | 5.0% | 28.0 ms | 36.9 ms | 29.4 ms | 54.7 ms | 69.0 ms | 1,096.5 → 813.6/s, −25.7% | 22.8% |
+| 32 | 5.0% | 28.0 ms | 36.4 ms | 29.5 ms | 51.3 ms | 62.6 ms | 1,084.9 → 831.8/s, −23.3% | 21.1% |
+
+The central latencies are effectively flat across ranks: serving p50 stays within 0.5 ms and churn end-to-end p50 within 1.6 ms. The apparent rank-4 p99 regression is not a repeatable rank effect. It is driven by one seed, whose end-to-end p99 is 238.0 ms versus 72.0 ms in the other seed; ranks 8–32 do not show a monotonic increase with rank.
+
+This suggests that, in this size range, admission frequency and runtime variability matter more than LoRA rank for observed end-to-end latency. More seeds would be needed to make a strong tail-latency comparison between ranks.
+
+### Share of serving time spent registering adapters
+
+Across all 16 runs in the CSV, adapter registration consumes **26.0% of pooled end-to-end serving time**. Individual-run shares range from 11.8% to 39.3%.
+
+Eviction itself is negligible: mean eviction time ranges from approximately 0.01 ms per batch at batch size 8 to 0.17 ms at batch size 128. Nearly all adapter-store overhead comes from registration rather than eviction.
+
+At batch size 32, registration consumes 23–28% of end-to-end time across ranks. This is close to the measured 23–28% throughput reduction, as expected when synchronous admission extends the critical path.
+
+### What the experiment shows
+
+The cache holds two-thirds of the logical tenant population, but the Zipf alpha 1.1 access distribution keeps the request-level miss rate near 5%. That skew substantially helps cache effectiveness, yet it does not make admission overhead negligible.
+
+The main operational conclusions are:
+
+- Resident serving latency remains stable; the additional cost is on the adapter-admission path.
+- A low request-level miss rate can translate into a high batch-level probability of admission.
+- At batch size 32, synchronous registration accounts for about one-quarter of end-to-end time and throughput.
+- Increasing batch size amortizes serving work but also puts more misses into each batch, so admission remains material.
+- LoRA ranks 4–32 show no stable monotonic latency trend in this experiment.
+
+### Tail-latency concerns
+
+Some tail measurements are visibly seed-sensitive. The clearest examples are:
+
+- Rank 4 / batch 32 end-to-end p99: 72.0 ms in seed 1 versus 238.0 ms in seed 2.
+- Batch 64 serving p99: 350.4 ms and 292.5 ms even before directly measured registration is included.
+- Batch 128 end-to-end p99: 1,480.0 ms in seed 1 versus 473.0 ms in seed 2.
+
+Because each run has 1,000 measured batches, p99 is determined by roughly ten observations. Two seeds are an improvement over the earlier 200-iteration experiment, but they are not enough to characterize rare stalls or compare nearby configurations at the tail. The p50 and p95 results are more stable and should carry more weight.
+
+The serving-only columns are also measured in the same process immediately after registration and eviction. They exclude directly timed admission but are not a separate no-churn control; allocator state, synchronization, CPU scheduling, and GPU runtime effects may still carry over.
+
+For a publication-quality result, use a separately executed preloaded/no-churn control with matched hardware, seeds, batch sizes, ranks, run ordering, and iteration counts. Report at least three seeds and confidence intervals or per-seed values rather than only averages.
+
+### Does it contradict the paper?
+
+The narrow claim remains intact:
+
+> Latency remains flat as the pre-loaded, GPU-resident adapter pool grows.
+
+This benchmark exercises a different condition: a 1,500-tenant workload overcommitted against space for 1,000 resident adapters, with synchronous admission on cache misses.
+
+The broad, unqualified claim that serving latency stays flat as the adapter pool grows is not supported for end-to-end requests that can miss the cache. At the primary batch-size-32/rank-8 point, a 5.0% request miss rate increases p50 by 34%, p95 by 87%, and p99 by 106%, while reducing throughput by 25%.
+
+The paper should retain an explicit residency qualification and separately describe overcommitted behavior. A concise formulation is:
+
+> For requests whose adapters are GPU-resident, serving latency remains flat as the resident adapter pool grows. When the logical tenant population exceeds GPU capacity, end-to-end latency and throughput depend on cache misses and synchronous adapter admission.
+
+The relevant implementation and results are in [run.py](/workspace/lora_scaling/src/lora_serving/benchmark/run.py:109) and [churn_alpha_1p1_1k_1p5k.csv](/workspace/lora_scaling/benchmarks/results/churn_alpha_1p1_1k_1p5k.csv).

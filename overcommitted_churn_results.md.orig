@@ -1,0 +1,117 @@
+The churn results do not contradict the paper’s narrow claim that latency is flat when all referenced adapters are already GPU-resident. They do show that the broader end-to-end claim needs an explicit residency qualification: once the tenant population exceeds cache capacity, admission stalls materially increase latency and reduce throughput.
+
+The most relevant comparison is batch size 32, matching the paper’s principal operating point.
+
+### Batch size 32 comparison
+
+| Resident adapters | Miss rate | Serving p50 | Churn E2E p50 | Serving p95 | Churn E2E p95 | Serving p99 | Churn E2E p99 | Throughput change |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 20k | 18.7% | 34.6 ms | 85.9 ms | 57.2 ms | 2,847.9 ms | 63.1 ms | 5,047.2 ms | 823.5 → 67.6/s, −91.8% |
+| 30k | 13.9% | 54.2 ms | 74.1 ms | 58.3 ms | 112.7 ms | 63.7 ms | 122.8 ms | 673.3 → 413.4/s, −38.6% |
+| 40k | 10.2% | 38.4 ms | 64.6 ms | 57.3 ms | 100.1 ms | 60.0 ms | 108.4 ms | 736.8 → 482.0/s, −34.6% |
+| 47k | 7.7% | 37.3 ms | 60.5 ms | 59.6 ms | 89.8 ms | 62.0 ms | 97.5 ms | 714.5 → 530.6/s, −25.7% |
+
+The associated percentage inflation is:
+
+| Resident adapters | p50 inflation | p95 inflation | p99 inflation |
+|---:|---:|---:|---:|
+| 20k | +148% | +4,882% | +7,904% |
+| 30k | +37% | +93% | +93% |
+| 40k | +68% | +75% | +81% |
+| 47k | +62% | +51% | +57% |
+
+The 20k/B32 result is clearly anomalous relative to the rest of the sweep and should not be published without rerunning it.
+
+### What the experiment shows
+
+The regular serving path remains relatively fast. At 30k–47k resident adapters and batch size 32, the measured serving p99 remains between 60 and 64 ms. This is broadly consistent with the architectural result that retrieving already-resident adapters does not get slower as the adapter pool grows.
+
+The additional latency comes almost entirely from adapter admission:
+
+- Eviction takes only approximately 0.1–0.3 ms per batch.
+- Registration is much more expensive.
+- With a 75k population and only 20k resident adapters, 18.7% of requested samples miss.
+- Increasing residency to 47k lowers that miss rate to 7.7%.
+- Consequently, end-to-end p99 improves from the anomalous 5.0 seconds at 20k to 97.5 ms at 47k.
+
+This is a useful result: increasing adapter capacity improves real end-to-end performance even though it does not change the resident serving computation.
+
+### Share of serving time spent registering adapters
+
+Under the measured realistic-churn workload (75,000 tenants, Zipf \(\alpha=1.0\)), adapter registration accounts for the following share of end-to-end serving time. Each value is computed as `churn_registration_total_ms / churn_end_to_end_total_ms`; all 20k-adapter configurations are excluded.
+
+| Resident adapters | Batch 8 | Batch 16 | Batch 32 | Batch 64 | Batch 128 |
+|---:|---:|---:|---:|---:|---:|
+| 30k | 24.3% | 32.1% | 38.3% | 41.7% | 43.7% |
+| 40k | 22.8% | 27.6% | 34.3% | 36.5% | 31.9% |
+| 47k | 17.1% | 18.5% | 25.5% | 29.1% | 30.4% |
+
+Across these 15 configurations, registration consumes **34.0% of total end-to-end serving time** when the runs are pooled by elapsed time. The per-configuration shares range from 17.1% to 43.7% (30.2% unweighted mean). At the paper's principal batch size of 32, the share falls from 38.3% at 30k resident adapters to 34.3% at 40k and 25.5% at 47k, as the request-level miss rate falls from 13.9% to 10.2% and 7.7%, respectively.
+
+### The 20k/B32 anomaly
+
+The 20k/B32 row reports:
+
+- Registration p50: 45.2 ms per batch
+- Registration mean: 434.3 ms per batch
+- Churn E2E p50: 85.9 ms
+- Churn E2E p90: 1,982.0 ms
+- Churn E2E p95: 2,847.9 ms
+- Churn E2E p99: 5,047.2 ms
+
+That distribution implies a small number of multi-second registration stalls. No similar behavior appears in adjacent configurations:
+
+- 20k/B16 registration mean: 22.6 ms
+- 20k/B64 registration mean: 81.2 ms
+- 30k/B32 registration mean: 29.6 ms
+- 40k/B32 registration mean: 22.8 ms
+- 47k/B32 registration mean: 15.3 ms
+
+A batch of 32 should not have a registration mean of 434 ms when batch 64 averages 81 ms under the same resident capacity. This is likely a transient runtime, allocator, synchronization, or system event—not a stable property of the design.
+
+Because the experiment contains only 200 measured batches, p99 is effectively determined by roughly the two slowest batches. One severe stall can move it dramatically. I would rerun this configuration with at least 1,000–2,000 iterations and multiple seeds.
+
+### Does it contradict the paper?
+
+There are two answers depending on the wording of the claim.
+
+The narrow claim is not contradicted:
+
+> Latency remains flat as the pre-loaded, GPU-resident adapter pool grows.
+
+That is exactly how the paper scopes the main experiment. The system description says adapters are preloaded at startup, and the deployment section says sticky routing sends each tenant to a pod holding its adapter resident. The churn benchmark tests a different regime: a 75k population overcommitted against a 20k–47k GPU cache.
+
+The broad claim needs qualification:
+
+> Serving latency remains flat as the adapter pool grows to tens of thousands.
+
+Without “pre-loaded” or “resident,” a reader could reasonably interpret this as end-to-end request latency for any tenant. The churn results show that interpretation is false when requests trigger synchronous adapter admission. End-to-end p50 rises 20–68% in the stable 30k–47k rows, p99 rises 57–93%, and throughput falls 26–39%.
+
+I recommend revising the abstract and conclusion to say:
+
+> For requests whose adapters are GPU-resident, serving latency remains flat as the resident adapter pool grows to tens of thousands.
+
+Then add:
+
+> When the logical tenant population exceeds GPU capacity, latency is governed by cache misses and adapter admission. Under a 75,000-tenant Zipf workload, increasing resident capacity from 30,000 to 47,000 reduces the request-level miss rate from 13.9% to 7.7% and lowers end-to-end p99 from 122.8 ms to 97.5 ms at batch size 32.
+
+### A benchmarking concern
+
+The `p50_ms`/`p95_ms`/`p99_ms` columns in this file exclude the directly measured admission time, but they are not a completely independent no-churn control. Registration and eviction occur immediately before assembly and inference in the same process and may perturb:
+
+- the CUDA allocator,
+- GPU synchronization,
+- memory layout,
+- CPU scheduling,
+- cache state.
+
+That may explain why the serving-only B32 p50 values in this CSV are irregular—34.6, 54.2, 38.4, and 37.3 ms—whereas the paper’s original preloaded experiment reports approximately 39.8–39.9 ms.
+
+For a publication-quality comparison, run two separate matched executions:
+
+1. Preloaded/no-churn control.
+2. Overcommitted churn workload.
+
+Use the same hardware, engine, seed set, batch sizes, iteration count, and run order randomization. Report at least three seeds and 1,000+ measured batches for tail percentiles.
+
+The relevant implementation and results are in [run.py](/workspace/lora_scaling/src/lora_serving/benchmark/run.py:109) and [churn_alpha_1p0.csv](/workspace/lora_scaling/benchmarks/results/churn_alpha_1p0.csv).
