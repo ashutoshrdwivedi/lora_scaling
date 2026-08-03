@@ -20,9 +20,14 @@ between the two is reported rather than silently inherited.
 **2. Churn rate has to be an independent variable.**  In the older harness the
 churn rate was an emergent byproduct of (Zipf alpha, tenant count, capacity),
 which meant defending a particular alpha over a particular tenant population as
-"realistic".  Here admissions are driven directly at a target rate and the
-achieved hit rate is *reported* rather than controlled, so a reader maps their
-own workload onto the axis.
+"realistic".  Here admissions are driven directly at a target rate, so a reader
+maps their own workload onto the axis instead of onto our alpha.
+
+Note this makes the request stream's hit rate uninteresting by construction:
+requests always draw from the *current* resident pool, so every request hits and
+no hit/miss metric is collected.  Zipf alpha shapes only which resident adapters
+are popular, and since replacement walks slots round-robin rather than by
+popularity, alpha has little influence on the result at all.
 
 The churn model is pool *replacement*, not demand paging: at the target rate a
 resident adapter is evicted and a fresh one registered in its place, while the
@@ -214,6 +219,18 @@ class Registrar:
         self._lr_intercepts = lr_intercepts
         self._cold = cold
         self._stager = PinnedStager(config) if path_kind == "file_pinned" else None
+        # The tenant's classification head is part of registration -- a tenant is
+        # not servable without one -- but it has to be *transferred*, not
+        # generated. Synthesising it on device (as make_synthetic_lr_weights does)
+        # charges a curand launch to every admission, so the timed region would
+        # not be purely file-load + H2D. Built once on pinned host memory here,
+        # register() then pays exactly the host-to-device copy a real head would.
+        head = torch.randn(1, num_labels, config.hidden_size, dtype=config.dtype)
+        intercept = torch.zeros(1, num_labels, dtype=config.dtype)
+        if config.device.type == "cuda":
+            head, intercept = head.pin_memory(), intercept.pin_memory()
+        self._host_coef = head
+        self._host_intercept = intercept
         # True only when a cold run actually managed to evict the page cache.
         # A warm run reports False rather than True-by-default, so the CSV
         # cannot be read as "this was a cold measurement" when it was not.
@@ -232,14 +249,13 @@ class Registrar:
             else:
                 self._register_pinned(adapter_id, path)
 
-        # The per-tenant classification head is part of registration: a tenant
-        # is not servable without one. The old harness generated it with randn
-        # on the GPU inside the timed region, which charged a curand launch to
-        # every admission; here it is a host-side tensor copied in, matching how
-        # a head arrives alongside the adapter file.
-        coef, intercept = make_synthetic_lr_weights(cfg, self._num_labels)
-        self._lr_coefs[adapter_id] = coef
-        self._lr_intercepts[adapter_id] = intercept
+        # Install the tenant's head by copying it from the pinned host buffer,
+        # so the timed region is file-load + host-to-device transfer and nothing
+        # else. See __init__ for why this is not generated on device.
+        self._lr_coefs[adapter_id] = self._host_coef.to(cfg.device, non_blocking=True)
+        self._lr_intercepts[adapter_id] = self._host_intercept.to(
+            cfg.device, non_blocking=True
+        )
 
     def _register_pinned(self, adapter_id: str, path: Path) -> None:
         """torch.load to host -> pinned staging buffer -> non_blocking H2D."""
@@ -302,7 +318,12 @@ def run_cell(
     the Zipf parameters happen to produce.  In ``blocking`` mode the
     replacement happens inline between batches, which is the worst case and the
     bound.  In ``background`` mode it happens on a side CUDA stream in a worker
-    thread, which is what a real server does and is the claim.
+    thread. NOTE this is a *proposed* design, not the shipped one:
+    ``deploy/server/reload.py`` acquires the same inference lock the serving
+    path holds before invoking the reload callback, so production registration
+    is serialized against inference and corresponds to ``blocking``. Quote the
+    blocking numbers as the production figures; background bounds what an
+    overlapped implementation could buy, and at what tail cost.
     """
     device = config.device
     probs = _zipf_probabilities(len(resident), zipf_alpha)
@@ -508,8 +529,15 @@ def run_cell(
     # the signal that the requested rate exceeds what this arm can sustain --
     # which is the result, not a defect, so it is reported rather than hidden
     # by waiting for the queue and dividing by a longer wall clock.
+    # Snapshot the in-window records *and* their count together. Taking only
+    # the count here and reading the arrays after the drain would mix windows:
+    # the achieved rate would describe in-window completions while the latency
+    # totals and work share silently included registrations that finished
+    # afterwards. That is exactly the regime where it matters -- at saturation
+    # the backlog is large (at 100/s the drain runs ~3 s past the window).
     with records_lock:
         completed_in_window = len(replace_records)
+        in_window_records = list(replace_records)
     drain_s = 0.0
     if churn_mode == "background":
         assert worker is not None
@@ -520,9 +548,8 @@ def run_cell(
         _drain_retired()
         drain_s = time.perf_counter() - t_drain
 
-    with records_lock:
-        register_latencies = np.asarray([r[0] for r in replace_records])
-        inline_evict = np.asarray([r[1] for r in replace_records])
+    register_latencies = np.asarray([r[0] for r in in_window_records])
+    inline_evict = np.asarray([r[1] for r in in_window_records])
     # In blocking mode eviction is inline and per-admission. In background mode
     # it is deferred and batched onto the serving thread, so it is reported as
     # a per-drain figure and the per-admission replacement cost is the
@@ -543,7 +570,7 @@ def run_cell(
         "register_latencies": register_latencies,
         "evict_latencies": evict_latencies,
         "blocked_ms": blocked_ms,
-        "admissions_requested": admissions,
+        "admissions_accepted": admissions,
         "admissions_completed": completed_in_window,
         "admissions_shed": shed,
         "drain_s": drain_s,
@@ -587,7 +614,11 @@ def summarize(cell: dict, batch_size: int, admission_rate: float) -> dict:
     work_share_pct = 100 * replace_total_ms / work_denom if work_denom else 0.0
 
     return {
-        "admissions_requested": cell["admissions_requested"],
+        # Accepted + shed = the demand the target rate actually generated;
+        # "accepted" alone was previously named "requested", which read as
+        # total arrivals and understated demand whenever anything was shed.
+        "admissions_accepted": cell["admissions_accepted"],
+        "admissions_arrived": cell["admissions_accepted"] + cell["admissions_shed"],
         "admissions_completed": cell["admissions_completed"],
         "admissions_shed": cell["admissions_shed"],
         "achieved_admission_rate": round(cell["admissions_completed"] / cell["wall_s"], 3),
@@ -604,9 +635,18 @@ def summarize(cell: dict, batch_size: int, admission_rate: float) -> dict:
         "serve_p95_ms": round(_pct(serve, 95), 3),
         "serve_p99_ms": round(_pct(serve, 99), 3),
         "serve_mean_ms": round(float(np.mean(serve)), 3) if serve.size else "",
-        "serve_throughput_samples_sec": round(
+        # Two throughputs, because one of them is a trap. The first divides by
+        # mean serving latency alone and so describes throughput *while
+        # serving* -- it excludes the intervals the loop spent registering. In
+        # blocking mode that is not delivered throughput: at 100 admissions/s
+        # it reads ~987 samples/s against 18 actually delivered. The second
+        # divides by wall-clock and is what the pod delivers under churn.
+        "serve_throughput_while_serving": round(
             batch_size / (float(np.mean(serve)) / 1000), 1
         ) if serve.size else "",
+        "delivered_throughput_samples_sec": round(
+            serve.size * batch_size / cell["wall_s"], 1
+        ) if cell["wall_s"] else "",
         "replace_p50_ms": round(_pct(replace, 50), 3),
         "replace_p95_ms": round(_pct(replace, 95), 3),
         "replace_mean_ms": round(per_admission_ms, 3),

@@ -10,15 +10,15 @@
 # Four phases, ~50 min total on an A100-80GB. Each writes its own CSV: one file
 # per logical result, so a phase can be re-run without disturbing the others.
 set -u
-export HOME=/workspace
+export HOME=${POD_HOME:-/workspace}
 export PATH=$HOME/.local/bin:$PATH
 export PYTHONUNBUFFERED=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-cd /workspace/lora_scaling
+cd "${REPO_DIR:-/workspace/lora_scaling}"
 
 R=benchmarks/results
 M="BAAI/bge-m3"
-CORPUS=/workspace/adapter_corpus   # ~3.1 GB for 2,000 files at r=8 fp16
+CORPUS=${CORPUS_DIR:-/workspace/adapter_corpus}   # ~3.1 GB for 2,000 files at r=8 fp16
 mkdir -p "$R"
 
 COMMON="--engine hf --model $M --dtype fp16 --lora-rank 8 --seq-len 128 \

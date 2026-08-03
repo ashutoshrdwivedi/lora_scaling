@@ -1,0 +1,29 @@
+# Registration cost breakdown, host 2 (154.54.102.25)
+# date_utc: 2026-08-03T05:13:30Z
+
+torch.load->cpu           8.19 ms
+torch.load->cuda         14.45 ms
+stack+transpose(cpu)      0.12 ms
+  -> into pinned buf    129.91 ms
+H2D from pinned           0.27 ms
+LoraWeight alloc          0.04 ms
+head .to(dev)             0.01 ms
+
+# Classification-head cost: on-device synthesis vs pinned H2D copy
+
+on-device head synthesis (original)  0.0193 ms
+pinned head copy         (fixed)     0.0178 ms
+contamination of original data       0.0015 ms
+as % of the 11.897 ms file figure     0.013 %
+
+# --- repeat 2 ---
+on-device head synthesis (original)  0.0190 ms
+pinned head copy         (fixed)     0.0173 ms
+contamination of original data       0.0017 ms
+as % of the 11.897 ms file figure     0.014 %
+
+# --- repeat 3 ---
+on-device head synthesis (original)  0.0194 ms
+pinned head copy         (fixed)     0.0176 ms
+contamination of original data       0.0018 ms
+as % of the 11.897 ms file figure     0.015 %
