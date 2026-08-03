@@ -1,4 +1,4 @@
-We thank Reviewer yeZ9 for an exceptionally thorough, insightful review. We address all questions (Q1–Q6) and weaknesses (W1–W6) below, with full multi-model/GPU results in our General Response.
+We thank Reviewer yeZ9 for an exceptionally thorough, insightful review. We address all questions (Q1–Q6) and weaknesses (W1–W6) below, with full multi-model/GPU results added     in our General Response.
 
 **Q1/Q3/W5 (End-to-End Latency & High-QPS CPU Assembly).** Reported latencies are already end-to-end (CPU gather + GPU forward). Result scatter (per-tenant slicing) adds only 0.15–2.12 ms (**0.7–1.3% of latency**). For high QPS, our pure-PyTorch GPU-resident assembler (`index_select`) lifts MiniLM single-stream throughput from 5,192 to 15,315 samples/s, cuts assembly share from 58–65% to 1.8–4.4% ($B \ge 64$), and stabilizes tail latency (p99/p50 from 5.28× to 1.03×). On bge-m3 it gives 1.14–1.80× speedup. Paper figures use the CPU assembler and are conservative.
 
@@ -32,4 +32,12 @@ Driving replacements at a fixed rate — churn as an independent variable rather
 
 The $O(N^2)$ contrast is undisturbed: PEFT's `add_adapter` rescans per-layer `ModuleDict`s (14.2 s for 100 adapters vs 1,229.2 s for 1,000; $\approx$2.5 s marginal at $N{=}1{,}000$), some **210$\times$** our per-adapter cost. The residual 11.9 ms is CPU-side deserialization, not I/O or transfer: a cold page cache adds only 9%, and the host-to-device copy itself is 0.2 ms. All figures are synchronous, matching what we ship — the hot-reload service holds the inference lock across registration. Overlapping on a copy stream is a proposed optimization, not current behaviour: it holds p50 flat ($<$0.03% of serving time) at a tail cost (p99 28 $\to$ 55 ms at 10/s).
 
-**W4/W6 (Accuracy & Downstream Workloads).** **W4:** $N{=}8$ follows SetFit protocol to show numerical equivalence ($<10^{-4}$ relative tolerance vs PEFT); serving benchmarks (latency/VRAM) depend on tensor shapes, not training sample count. **W6:** bge-m3 is natively an embedding/retrieval encoder. We concede full end-to-end reranking load tests remain unmeasured.
+**W4 (8 examples/class accuracy).** We agree this does not establish that rank-8 LoRA is the optimal adaptation choice in full-data regimes. Our accuracy contribution is narrower: under the standard SetFit few-shot protocol, rank-8 LoRA
+  on bge-m3 retains 98.1% of full fine-tuning's mean accuracy and improves over a frozen encoder, which validates that the served workload is meaningful rather than a synthetic latency-only case. Separately, our serving path is numerically
+  faithful to PEFT on real checkpoints ($<10^{-4}$ relative error). The main systems claims — latency, throughput, tenant ceiling, and cold-start — depend on tensor shapes $(L,d,r)$ and batch structure, not on the number of training
+  examples. We will make this scope explicit.
+
+
+  **W6 (Downstream Workloads).** bge-m3 is itself a retrieval/embedding encoder, so embedding generation uses the same benchmarked path with the classification head omitted. Cross-encoder reranking is also an encoder forward over a query-document pair, so we expect the same serving behavior, though we did not run an end-to-end reranking load test. 
+  For the camera-ready pip-installable library, we will expose task-level wrappers for common encoder workloads, so users can apply the same serving path without having to write it themselves.
+
