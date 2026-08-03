@@ -1,0 +1,10 @@
+# Second-host replication of phase 1 (registration cost by path)
+date_utc: 2026-08-03T03:33:41Z
+host: 154.54.102.25:10133  (independent A100 from the primary run)
+gpu: NVIDIA A100-SXM4-80GB
+driver: 580.126.16
+torch: 2.11.0+cu128
+vcpu: 128   ram_gb: 2003
+corpus+venv on local container disk (/root), not the network /workspace mount
+arms: synthetic, file  (file_pinned excluded: pathological on this host, see CAVEATS)
+harness: head installed via pinned H2D copy, not on-device synthesis

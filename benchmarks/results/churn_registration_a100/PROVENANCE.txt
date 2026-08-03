@@ -1,0 +1,9 @@
+# Provenance for the churn registration benchmark
+date_utc: 2026-08-02T21:37:58Z
+pod_id: kp2w8kr7u70qb8 (causal_amber_fowl)
+gpu: NVIDIA A100-SXM4-80GB, 81920 MiB
+driver: 570.172.08
+torch: 2.11.0+cu128
+alloc_conf: expandable_segments:True
+script: benchmarks/run_churn_registration.sh
+corpus: /workspace/adapter_corpus (2000 files, 3.0G)
