@@ -301,6 +301,92 @@
     "profiler_base_linear_pct": 50.6,
     "profiler_lora_bmm_self_pct": 4.94
   },
+  "capacity_probe": {
+    "bgem3_a100_alloc": {
+      "analytic_bytes_per_adapter": 1572864,
+      "arms": {
+        "expandable_segments:False": {
+          "bracketed": true,
+          "ceiling_n": 49000,
+          "n_ok": [
+            46000,
+            47000,
+            48000,
+            49000
+          ],
+          "n_oom": [
+            50000,
+            51000,
+            52000,
+            53000
+          ],
+          "p50_ms": {
+            "46000": 34.13,
+            "47000": 33.9,
+            "48000": 33.92,
+            "49000": 33.92
+          },
+          "peak_at_ceiling_gb": 79.372,
+          "peak_at_ceiling_gib": 73.9,
+          "peak_gpu_mem_gb": {
+            "46000": 74.59,
+            "47000": 76.184,
+            "48000": 77.778,
+            "49000": 79.372
+          },
+          "store_gb_at_ceiling": 77.1,
+          "store_gib_at_ceiling": 71.8
+        },
+        "expandable_segments:True": {
+          "bracketed": true,
+          "ceiling_n": 52000,
+          "n_ok": [
+            48000,
+            50000,
+            52000
+          ],
+          "n_oom": [
+            53000,
+            54000
+          ],
+          "p50_ms": {
+            "48000": 33.92,
+            "50000": 33.98,
+            "52000": 33.92
+          },
+          "peak_at_ceiling_gb": 84.153,
+          "peak_at_ceiling_gib": 78.4,
+          "peak_gpu_mem_gb": {
+            "48000": 77.778,
+            "50000": 80.966,
+            "52000": 84.153
+          },
+          "store_gb_at_ceiling": 81.8,
+          "store_gib_at_ceiling": 76.2
+        }
+      },
+      "base_fp16_gb": 1.136,
+      "base_fp16_gib": 1.06,
+      "batch_size": 32,
+      "fit_bytes_per_adapter": 1593857,
+      "fit_fixed_bytes": 1272785714,
+      "fit_fixed_overhead_gb": 0.137,
+      "fit_max_abs_resid_mb": 0.36,
+      "fit_n_points": 6,
+      "fit_overhead_bytes_per_adapter": 20993,
+      "fit_overhead_pct_per_adapter": 1.33,
+      "gpu_total_gb": 85.1,
+      "gpu_total_gib": 79.3,
+      "lora_rank": 8,
+      "model": "BAAI/bge-m3",
+      "p50_range_ms": [
+        33.9,
+        34.13
+      ],
+      "p50_spread_pct": 0.68,
+      "source": "benchmarks/results/rebuttal_bgem3_alloc/sweep_capacity_bgem3_alloc.csv"
+    }
+  },
   "configs": {
     "bgem3_a100": {
       "at_ceiling_batches_measured": [
@@ -321,11 +407,16 @@
       "at_ceiling_vs_n1000_pct": -0.37,
       "at_ceiling_worst_batch": 128,
       "base_fp16_gb": 1.14,
+      "base_fp16_gib": 1.06,
       "bytes_per_adapter_r8": 1572864,
       "ceiling_n": 47000,
       "ceiling_p50_ms_b32": 39.95,
       "ceiling_peak_mem_gb": 76.2,
+      "ceiling_peak_mem_gib": 71.0,
       "flop_ratio_3d_over_r": 384,
+      "gpu_total_gb": 85.1,
+      "gpu_total_gib": 79.3,
+      "headroom_upper_bound_gib": 8.3,
       "hidden_size": 1024,
       "label": "bge-m3 / A100-80GB (paper)",
       "max_recoverable_flop_pct": 0.26,
@@ -393,7 +484,8 @@
       },
       "spread_pct_worst": 3.31,
       "spread_pct_worst_batch": 128,
-      "store_gb_at_ceiling": 68.8,
+      "store_gb_at_ceiling": 73.9,
+      "store_gib_at_ceiling": 68.8,
       "sweep_batch_sizes": [
         8,
         16,
@@ -431,11 +523,16 @@
       "at_ceiling_vs_n1000_pct": 0.43,
       "at_ceiling_worst_batch": 32,
       "base_fp16_gb": 1.77,
+      "base_fp16_gib": 1.65,
       "bytes_per_adapter_r8": 1179648,
       "ceiling_n": 64000,
       "ceiling_p50_ms_b32": 76.09,
       "ceiling_peak_mem_gb": 79.9,
+      "ceiling_peak_mem_gib": 74.4,
       "flop_ratio_3d_over_r": 576,
+      "gpu_total_gb": 85.1,
+      "gpu_total_gib": 79.3,
+      "headroom_upper_bound_gib": 4.8,
       "hidden_size": 1536,
       "label": "DeBERTa-v2-xlarge / A100-80GB",
       "max_recoverable_flop_pct": 0.17,
@@ -503,7 +600,8 @@
       },
       "spread_pct_worst": 1.16,
       "spread_pct_worst_batch": 8,
-      "store_gb_at_ceiling": 70.3,
+      "store_gb_at_ceiling": 75.5,
+      "store_gib_at_ceiling": 70.3,
       "sweep_batch_sizes": [
         8,
         16,
@@ -541,11 +639,16 @@
       "at_ceiling_vs_n1000_pct": -0.16,
       "at_ceiling_worst_batch": 32,
       "base_fp16_gb": 0.67,
+      "base_fp16_gib": 0.62,
       "bytes_per_adapter_r8": 1572864,
       "ceiling_n": 51000,
       "ceiling_p50_ms_b32": 36.95,
       "ceiling_peak_mem_gb": 82.1,
+      "ceiling_peak_mem_gib": 76.5,
       "flop_ratio_3d_over_r": 384,
+      "gpu_total_gb": 85.1,
+      "gpu_total_gib": 79.3,
+      "headroom_upper_bound_gib": 2.8,
       "hidden_size": 1024,
       "label": "ELECTRA-large / A100-80GB",
       "max_recoverable_flop_pct": 0.26,
@@ -613,7 +716,8 @@
       },
       "spread_pct_worst": 1.36,
       "spread_pct_worst_batch": 8,
-      "store_gb_at_ceiling": 74.7,
+      "store_gb_at_ceiling": 80.2,
+      "store_gib_at_ceiling": 74.7,
       "sweep_batch_sizes": [
         8,
         16,
@@ -658,13 +762,18 @@
       "at_ceiling_vs_n1000_pct": 0.2,
       "at_ceiling_worst_batch": 8,
       "base_fp16_gb": 1.14,
+      "base_fp16_gib": 1.06,
       "bytes_per_adapter_r8": 1572864,
       "ceiling_gain_from_expandable_segments_pct": 3.7,
       "ceiling_n": 28000,
       "ceiling_n_default_alloc": 27000,
       "ceiling_p50_ms_b32": 39.3,
       "ceiling_peak_mem_gb": 45.9,
+      "ceiling_peak_mem_gib": 42.7,
       "flop_ratio_3d_over_r": 384,
+      "gpu_total_gb": 47.7,
+      "gpu_total_gib": 44.4,
+      "headroom_upper_bound_gib": 1.7,
       "hidden_size": 1024,
       "label": "bge-m3 / L40S-48GB",
       "max_recoverable_flop_pct": 0.26,
@@ -732,7 +841,8 @@
       },
       "spread_pct_worst": 1.6,
       "spread_pct_worst_batch": 8,
-      "store_gb_at_ceiling": 41.0,
+      "store_gb_at_ceiling": 44.0,
+      "store_gib_at_ceiling": 41.0,
       "sweep_batch_sizes": [
         8,
         16,
@@ -769,11 +879,16 @@
       "at_ceiling_vs_n1000_pct": -0.38,
       "at_ceiling_worst_batch": 32,
       "base_fp16_gb": 6.96,
+      "base_fp16_gib": 6.49,
       "bytes_per_adapter_r8": 5898240,
       "ceiling_n": 12000,
       "ceiling_p50_ms_b32": 122.17,
       "ceiling_peak_mem_gb": 78.6,
+      "ceiling_peak_mem_gib": 73.2,
       "flop_ratio_3d_over_r": 960,
+      "gpu_total_gb": 85.1,
+      "gpu_total_gib": 79.3,
+      "headroom_upper_bound_gib": 6.1,
       "hidden_size": 2560,
       "label": "XLM-RoBERTa-XL / A100-80GB",
       "max_recoverable_flop_pct": 0.1,
@@ -841,7 +956,8 @@
       },
       "spread_pct_worst": 0.7,
       "spread_pct_worst_batch": 128,
-      "store_gb_at_ceiling": 65.9,
+      "store_gb_at_ceiling": 70.8,
+      "store_gib_at_ceiling": 65.9,
       "sweep_batch_sizes": [
         8,
         16,
@@ -883,7 +999,8 @@
     "peft_vs_ours_add_ratio": 8500,
     "pool_growth_vs_n1000_max": 64,
     "pool_growth_vs_n100_max": 640,
-    "store_gb_at_ceiling": 68.8
+    "store_gb_at_ceiling": 73.9,
+    "store_gib_at_ceiling": 68.8
   },
   "mixed_rank": {
     "bgem3_4_16": {

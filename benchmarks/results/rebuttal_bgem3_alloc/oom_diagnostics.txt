@@ -1,0 +1,9 @@
+# CUDA OOM diagnostics, bge-m3 / A100-80GB capacity probe, 2026-08-03
+# Extracted from sweep_capacity_expseg_*.log (*.log is gitignored).
+# torch 2.11.0+cu128, transformers 4.57.6, A100-SXM4-80GB.
+
+## expandable_segments:False -- first OOM at N=50,000
+GPU 0 has a total capacity of 79.25 GiB of which 960.00 KiB is free. Including non-PyTorch memory, this process has 79.24 GiB memory in use. Of the allocated memory 73.89 GiB is allocated by PyTorch, and 4.87 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  
+
+## expandable_segments:True -- first OOM at N=53,000
+GPU 0 has a total capacity of 79.25 GiB of which 960.00 KiB is free. Including non-PyTorch memory, this process has 79.24 GiB memory in use. Of the allocated memory 78.73 GiB is allocated by PyTorch, and 21.59 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  

@@ -1,0 +1,4 @@
+- where are we mentinoing diff CPUs?
+- do we need the rank table? ref : part_0 Rank-insensitivity (Finding 3): Sweeping $r \in {4,8,16,32}$ leaves p50 flat within 0.73% across all four new configs (measured in our broader sweep data beyond the table’s $r{=}8$).
+- data not given for : * **Validation & Conservatism:** Testing across two host CPUs confirms baseline throughput tracks CPU speed, whereas the GPU assembler reproduces identical high throughput on both. Our paper uses the baseline assembler and is therefore conservative.
+- Also still open from earlier, independent of all this: the Q2 table mixes GiB and GB (make_numbers.py:362 uses /1024**3, peak_gpu_mem_gb uses /1e9), so its rows don't add up — 1.14 + 68.8 ≠ 76.2. Say the word and I'll fix it.

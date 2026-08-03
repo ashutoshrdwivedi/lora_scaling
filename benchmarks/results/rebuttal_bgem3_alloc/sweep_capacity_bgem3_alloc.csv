@@ -1,0 +1,14 @@
+model,dtype,num_adapters,batch_size,lora_rank,seq_len,p50_ms,p90_ms,p95_ms,p99_ms,mean_ms,assemble_p50_ms,assemble_mean_ms,forward_p50_ms,forward_mean_ms,assemble_share_pct,throughput_samples_sec,peak_gpu_mem_gb,adapter_cache_gb,adapter_load_total_s,warmup,iters,seed,engine,target_modules,alloc_conf,status
+BAAI/bge-m3,float16,48000,32,8,128,33.92,34.05,34.14,34.51,35.08,8.171,9.317,25.754,25.759,26.6,912.3,77.778,75.497,23.25,50,200,,custom,query+value,expandable_segments:True,ok
+BAAI/bge-m3,float16,50000,32,8,128,33.98,34.08,34.13,34.47,34.78,8.227,9.027,25.755,25.757,26.0,920.0,80.966,78.643,12.37,50,200,,custom,query+value,expandable_segments:True,ok
+BAAI/bge-m3,float16,52000,32,8,128,33.92,34.01,34.03,34.12,33.92,8.154,8.157,25.767,25.766,24.0,943.3,84.153,81.789,12.66,50,200,,custom,query+value,expandable_segments:True,ok
+BAAI/bge-m3,float16,53000,32,8,128,,,,,,,,,,,,,,,50,200,,custom,query+value,expandable_segments:True,oom
+BAAI/bge-m3,float16,54000,32,8,128,,,,,,,,,,,,,,,50,200,,custom,query+value,expandable_segments:True,oom
+BAAI/bge-m3,float16,46000,32,8,128,34.13,34.34,34.45,34.95,35.26,8.416,9.553,25.708,25.71,27.1,907.5,74.59,72.352,22.94,50,200,,custom,query+value,expandable_segments:False,ok
+BAAI/bge-m3,float16,47000,32,8,128,33.9,34.04,34.11,34.56,34.69,8.249,9.033,25.652,25.657,26.0,922.5,76.184,73.925,11.52,50,200,,custom,query+value,expandable_segments:False,ok
+BAAI/bge-m3,float16,48000,32,8,128,33.92,34.07,34.15,34.63,34.87,8.253,9.198,25.66,25.667,26.4,917.8,77.778,75.497,11.92,50,200,,custom,query+value,expandable_segments:False,ok
+BAAI/bge-m3,float16,49000,32,8,128,33.92,34.0,34.02,34.05,33.92,8.246,8.251,25.667,25.668,24.3,943.4,79.372,77.07,12.1,50,200,,custom,query+value,expandable_segments:False,ok
+BAAI/bge-m3,float16,50000,32,8,128,,,,,,,,,,,,,,,50,200,,custom,query+value,expandable_segments:False,oom
+BAAI/bge-m3,float16,51000,32,8,128,,,,,,,,,,,,,,,50,200,,custom,query+value,expandable_segments:False,oom
+BAAI/bge-m3,float16,52000,32,8,128,,,,,,,,,,,,,,,50,200,,custom,query+value,expandable_segments:False,oom
+BAAI/bge-m3,float16,53000,32,8,128,,,,,,,,,,,,,,,50,200,,custom,query+value,expandable_segments:False,oom
