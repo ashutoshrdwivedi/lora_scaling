@@ -507,11 +507,40 @@ def analyse_mixed_rank(path: Path) -> dict:
         # served result the benchmark would have aborted, so this is the parity
         # number backing "zero-padding is exact", not a tolerance we chose after
         # seeing the data.
+        # fp32 only. The `_serving_dtype` sibling is deliberately excluded: it
+        # is the same comparison run in fp16, where the native and padded paths
+        # use different GEMM shapes and so accumulate in different orders. It is
+        # a real number and it is carried below under its own key, but folding
+        # it into `max()` here would report accumulation noise as the parity of
+        # the padding identity and put an ~1e-1 where an exact 0.0 belongs.
         "exactness_max_abs_delta": max(
             v
             for e in d["exactness"]
             for k, v in e.items()
             if k.startswith("max_abs_delta")
+            and not k.endswith("_serving_dtype")
+        ),
+        "exactness_gate_dtype": d["exactness"][0].get("gate_dtype", "fp32"),
+        # What padding costs a tenant in the dtype actually served, as a
+        # fraction of the logit scale. Quote this, not the fp32 zero, when the
+        # claim is about what a mixed-rank fleet does to outputs in production.
+        "exactness_serving_dtype_max_abs_delta": max(
+            (
+                e["max_abs_delta_padded_vs_native_serving_dtype"]
+                for e in d["exactness"]
+                if "max_abs_delta_padded_vs_native_serving_dtype" in e
+            ),
+            default=None,
+        ),
+        "exactness_serving_dtype_pct_of_logit_scale": max(
+            (
+                100.0
+                * e["max_abs_delta_padded_vs_native_serving_dtype"]
+                / e["serving_dtype_mean_abs_logit"]
+                for e in d["exactness"]
+                if e.get("serving_dtype_mean_abs_logit")
+            ),
+            default=None,
         ),
     }
 

@@ -1,0 +1,2100 @@
+{
+  "gpu": "NVIDIA A100-SXM4-80GB",
+  "env": {
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "cpu": "AMD EPYC 7742 64-Core Processor",
+    "cpu_cores_total": 255,
+    "cpu_cores_usable": 255,
+    "cpu_cgroup_quota": 27.2,
+    "torch_version": "2.11.0+cu128",
+    "cuda_version": "12.8",
+    "captured_at_utc": "2026-08-02T20:06:33.707248+00:00"
+  },
+  "config": {
+    "model": "BAAI/bge-m3",
+    "dtype": "fp16",
+    "adapters": [
+      100,
+      1000,
+      5000,
+      10000
+    ],
+    "batch_size": 32,
+    "rank_mix": [
+      "4,8,16,32"
+    ],
+    "engine": "custom",
+    "assembler": "indexsel",
+    "target_modules": [
+      "query",
+      "value"
+    ],
+    "seq_len": 128,
+    "num_labels": 10,
+    "warmup": 50,
+    "iters": 200,
+    "seeds": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "check_adapters": 64,
+    "out": "benchmarks/results/rebuttal_mixed_rank/mixed_rank_spread.txt"
+  },
+  "seeds": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "mixes": [
+    {
+      "label": "4+8+16+32",
+      "ranks": [
+        4,
+        8,
+        16,
+        32
+      ],
+      "fracs": [
+        0.25,
+        0.25,
+        0.25,
+        0.25
+      ],
+      "r_min": 4,
+      "r_max": 32
+    }
+  ],
+  "exactness": [
+    {
+      "mix": "4+8+16+32",
+      "checked_adapters": 64,
+      "max_abs_delta_padded_vs_native": 0.0,
+      "max_abs_delta_padded_vs_native_serving_dtype": 4.140625,
+      "serving_dtype_mean_abs_logit": 11.625,
+      "gate_dtype": "fp32",
+      "max_abs_delta_layouts": 0.0,
+      "max_abs_delta_vs_shipped_assembler": 0.0,
+      "tolerance": 0.001
+    }
+  ],
+  "oom_cells": [],
+  "aggregated": {
+    "100|uniform_r4": {
+      "total_mean_ms": {
+        "mean": 27.01919896993786,
+        "std": 0.07036735406572017
+      },
+      "total_p50_ms": {
+        "mean": 26.94304222241044,
+        "std": 0.08733064839068891
+      },
+      "total_p99_ms": {
+        "mean": 28.3965195454657,
+        "std": 0.5369280623271626
+      },
+      "p99_over_p50": {
+        "mean": 1.0539865609966754,
+        "std": 0.02168721690181421
+      },
+      "assemble_mean_ms": {
+        "mean": 0.471286803483963,
+        "std": 0.03078881888799082
+      },
+      "forward_mean_ms": {
+        "mean": 26.547912166453898,
+        "std": 0.05119388093792275
+      },
+      "forward_p50_ms": {
+        "mean": 26.47972572594881,
+        "std": 0.06443912426280636
+      },
+      "assemble_share_pct": {
+        "mean": 1.7440543272497535,
+        "std": 0.11019560305552457
+      },
+      "throughput_samples_sec": {
+        "mean": 1184.3510551078393,
+        "std": 3.0811021685093403
+      },
+      "peak_gpu_mem_gb": {
+        "mean": 2.73015808,
+        "std": 0.0
+      },
+      "batches_at_fleet_max_rank_pct": {
+        "mean": 100.0,
+        "std": 0.0
+      },
+      "store_gb": {
+        "mean": 0.0786432,
+        "std": 0.0
+      }
+    },
+    "100|uniform_r32": {
+      "total_mean_ms": {
+        "mean": 27.139404008165002,
+        "std": 0.04565709076462974
+      },
+      "total_p50_ms": {
+        "mean": 27.071001939475536,
+        "std": 0.04526595751463068
+      },
+      "total_p99_ms": {
+        "mean": 27.933770356699824,
+        "std": 0.14668406423030697
+      },
+      "p99_over_p50": {
+        "mean": 1.0318768341567928,
+        "std": 0.00626768364005253
+      },
+      "assemble_mean_ms": {
+        "mean": 0.45703142043203115,
+        "std": 0.009193900558824585
+      },
+      "forward_mean_ms": {
+        "mean": 26.68237258773297,
+        "std": 0.04861783489735269
+      },
+      "forward_p50_ms": {
+        "mean": 26.62514252588153,
+        "std": 0.050516634968270926
+      },
+      "assemble_share_pct": {
+        "mean": 1.6840322870105653,
+        "std": 0.03467471651862483
+      },
+      "throughput_samples_sec": {
+        "mean": 1179.1007158371444,
+        "std": 1.9864062697715996
+      },
+      "peak_gpu_mem_gb": {
+        "mean": 3.540101632,
+        "std": 0.0
+      },
+      "batches_at_fleet_max_rank_pct": {
+        "mean": 100.0,
+        "std": 0.0
+      },
+      "store_gb": {
+        "mean": 0.6291456,
+        "std": 0.0
+      }
+    },
+    "100|mixed_4+8+16+32_padded": {
+      "total_mean_ms": {
+        "mean": 27.178649701178074,
+        "std": 0.06436002270262392
+      },
+      "total_p50_ms": {
+        "mean": 27.08461480215192,
+        "std": 0.04126665584481358
+      },
+      "total_p99_ms": {
+        "mean": 28.4330756329,
+        "std": 0.40068761867556923
+      },
+      "p99_over_p50": {
+        "mean": 1.04979529358503,
+        "std": 0.01530841228981842
+      },
+      "assemble_mean_ms": {
+        "mean": 0.46755269169807434,
+        "std": 0.017732104241525826
+      },
+      "forward_mean_ms": {
+        "mean": 26.71109700948,
+        "std": 0.05718770856709489
+      },
+      "forward_p50_ms": {
+        "mean": 26.628787722438574,
+        "std": 0.044806180561211446
+      },
+      "assemble_share_pct": {
+        "mean": 1.720223543998846,
+        "std": 0.0631646243338725
+      },
+      "throughput_samples_sec": {
+        "mean": 1177.4013712299284,
+        "std": 2.7878576291156887
+      },
+      "peak_gpu_mem_gb": {
+        "mean": 3.540101632,
+        "std": 0.0
+      },
+      "batches_at_fleet_max_rank_pct": {
+        "mean": 100.0,
+        "std": 0.0
+      },
+      "store_gb": {
+        "mean": 0.6291456,
+        "std": 0.0
+      }
+    },
+    "100|mixed_4+8+16+32_native": {
+      "total_mean_ms": {
+        "mean": 28.342002886347473,
+        "std": 0.061294093747892596
+      },
+      "total_p50_ms": {
+        "mean": 28.236168809235096,
+        "std": 0.06303293584335087
+      },
+      "total_p99_ms": {
+        "mean": 30.37375266849994,
+        "std": 0.8846780134276059
+      },
+      "p99_over_p50": {
+        "mean": 1.0757121754177383,
+        "std": 0.03148354587737159
+      },
+      "assemble_mean_ms": {
+        "mean": 1.6937987226992846,
+        "std": 0.02374678529913451
+      },
+      "forward_mean_ms": {
+        "mean": 26.648204163648188,
+        "std": 0.04526252116029565
+      },
+      "forward_p50_ms": {
+        "mean": 26.558750588446856,
+        "std": 0.04657917888192494
+      },
+      "assemble_share_pct": {
+        "mean": 5.9761710819952585,
+        "std": 0.07408727704075256
+      },
+      "throughput_samples_sec": {
+        "mean": 1129.071566107861,
+        "std": 2.4404582943173354
+      },
+      "peak_gpu_mem_gb": {
+        "mean": 3.126257664,
+        "std": 0.0
+      },
+      "batches_at_fleet_max_rank_pct": {
+        "mean": 100.0,
+        "std": 0.0
+      },
+      "store_gb": {
+        "mean": 0.294912,
+        "std": 0.0
+      }
+    },
+    "1000|uniform_r4": {
+      "total_mean_ms": {
+        "mean": 27.255381632596254,
+        "std": 0.07321962439490434
+      },
+      "total_p50_ms": {
+        "mean": 27.146345749497414,
+        "std": 0.04972883666811168
+      },
+      "total_p99_ms": {
+        "mean": 28.56911151483655,
+        "std": 0.4214113721333018
+      },
+      "p99_over_p50": {
+        "mean": 1.0523874839179512,
+        "std": 0.013693698411029416
+      },
+      "assemble_mean_ms": {
+        "mean": 0.495224442332983,
+        "std": 0.02189347805790117
+      },
+      "forward_mean_ms": {
+        "mean": 26.76015719026327,
+        "std": 0.06250800338197121
+      },
+      "forward_p50_ms": {
+        "mean": 26.6674367710948,
+        "std": 0.03421495156232605
+      },
+      "assemble_share_pct": {
+        "mean": 1.8168619612888635,
+        "std": 0.0774105618554667
+      },
+      "throughput_samples_sec": {
+        "mean": 1174.08852162794,
+        "std": 3.151177084311432
+      },
+      "peak_gpu_mem_gb": {
+        "mean": 3.4379468799999997,
+        "std": 4.440892098500626e-16
+      },
+      "batches_at_fleet_max_rank_pct": {
+        "mean": 100.0,
+        "std": 0.0
+      },
+      "store_gb": {
+        "mean": 0.786432,
+        "std": 0.0
+      }
+    },
+    "1000|uniform_r32": {
+      "total_mean_ms": {
+        "mean": 27.382058830931783,
+        "std": 0.09307291393209483
+      },
+      "total_p50_ms": {
+        "mean": 27.2985209710896,
+        "std": 0.08175170456808566
+      },
+      "total_p99_ms": {
+        "mean": 28.32963229715824,
+        "std": 0.46800388968285733
+      },
+      "p99_over_p50": {
+        "mean": 1.0377650162945702,
+        "std": 0.016426471395917703
+      },
+      "assemble_mean_ms": {
+        "mean": 0.47873654309660196,
+        "std": 0.02993781054852832
+      },
+      "forward_mean_ms": {
+        "mean": 26.90332228783518,
+        "std": 0.06858332882558615
+      },
+      "forward_p50_ms": {
+        "mean": 26.832169760018587,
+        "std": 0.06920348026174346
+      },
+      "assemble_share_pct": {
+        "mean": 1.748056477202001,
+        "std": 0.10374573760300587
+      },
+      "throughput_samples_sec": {
+        "mean": 1168.6618729824013,
+        "std": 3.95561106403845
+      },
+      "peak_gpu_mem_gb": {
+        "mean": 9.202412032,
+        "std": 0.0
+      },
+      "batches_at_fleet_max_rank_pct": {
+        "mean": 100.0,
+        "std": 0.0
+      },
+      "store_gb": {
+        "mean": 6.291456,
+        "std": 0.0
+      }
+    },
+    "1000|mixed_4+8+16+32_padded": {
+      "total_mean_ms": {
+        "mean": 27.44007294252515,
+        "std": 0.06893028053166977
+      },
+      "total_p50_ms": {
+        "mean": 27.29510609060526,
+        "std": 0.04345157530246746
+      },
+      "total_p99_ms": {
+        "mean": 29.07104619778692,
+        "std": 0.6038053732797034
+      },
+      "p99_over_p50": {
+        "mean": 1.0650526634906177,
+        "std": 0.02149613983420863
+      },
+      "assemble_mean_ms": {
+        "mean": 0.49081897363066673,
+        "std": 0.021341263437603394
+      },
+      "forward_mean_ms": {
+        "mean": 26.94925396889448,
+        "std": 0.08472057350973462
+      },
+      "forward_p50_ms": {
+        "mean": 26.835309900343418,
+        "std": 0.04429580577620596
+      },
+      "assemble_share_pct": {
+        "mean": 1.7888359645530794,
+        "std": 0.08084438346779844
+      },
+      "throughput_samples_sec": {
+        "mean": 1166.1850022503284,
+        "std": 2.9236307340074785
+      },
+      "peak_gpu_mem_gb": {
+        "mean": 9.202412032,
+        "std": 0.0
+      },
+      "batches_at_fleet_max_rank_pct": {
+        "mean": 100.0,
+        "std": 0.0
+      },
+      "store_gb": {
+        "mean": 6.291456,
+        "std": 0.0
+      }
+    },
+    "1000|mixed_4+8+16+32_native": {
+      "total_mean_ms": {
+        "mean": 28.4976524701342,
+        "std": 0.04338566183703438
+      },
+      "total_p50_ms": {
+        "mean": 28.419332951307297,
+        "std": 0.03954547596983739
+      },
+      "total_p99_ms": {
+        "mean": 30.01509270258247,
+        "std": 0.7394344317365046
+      },
+      "p99_over_p50": {
+        "mean": 1.0561568707944324,
+        "std": 0.026268095045640965
+      },
+      "assemble_mean_ms": {
+        "mean": 1.696220044977963,
+        "std": 0.021624186947547884
+      },
+      "forward_mean_ms": {
+        "mean": 26.801432425156236,
+        "std": 0.026701245070601138
+      },
+      "forward_p50_ms": {
+        "mean": 26.728056464344263,
+        "std": 0.017717800393386336
+      },
+      "assemble_share_pct": {
+        "mean": 5.952052460475583,
+        "std": 0.06819965343442089
+      },
+      "throughput_samples_sec": {
+        "mean": 1122.9021143397356,
+        "std": 1.710531615372743
+      },
+      "peak_gpu_mem_gb": {
+        "mean": 5.780465664,
+        "std": 0.0
+      },
+      "batches_at_fleet_max_rank_pct": {
+        "mean": 100.0,
+        "std": 0.0
+      },
+      "store_gb": {
+        "mean": 2.94912,
+        "std": 0.0
+      }
+    },
+    "5000|uniform_r4": {
+      "total_mean_ms": {
+        "mean": 27.14379304088652,
+        "std": 0.03206205363960968
+      },
+      "total_p50_ms": {
+        "mean": 27.086737751960754,
+        "std": 0.013612617292045659
+      },
+      "total_p99_ms": {
+        "mean": 28.058285642415285,
+        "std": 0.24860883271408407
+      },
+      "p99_over_p50": {
+        "mean": 1.0358691511161335,
+        "std": 0.009291968879865619
+      },
+      "assemble_mean_ms": {
+        "mean": 0.4851799104362726,
+        "std": 0.013220972171434349
+      },
+      "forward_mean_ms": {
+        "mean": 26.65861313045025,
+        "std": 0.021693936905987025
+      },
+      "forward_p50_ms": {
+        "mean": 26.626984030008316,
+        "std": 0.009088778400890715
+      },
+      "assemble_share_pct": {
+        "mean": 1.787396140105508,
+        "std": 0.04689274775490564
+      },
+      "throughput_samples_sec": {
+        "mean": 1178.9083623617657,
+        "std": 1.391119310174044
+      },
+      "peak_gpu_mem_gb": {
+        "mean": 6.583674880000001,
+        "std": 8.881784197001252e-16
+      },
+      "batches_at_fleet_max_rank_pct": {
+        "mean": 100.0,
+        "std": 0.0
+      },
+      "store_gb": {
+        "mean": 3.9321600000000005,
+        "std": 4.440892098500626e-16
+      }
+    },
+    "5000|uniform_r32": {
+      "total_mean_ms": {
+        "mean": 27.263771438971162,
+        "std": 0.008298778244531391
+      },
+      "total_p50_ms": {
+        "mean": 27.184169180691242,
+        "std": 0.008069561139819513
+      },
+      "total_p99_ms": {
+        "mean": 28.129507042467594,
+        "std": 0.2829977272465788
+      },
+      "p99_over_p50": {
+        "mean": 1.0347749844133047,
+        "std": 0.010375361515903056
+      },
+      "assemble_mean_ms": {
+        "mean": 0.4774219924584031,
+        "std": 0.014818406920237214
+      },
+      "forward_mean_ms": {
+        "mean": 26.78634944651276,
+        "std": 0.01036261951327875
+      },
+      "forward_p50_ms": {
+        "mean": 26.71814365312457,
+        "std": 0.0071080748835563165
+      },
+      "assemble_share_pct": {
+        "mean": 1.7511103225739215,
+        "std": 0.05395659579969297
+      },
+      "throughput_samples_sec": {
+        "mean": 1173.7188685216333,
+        "std": 0.3572793070743966
+      },
+      "peak_gpu_mem_gb": {
+        "mean": 34.368236032,
+        "std": 0.0
+      },
+      "batches_at_fleet_max_rank_pct": {
+        "mean": 100.0,
+        "std": 0.0
+      },
+      "store_gb": {
+        "mean": 31.457280000000004,
+        "std": 3.552713678800501e-15
+      }
+    },
+    "5000|mixed_4+8+16+32_padded": {
+      "total_mean_ms": {
+        "mean": 27.321324456483126,
+        "std": 0.03833216475533824
+      },
+      "total_p50_ms": {
+        "mean": 27.220147754997015,
+        "std": 0.03538525926333292
+      },
+      "total_p99_ms": {
+        "mean": 28.746298944577568,
+        "std": 0.568447127972008
+      },
+      "p99_over_p50": {
+        "mean": 1.0560773258490723,
+        "std": 0.021367194372887106
+      },
+      "assemble_mean_ms": {
+        "mean": 0.5029597692191601,
+        "std": 0.01654083340082728
+      },
+      "forward_mean_ms": {
+        "mean": 26.818364687263966,
+        "std": 0.03269038680861096
+      },
+      "forward_p50_ms": {
+        "mean": 26.73408705741167,
+        "std": 0.018770624055231822
+      },
+      "assemble_share_pct": {
+        "mean": 1.840863953793369,
+        "std": 0.059172060317939895
+      },
+      "throughput_samples_sec": {
+        "mean": 1171.248600585402,
+        "std": 1.6444624768467053
+      },
+      "peak_gpu_mem_gb": {
+        "mean": 34.368236032,
+        "std": 0.0
+      },
+      "batches_at_fleet_max_rank_pct": {
+        "mean": 100.0,
+        "std": 0.0
+      },
+      "store_gb": {
+        "mean": 31.457280000000004,
+        "std": 3.552713678800501e-15
+      }
+    },
+    "5000|mixed_4+8+16+32_native": {
+      "total_mean_ms": {
+        "mean": 28.495606683194637,
+        "std": 0.0248885035080965
+      },
+      "total_p50_ms": {
+        "mean": 28.44832669943571,
+        "std": 0.03345416493820314
+      },
+      "total_p99_ms": {
+        "mean": 29.368173660710454,
+        "std": 0.2675270647553502
+      },
+      "p99_over_p50": {
+        "mean": 1.032341201517365,
+        "std": 0.010102027835876284
+      },
+      "assemble_mean_ms": {
+        "mean": 1.7190560633316636,
+        "std": 0.018363780789318263
+      },
+      "forward_mean_ms": {
+        "mean": 26.776550619862974,
+        "std": 0.027596393749280242
+      },
+      "forward_p50_ms": {
+        "mean": 26.73786412924528,
+        "std": 0.03926766216886457
+      },
+      "assemble_share_pct": {
+        "mean": 6.032698186575092,
+        "std": 0.06354753153642724
+      },
+      "throughput_samples_sec": {
+        "mean": 1122.9809834673554,
+        "std": 0.9810794541616374
+      },
+      "peak_gpu_mem_gb": {
+        "mean": 17.576945664,
+        "std": 0.0
+      },
+      "batches_at_fleet_max_rank_pct": {
+        "mean": 100.0,
+        "std": 0.0
+      },
+      "store_gb": {
+        "mean": 14.7456,
+        "std": 0.0
+      }
+    },
+    "10000|uniform_r4": {
+      "total_mean_ms": {
+        "mean": 27.155157601460814,
+        "std": 0.03637301640998801
+      },
+      "total_p50_ms": {
+        "mean": 27.110211737453938,
+        "std": 0.04386806860545972
+      },
+      "total_p99_ms": {
+        "mean": 27.971154214814305,
+        "std": 0.34295090020367175
+      },
+      "p99_over_p50": {
+        "mean": 1.0317687015893735,
+        "std": 0.013459190453875865
+      },
+      "assemble_mean_ms": {
+        "mean": 0.4712679060176015,
+        "std": 0.007349341490295696
+      },
+      "forward_mean_ms": {
+        "mean": 26.683889695443213,
+        "std": 0.03939490848405439
+      },
+      "forward_p50_ms": {
+        "mean": 26.646943483501673,
+        "std": 0.05434076119678346
+      },
+      "assemble_share_pct": {
+        "mean": 1.735478721767826,
+        "std": 0.02794020295089174
+      },
+      "throughput_samples_sec": {
+        "mean": 1178.4154556472213,
+        "std": 1.5785915324458943
+      },
+      "peak_gpu_mem_gb": {
+        "mean": 10.51583488,
+        "std": 0.0
+      },
+      "batches_at_fleet_max_rank_pct": {
+        "mean": 100.0,
+        "std": 0.0
+      },
+      "store_gb": {
+        "mean": 7.864320000000001,
+        "std": 8.881784197001252e-16
+      }
+    },
+    "10000|uniform_r32": {
+      "total_mean_ms": {
+        "mean": 27.24555602762848,
+        "std": 0.045048517643547406
+      },
+      "total_p50_ms": {
+        "mean": 27.16312510892749,
+        "std": 0.015225148096131978
+      },
+      "total_p99_ms": {
+        "mean": 28.67606996372342,
+        "std": 1.472270125463529
+      },
+      "p99_over_p50": {
+        "mean": 1.0556817677371013,
+        "std": 0.053841654338722324
+      },
+      "assemble_mean_ms": {
+        "mean": 0.47718407213687897,
+        "std": 0.014370128408068554
+      },
+      "forward_mean_ms": {
+        "mean": 26.768371955491602,
+        "std": 0.036336486495065254
+      },
+      "forward_p50_ms": {
+        "mean": 26.700754463672638,
+        "std": 0.013185005456970175
+      },
+      "assemble_share_pct": {
+        "mean": 1.7513630544328194,
+        "std": 0.05072704787292287
+      },
+      "throughput_samples_sec": {
+        "mean": 1174.506670076624,
+        "std": 1.9375647724657998
+      },
+      "peak_gpu_mem_gb": {
+        "mean": 65.825516032,
+        "std": 0.0
+      },
+      "batches_at_fleet_max_rank_pct": {
+        "mean": 100.0,
+        "std": 0.0
+      },
+      "store_gb": {
+        "mean": 62.91456000000001,
+        "std": 7.105427357601002e-15
+      }
+    },
+    "10000|mixed_4+8+16+32_padded": {
+      "total_mean_ms": {
+        "mean": 27.261710920371115,
+        "std": 0.0633752018906297
+      },
+      "total_p50_ms": {
+        "mean": 27.182295452803373,
+        "std": 0.024752158734777242
+      },
+      "total_p99_ms": {
+        "mean": 28.439314296469085,
+        "std": 0.6300594266630728
+      },
+      "p99_over_p50": {
+        "mean": 1.046225832890641,
+        "std": 0.022328656677205138
+      },
+      "assemble_mean_ms": {
+        "mean": 0.4992701718583703,
+        "std": 0.026606070487942307
+      },
+      "forward_mean_ms": {
+        "mean": 26.762440748512745,
+        "std": 0.03816505573211158
+      },
+      "forward_p50_ms": {
+        "mean": 26.703977677971125,
+        "std": 0.011769771479078468
+      },
+      "assemble_share_pct": {
+        "mean": 1.8311869566522603,
+        "std": 0.0935374065862045
+      },
+      "throughput_samples_sec": {
+        "mean": 1173.81382070121,
+        "std": 2.7306337777294742
+      },
+      "peak_gpu_mem_gb": {
+        "mean": 65.825516032,
+        "std": 0.0
+      },
+      "batches_at_fleet_max_rank_pct": {
+        "mean": 100.0,
+        "std": 0.0
+      },
+      "store_gb": {
+        "mean": 62.91456000000001,
+        "std": 7.105427357601002e-15
+      }
+    },
+    "10000|mixed_4+8+16+32_native": {
+      "total_mean_ms": {
+        "mean": 28.392051222734153,
+        "std": 0.06419418803660851
+      },
+      "total_p50_ms": {
+        "mean": 28.337483294308186,
+        "std": 0.043611837030470196
+      },
+      "total_p99_ms": {
+        "mean": 29.406964449211955,
+        "std": 0.5955424784990371
+      },
+      "p99_over_p50": {
+        "mean": 1.0377142452683121,
+        "std": 0.019578455611965122
+      },
+      "assemble_mean_ms": {
+        "mean": 1.7271060179919004,
+        "std": 0.049934602022311717
+      },
+      "forward_mean_ms": {
+        "mean": 26.664945204742253,
+        "std": 0.02035407353038972
+      },
+      "forward_p50_ms": {
+        "mean": 26.58814564347267,
+        "std": 0.03134005654631299
+      },
+      "assemble_share_pct": {
+        "mean": 6.082708526733949,
+        "std": 0.16250135652988276
+      },
+      "throughput_samples_sec": {
+        "mean": 1127.0817758586302,
+        "std": 2.5471569202340634
+      },
+      "peak_gpu_mem_gb": {
+        "mean": 32.322545664,
+        "std": 0.0
+      },
+      "batches_at_fleet_max_rank_pct": {
+        "mean": 100.0,
+        "std": 0.0
+      },
+      "store_gb": {
+        "mean": 29.4912,
+        "std": 0.0
+      }
+    }
+  },
+  "derived": {
+    "100|4+8+16+32": {
+      "uniform_rank_delta_pct": 0.4448874978154741,
+      "padded_padding_tax_vs_rmin_pct": 0.5901386322282212,
+      "padded_padding_tax_forward_pct": 0.6146805142451199,
+      "padded_overhead_vs_rmax_pct": 0.14460779242338845,
+      "padded_store_gb": 0.6291456,
+      "padded_batches_at_fleet_max_pct": 100.0,
+      "native_padding_tax_vs_rmin_pct": 4.895792498813128,
+      "native_padding_tax_forward_pct": 0.3777773429619062,
+      "native_overhead_vs_rmax_pct": 4.431191185409466,
+      "native_store_gb": 0.294912,
+      "native_batches_at_fleet_max_pct": 100.0,
+      "native_store_vs_padded": 0.46875000000000006
+    },
+    "1000|4+8+16+32": {
+      "uniform_rank_delta_pct": 0.46477866295597176,
+      "padded_padding_tax_vs_rmin_pct": 0.677632448587736,
+      "padded_padding_tax_forward_pct": 0.7066355301530647,
+      "padded_overhead_vs_rmax_pct": 0.2118690634315298,
+      "padded_store_gb": 6.291456,
+      "padded_batches_at_fleet_max_pct": 100.0,
+      "native_padding_tax_vs_rmin_pct": 4.557891921249938,
+      "native_padding_tax_forward_pct": 0.15424137683310182,
+      "native_overhead_vs_rmax_pct": 4.074177351274259,
+      "native_store_gb": 2.94912,
+      "native_batches_at_fleet_max_pct": 100.0,
+      "native_store_vs_padded": 0.46875
+    },
+    "5000|4+8+16+32": {
+      "uniform_rank_delta_pct": 0.44201043643354415,
+      "padded_padding_tax_vs_rmin_pct": 0.6540405584775493,
+      "padded_padding_tax_forward_pct": 0.5992493159039994,
+      "padded_overhead_vs_rmax_pct": 0.21109705104737223,
+      "padded_store_gb": 31.457280000000004,
+      "padded_batches_at_fleet_max_pct": 100.0,
+      "native_padding_tax_vs_rmin_pct": 4.980194331248724,
+      "native_padding_tax_forward_pct": 0.4423991932198953,
+      "native_overhead_vs_rmax_pct": 4.5182129221589475,
+      "native_store_gb": 14.7456,
+      "native_batches_at_fleet_max_pct": 100.0,
+      "native_store_vs_padded": 0.46874999999999994
+    },
+    "10000|4+8+16+32": {
+      "uniform_rank_delta_pct": 0.33289597318633835,
+      "padded_padding_tax_vs_rmin_pct": 0.3923870392288524,
+      "padded_padding_tax_forward_pct": 0.29437632206576697,
+      "padded_overhead_vs_rmax_pct": 0.059293679770205006,
+      "padded_store_gb": 62.91456000000001,
+      "padded_batches_at_fleet_max_pct": 100.0,
+      "native_padding_tax_vs_rmin_pct": 4.554912327987373,
+      "native_padding_tax_forward_pct": -0.07099598640671677,
+      "native_overhead_vs_rmax_pct": 4.208008065399961,
+      "native_store_gb": 29.4912,
+      "native_batches_at_fleet_max_pct": 100.0,
+      "native_store_vs_padded": 0.46874999999999994
+    }
+  },
+  "per_seed": {
+    "100|uniform_r4": [
+      {
+        "total_mean_ms": 26.923588500358164,
+        "total_p50_ms": 26.835921220481396,
+        "total_p99_ms": 28.509955275803794,
+        "p99_over_p50": 1.0623803461624697,
+        "assemble_mean_ms": 0.45734476763755083,
+        "forward_mean_ms": 26.466243732720613,
+        "forward_p50_ms": 26.396953966468573,
+        "assemble_share_pct": 1.6986768596298625,
+        "throughput_samples_sec": 1188.548844429646,
+        "peak_gpu_mem_gb": 2.73015808,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.0786432
+      },
+      {
+        "total_mean_ms": 27.00374289881438,
+        "total_p50_ms": 26.884317863732576,
+        "total_p99_ms": 29.25409805029629,
+        "p99_over_p50": 1.0881473057481064,
+        "assemble_mean_ms": 0.45403086114674807,
+        "forward_mean_ms": 26.549712037667632,
+        "forward_p50_ms": 26.435646694153547,
+        "assemble_share_pct": 1.6813627016374928,
+        "throughput_samples_sec": 1185.0209106162458,
+        "peak_gpu_mem_gb": 2.73015808,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.0786432
+      },
+      {
+        "total_mean_ms": 26.988419624976814,
+        "total_p50_ms": 26.906740851700306,
+        "total_p99_ms": 28.166707204654813,
+        "p99_over_p50": 1.0468271634940465,
+        "assemble_mean_ms": 0.46722909435629845,
+        "forward_mean_ms": 26.521190530620515,
+        "forward_p50_ms": 26.45842032507062,
+        "assemble_share_pct": 1.7312206525938802,
+        "throughput_samples_sec": 1185.6937325216757,
+        "peak_gpu_mem_gb": 2.73015808,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.0786432
+      },
+      {
+        "total_mean_ms": 27.043377528898418,
+        "total_p50_ms": 27.01709419488907,
+        "total_p99_ms": 27.598340343683958,
+        "p99_over_p50": 1.0215140142238113,
+        "assemble_mean_ms": 0.44643134344369173,
+        "forward_mean_ms": 26.596946185454726,
+        "forward_p50_ms": 26.570217683911324,
+        "assemble_share_pct": 1.650797290266859,
+        "throughput_samples_sec": 1183.2841502805986,
+        "peak_gpu_mem_gb": 2.73015808,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.0786432
+      },
+      {
+        "total_mean_ms": 27.13686629664153,
+        "total_p50_ms": 27.071136981248856,
+        "total_p99_ms": 28.453496852889657,
+        "p99_over_p50": 1.0510639753549438,
+        "assemble_mean_ms": 0.531397950835526,
+        "forward_mean_ms": 26.605468345806003,
+        "forward_p50_ms": 26.53738996013999,
+        "assemble_share_pct": 1.9582141321206719,
+        "throughput_samples_sec": 1179.2076376910304,
+        "peak_gpu_mem_gb": 2.73015808,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.0786432
+      }
+    ],
+    "100|uniform_r32": [
+      {
+        "total_mean_ms": 27.056721476837993,
+        "total_p50_ms": 26.983611285686493,
+        "total_p99_ms": 28.011323502287265,
+        "p99_over_p50": 1.0380865335525318,
+        "assemble_mean_ms": 0.467795068398118,
+        "forward_mean_ms": 26.588926408439875,
+        "forward_p50_ms": 26.525167748332024,
+        "assemble_share_pct": 1.72894217356887,
+        "throughput_samples_sec": 1182.700573215928,
+        "peak_gpu_mem_gb": 3.540101632,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.6291456
+      },
+      {
+        "total_mean_ms": 27.133884178474545,
+        "total_p50_ms": 27.077414095401764,
+        "total_p99_ms": 27.820961279794574,
+        "p99_over_p50": 1.0274600514573908,
+        "assemble_mean_ms": 0.4416196560487151,
+        "forward_mean_ms": 26.69226452242583,
+        "forward_p50_ms": 26.640014722943306,
+        "assemble_share_pct": 1.6275578282266507,
+        "throughput_samples_sec": 1179.3372371429878,
+        "peak_gpu_mem_gb": 3.540101632,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.6291456
+      },
+      {
+        "total_mean_ms": 27.150978851132095,
+        "total_p50_ms": 27.08208281546831,
+        "total_p99_ms": 28.188100522384048,
+        "p99_over_p50": 1.0408394625499047,
+        "assemble_mean_ms": 0.45827193185687065,
+        "forward_mean_ms": 26.692706919275224,
+        "forward_p50_ms": 26.644714176654816,
+        "assemble_share_pct": 1.6878652308248636,
+        "throughput_samples_sec": 1178.594708332798,
+        "peak_gpu_mem_gb": 3.540101632,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.6291456
+      },
+      {
+        "total_mean_ms": 27.162127466872334,
+        "total_p50_ms": 27.10671490058303,
+        "total_p99_ms": 27.83318036235869,
+        "p99_over_p50": 1.02680020299177,
+        "assemble_mean_ms": 0.4531712457537651,
+        "forward_mean_ms": 26.70895622111857,
+        "forward_p50_ms": 26.660487987101078,
+        "assemble_share_pct": 1.6683937821382548,
+        "throughput_samples_sec": 1178.1109575834244,
+        "peak_gpu_mem_gb": 3.540101632,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.6291456
+      },
+      {
+        "total_mean_ms": 27.193308067508042,
+        "total_p50_ms": 27.105186600238085,
+        "total_p99_ms": 27.815286116674542,
+        "p99_over_p50": 1.026197920232367,
+        "assemble_mean_ms": 0.4642992001026869,
+        "forward_mean_ms": 26.729008867405355,
+        "forward_p50_ms": 26.65532799437642,
+        "assemble_share_pct": 1.7074024202941875,
+        "throughput_samples_sec": 1176.760102910585,
+        "peak_gpu_mem_gb": 3.540101632,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.6291456
+      }
+    ],
+    "100|mixed_4+8+16+32_padded": [
+      {
+        "total_mean_ms": 27.105024182237685,
+        "total_p50_ms": 27.013452723622322,
+        "total_p99_ms": 28.95506044849753,
+        "p99_over_p50": 1.0718755852774546,
+        "assemble_mean_ms": 0.4765265854075551,
+        "forward_mean_ms": 26.62849759683013,
+        "forward_p50_ms": 26.542164385318756,
+        "assemble_share_pct": 1.758074747337174,
+        "throughput_samples_sec": 1180.5929330610988,
+        "peak_gpu_mem_gb": 3.540101632,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.6291456
+      },
+      {
+        "total_mean_ms": 27.107097003608942,
+        "total_p50_ms": 27.071908582001925,
+        "total_p99_ms": 27.724902676418424,
+        "p99_over_p50": 1.0241207261925607,
+        "assemble_mean_ms": 0.44545984361320734,
+        "forward_mean_ms": 26.661637159995735,
+        "forward_p50_ms": 26.629785541445017,
+        "assemble_share_pct": 1.643332901173078,
+        "throughput_samples_sec": 1180.5026556602365,
+        "peak_gpu_mem_gb": 3.540101632,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.6291456
+      },
+      {
+        "total_mean_ms": 27.221449534408748,
+        "total_p50_ms": 27.094606310129166,
+        "total_p99_ms": 28.39772398583591,
+        "p99_over_p50": 1.0480950954146022,
+        "assemble_mean_ms": 0.4550687409937382,
+        "forward_mean_ms": 26.76638079341501,
+        "forward_p50_ms": 26.64960827678442,
+        "assemble_share_pct": 1.671728540460409,
+        "throughput_samples_sec": 1175.5435712396952,
+        "peak_gpu_mem_gb": 3.540101632,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.6291456
+      },
+      {
+        "total_mean_ms": 27.190481144934893,
+        "total_p50_ms": 27.106379624456167,
+        "total_p99_ms": 28.58248538337648,
+        "p99_over_p50": 1.0544560276721178,
+        "assemble_mean_ms": 0.4642310319468379,
+        "forward_mean_ms": 26.726250112988055,
+        "forward_p50_ms": 26.661320123821497,
+        "assemble_share_pct": 1.707329228461689,
+        "throughput_samples_sec": 1176.8824475531958,
+        "peak_gpu_mem_gb": 3.540101632,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.6291456
+      },
+      {
+        "total_mean_ms": 27.269196640700102,
+        "total_p50_ms": 27.136726770550013,
+        "total_p99_ms": 28.505205670371637,
+        "p99_over_p50": 1.050429033368415,
+        "assemble_mean_ms": 0.4964772565290332,
+        "forward_mean_ms": 26.77271938417107,
+        "forward_p50_ms": 26.66106028482318,
+        "assemble_share_pct": 1.8206523025618797,
+        "throughput_samples_sec": 1173.4852486354157,
+        "peak_gpu_mem_gb": 3.540101632,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.6291456
+      }
+    ],
+    "100|mixed_4+8+16+32_native": [
+      {
+        "total_mean_ms": 28.292165426537395,
+        "total_p50_ms": 28.127153869718313,
+        "total_p99_ms": 30.45999393798408,
+        "p99_over_p50": 1.082939073006505,
+        "assemble_mean_ms": 1.6926276125013828,
+        "forward_mean_ms": 26.59953781403601,
+        "forward_p50_ms": 26.46695589646697,
+        "assemble_share_pct": 5.982672541967174,
+        "throughput_samples_sec": 1131.055170841916,
+        "peak_gpu_mem_gb": 3.126257664,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.294912
+      },
+      {
+        "total_mean_ms": 28.267336152493954,
+        "total_p50_ms": 28.211173601448536,
+        "total_p99_ms": 29.625179804861546,
+        "p99_over_p50": 1.050122204180134,
+        "assemble_mean_ms": 1.659666784107685,
+        "forward_mean_ms": 26.60766936838627,
+        "forward_p50_ms": 26.567446999251842,
+        "assemble_share_pct": 5.871323619439312,
+        "throughput_samples_sec": 1132.048659533018,
+        "peak_gpu_mem_gb": 3.126257664,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.294912
+      },
+      {
+        "total_mean_ms": 28.43115453608334,
+        "total_p50_ms": 28.283535968512297,
+        "total_p99_ms": 31.416772091761228,
+        "p99_over_p50": 1.1107795053184695,
+        "assemble_mean_ms": 1.7334758583456278,
+        "forward_mean_ms": 26.697678677737713,
+        "forward_p50_ms": 26.58155420795083,
+        "assemble_share_pct": 6.097099771821051,
+        "throughput_samples_sec": 1125.5258719580756,
+        "peak_gpu_mem_gb": 3.126257664,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.294912
+      },
+      {
+        "total_mean_ms": 28.392489356920123,
+        "total_p50_ms": 28.25341746211052,
+        "total_p99_ms": 31.228666119277477,
+        "p99_over_p50": 1.1053057974723568,
+        "assemble_mean_ms": 1.6857232619076967,
+        "forward_mean_ms": 26.706766095012426,
+        "forward_p50_ms": 26.59095684066415,
+        "assemble_share_pct": 5.937215440029157,
+        "throughput_samples_sec": 1127.0586244738915,
+        "peak_gpu_mem_gb": 3.126257664,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.294912
+      },
+      {
+        "total_mean_ms": 28.32686895970255,
+        "total_p50_ms": 28.305563144385815,
+        "total_p99_ms": 29.13815138861537,
+        "p99_over_p50": 1.0294142971112268,
+        "assemble_mean_ms": 1.6975000966340303,
+        "forward_mean_ms": 26.62936886306852,
+        "forward_p50_ms": 26.586838997900486,
+        "assemble_share_pct": 5.992544036719599,
+        "throughput_samples_sec": 1129.6695037324032,
+        "peak_gpu_mem_gb": 3.126257664,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.294912
+      }
+    ],
+    "1000|uniform_r4": [
+      {
+        "total_mean_ms": 27.169747217558324,
+        "total_p50_ms": 27.080880478024483,
+        "total_p99_ms": 28.1272523291409,
+        "p99_over_p50": 1.0386387677448496,
+        "assemble_mean_ms": 0.5072112753987312,
+        "forward_mean_ms": 26.662535942159593,
+        "forward_p50_ms": 26.60996839404106,
+        "assemble_share_pct": 1.8668236820066852,
+        "throughput_samples_sec": 1177.7805565787578,
+        "peak_gpu_mem_gb": 3.43794688,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.786432
+      },
+      {
+        "total_mean_ms": 27.187216910533607,
+        "total_p50_ms": 27.103378903120756,
+        "total_p99_ms": 28.274895874783393,
+        "p99_over_p50": 1.0432240192578994,
+        "assemble_mean_ms": 0.4661223292350769,
+        "forward_mean_ms": 26.72109458129853,
+        "forward_p50_ms": 26.651997584849596,
+        "assemble_share_pct": 1.7144907872290496,
+        "throughput_samples_sec": 1177.0237499963334,
+        "peak_gpu_mem_gb": 3.43794688,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.786432
+      },
+      {
+        "total_mean_ms": 27.372009782120585,
+        "total_p50_ms": 27.215996757149696,
+        "total_p99_ms": 29.256486659869548,
+        "p99_over_p50": 1.0749739177634128,
+        "assemble_mean_ms": 0.5299860378727317,
+        "forward_mean_ms": 26.842023744247854,
+        "forward_p50_ms": 26.70744713395834,
+        "assemble_share_pct": 1.936233554245326,
+        "throughput_samples_sec": 1169.0774720131226,
+        "peak_gpu_mem_gb": 3.43794688,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.786432
+      },
+      {
+        "total_mean_ms": 27.29029070120305,
+        "total_p50_ms": 27.183480095118284,
+        "total_p99_ms": 28.850818034261458,
+        "p99_over_p50": 1.0613364415927966,
+        "assemble_mean_ms": 0.49098058603703976,
+        "forward_mean_ms": 26.79931011516601,
+        "forward_p50_ms": 26.69311547651887,
+        "assemble_share_pct": 1.7991035398365898,
+        "throughput_samples_sec": 1172.5782019093454,
+        "peak_gpu_mem_gb": 3.43794688,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.786432
+      },
+      {
+        "total_mean_ms": 27.257643551565707,
+        "total_p50_ms": 27.14799251407385,
+        "total_p99_ms": 28.336104676127427,
+        "p99_over_p50": 1.0437642732307977,
+        "assemble_mean_ms": 0.4818219831213355,
+        "forward_mean_ms": 26.77582156844437,
+        "forward_p50_ms": 26.67465526610613,
+        "assemble_share_pct": 1.7676582431266665,
+        "throughput_samples_sec": 1173.982627642142,
+        "peak_gpu_mem_gb": 3.43794688,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 0.786432
+      }
+    ],
+    "1000|uniform_r32": [
+      {
+        "total_mean_ms": 27.309715067967772,
+        "total_p50_ms": 27.240343391895294,
+        "total_p99_ms": 28.03335785865783,
+        "p99_over_p50": 1.0291117646849663,
+        "assemble_mean_ms": 0.46552125830203295,
+        "forward_mean_ms": 26.84419380966574,
+        "forward_p50_ms": 26.78701374679804,
+        "assemble_share_pct": 1.704599469981487,
+        "throughput_samples_sec": 1171.7441914117067,
+        "peak_gpu_mem_gb": 9.202412032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 6.291456
+      },
+      {
+        "total_mean_ms": 27.365908012725413,
+        "total_p50_ms": 27.322617825120687,
+        "total_p99_ms": 27.907083006575704,
+        "p99_over_p50": 1.021391258524198,
+        "assemble_mean_ms": 0.47040405217558146,
+        "forward_mean_ms": 26.89550396054983,
+        "forward_p50_ms": 26.83713799342513,
+        "assemble_share_pct": 1.7189418745281135,
+        "throughput_samples_sec": 1169.3381409131277,
+        "peak_gpu_mem_gb": 9.202412032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 6.291456
+      },
+      {
+        "total_mean_ms": 27.309786439873278,
+        "total_p50_ms": 27.196675073355436,
+        "total_p99_ms": 28.758521396666765,
+        "p99_over_p50": 1.057427840686359,
+        "assemble_mean_ms": 0.47515819780528545,
+        "forward_mean_ms": 26.834628242067993,
+        "forward_p50_ms": 26.744321919977665,
+        "assemble_share_pct": 1.7398825100716908,
+        "throughput_samples_sec": 1171.7411291535711,
+        "peak_gpu_mem_gb": 9.202412032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 6.291456
+      },
+      {
+        "total_mean_ms": 27.363265557214618,
+        "total_p50_ms": 27.296338696032763,
+        "total_p99_ms": 27.92558465152979,
+        "p99_over_p50": 1.023052394040981,
+        "assemble_mean_ms": 0.4470908781513572,
+        "forward_mean_ms": 26.91617467906326,
+        "forward_p50_ms": 26.841561309993267,
+        "assemble_share_pct": 1.6339090713296713,
+        "throughput_samples_sec": 1169.4510632545046,
+        "peak_gpu_mem_gb": 9.202412032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 6.291456
+      },
+      {
+        "total_mean_ms": 27.561619076877832,
+        "total_p50_ms": 27.436629869043827,
+        "total_p99_ms": 29.02361457236111,
+        "p99_over_p50": 1.0578418235363465,
+        "assemble_mean_ms": 0.5355083290487528,
+        "forward_mean_ms": 27.02611074782908,
+        "forward_p50_ms": 26.950813829898834,
+        "assemble_share_pct": 1.9429494600990433,
+        "throughput_samples_sec": 1161.0348401790968,
+        "peak_gpu_mem_gb": 9.202412032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 6.291456
+      }
+    ],
+    "1000|mixed_4+8+16+32_padded": [
+      {
+        "total_mean_ms": 27.374663734808564,
+        "total_p50_ms": 27.232348453253508,
+        "total_p99_ms": 28.33870207890868,
+        "p99_over_p50": 1.0406264493697381,
+        "assemble_mean_ms": 0.5271486844867468,
+        "forward_mean_ms": 26.847515050321817,
+        "forward_p50_ms": 26.78803540766239,
+        "assemble_share_pct": 1.9256809493387306,
+        "throughput_samples_sec": 1168.9641308473877,
+        "peak_gpu_mem_gb": 9.202412032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 6.291456
+      },
+      {
+        "total_mean_ms": 27.563256551511586,
+        "total_p50_ms": 27.362785302102566,
+        "total_p99_ms": 29.382632635533803,
+        "p99_over_p50": 1.073817314689672,
+        "assemble_mean_ms": 0.46358375810086727,
+        "forward_mean_ms": 27.09967279341072,
+        "forward_p50_ms": 26.91712463274598,
+        "assemble_share_pct": 1.6818903718234415,
+        "throughput_samples_sec": 1160.9658655607986,
+        "peak_gpu_mem_gb": 9.202412032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 6.291456
+      },
+      {
+        "total_mean_ms": 27.374778310768306,
+        "total_p50_ms": 27.299665845930576,
+        "total_p99_ms": 28.35262541659176,
+        "p99_over_p50": 1.0385704197481282,
+        "assemble_mean_ms": 0.4791235225275159,
+        "forward_mean_ms": 26.89565478824079,
+        "forward_p50_ms": 26.82691439986229,
+        "assemble_share_pct": 1.7502370871768667,
+        "throughput_samples_sec": 1168.9592381981881,
+        "peak_gpu_mem_gb": 9.202412032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 6.291456
+      },
+      {
+        "total_mean_ms": 27.441314524039626,
+        "total_p50_ms": 27.311047073453665,
+        "total_p99_ms": 29.529959270730615,
+        "p99_over_p50": 1.0812459585056968,
+        "assemble_mean_ms": 0.4859762964770198,
+        "forward_mean_ms": 26.955338227562606,
+        "forward_p50_ms": 26.837564073503017,
+        "assemble_share_pct": 1.7709658043213863,
+        "throughput_samples_sec": 1166.1248943437747,
+        "peak_gpu_mem_gb": 9.202412032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 6.291456
+      },
+      {
+        "total_mean_ms": 27.44635159149766,
+        "total_p50_ms": 27.26968377828598,
+        "total_p99_ms": 29.751311587169756,
+        "p99_over_p50": 1.0910031751398532,
+        "assemble_mean_ms": 0.49826260656118393,
+        "forward_mean_ms": 26.948088984936476,
+        "forward_p50_ms": 26.80691098794341,
+        "assemble_share_pct": 1.8154056101049725,
+        "throughput_samples_sec": 1165.9108823014922,
+        "peak_gpu_mem_gb": 9.202412032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 6.291456
+      }
+    ],
+    "1000|mixed_4+8+16+32_native": [
+      {
+        "total_mean_ms": 28.50579384714365,
+        "total_p50_ms": 28.36839109659195,
+        "total_p99_ms": 31.223753774538633,
+        "p99_over_p50": 1.1006529650632781,
+        "assemble_mean_ms": 1.711361207999289,
+        "forward_mean_ms": 26.79443263914436,
+        "forward_p50_ms": 26.696250773966312,
+        "assemble_share_pct": 6.0035556882790395,
+        "throughput_samples_sec": 1122.5788052630037,
+        "peak_gpu_mem_gb": 5.780465664,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 2.94912
+      },
+      {
+        "total_mean_ms": 28.507118998095393,
+        "total_p50_ms": 28.44446524977684,
+        "total_p99_ms": 29.576043933629986,
+        "p99_over_p50": 1.0397820340061419,
+        "assemble_mean_ms": 1.7141223000362515,
+        "forward_mean_ms": 26.79299669805914,
+        "forward_p50_ms": 26.734158396720886,
+        "assemble_share_pct": 6.012962236383041,
+        "throughput_samples_sec": 1122.5266222846992,
+        "peak_gpu_mem_gb": 5.780465664,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 2.94912
+      },
+      {
+        "total_mean_ms": 28.42435465194285,
+        "total_p50_ms": 28.37793016806245,
+        "total_p99_ms": 29.078213833272454,
+        "p99_over_p50": 1.0246770522396356,
+        "assemble_mean_ms": 1.6594427358359098,
+        "forward_mean_ms": 26.76491191610694,
+        "forward_p50_ms": 26.72265563160181,
+        "assemble_share_pct": 5.838101712970586,
+        "throughput_samples_sec": 1125.7951285734027,
+        "peak_gpu_mem_gb": 5.780465664,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 2.94912
+      },
+      {
+        "total_mean_ms": 28.55964730028063,
+        "total_p50_ms": 28.470539953559637,
+        "total_p99_ms": 30.405694972723705,
+        "p99_over_p50": 1.0679704361884474,
+        "assemble_mean_ms": 1.712728375568986,
+        "forward_mean_ms": 26.846918924711645,
+        "forward_p50_ms": 26.745589915663004,
+        "assemble_share_pct": 5.997022153533935,
+        "throughput_samples_sec": 1120.462016338891,
+        "peak_gpu_mem_gb": 5.780465664,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 2.94912
+      },
+      {
+        "total_mean_ms": 28.49134755320847,
+        "total_p50_ms": 28.43533828854561,
+        "total_p99_ms": 29.791756998747584,
+        "p99_over_p50": 1.0477018664746596,
+        "assemble_mean_ms": 1.6834456054493785,
+        "forward_mean_ms": 26.807901947759092,
+        "forward_p50_ms": 26.741627603769302,
+        "assemble_share_pct": 5.908620511211314,
+        "throughput_samples_sec": 1123.1479992386817,
+        "peak_gpu_mem_gb": 5.780465664,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 2.94912
+      }
+    ],
+    "5000|uniform_r4": [
+      {
+        "total_mean_ms": 27.1202608384192,
+        "total_p50_ms": 27.070194948464632,
+        "total_p99_ms": 28.458339581266046,
+        "p99_over_p50": 1.0512794472091582,
+        "assemble_mean_ms": 0.4818843863904476,
+        "forward_mean_ms": 26.63837645202875,
+        "forward_p50_ms": 26.608940679579973,
+        "assemble_share_pct": 1.7768427422637427,
+        "throughput_samples_sec": 1179.929654462174,
+        "peak_gpu_mem_gb": 6.58367488,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 3.93216
+      },
+      {
+        "total_mean_ms": 27.201862963847816,
+        "total_p50_ms": 27.108884416520596,
+        "total_p99_ms": 28.21104354225099,
+        "p99_over_p50": 1.0406567496026773,
+        "assemble_mean_ms": 0.5028855102136731,
+        "forward_mean_ms": 26.698977453634143,
+        "forward_p50_ms": 26.632715947926044,
+        "assemble_share_pct": 1.848717166475049,
+        "throughput_samples_sec": 1176.3900157327118,
+        "peak_gpu_mem_gb": 6.58367488,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 3.93216
+      },
+      {
+        "total_mean_ms": 27.108955807052553,
+        "total_p50_ms": 27.076446916908026,
+        "total_p99_ms": 27.9863484762609,
+        "p99_over_p50": 1.0336049099110076,
+        "assemble_mean_ms": 0.4642531182616949,
+        "forward_mean_ms": 26.644702688790858,
+        "forward_p50_ms": 26.631508488208055,
+        "assemble_share_pct": 1.7125451882617948,
+        "throughput_samples_sec": 1180.4217111038638,
+        "peak_gpu_mem_gb": 6.58367488,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 3.93216
+      },
+      {
+        "total_mean_ms": 27.14354392606765,
+        "total_p50_ms": 27.084311936050653,
+        "total_p99_ms": 27.768561150878668,
+        "p99_over_p50": 1.0252636735407423,
+        "assemble_mean_ms": 0.4951634956523776,
+        "forward_mean_ms": 26.648380430415273,
+        "forward_p50_ms": 26.63226006552577,
+        "assemble_share_pct": 1.8242404050152088,
+        "throughput_samples_sec": 1178.9175388136548,
+        "peak_gpu_mem_gb": 6.58367488,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 3.93216
+      },
+      {
+        "total_mean_ms": 27.14434166904539,
+        "total_p50_ms": 27.093850541859865,
+        "total_p99_ms": 27.86713546141982,
+        "p99_over_p50": 1.0285409753170829,
+        "assemble_mean_ms": 0.48171304166316986,
+        "forward_mean_ms": 26.66262862738222,
+        "forward_p50_ms": 26.629494968801737,
+        "assemble_share_pct": 1.7746351985117448,
+        "throughput_samples_sec": 1178.8828916964253,
+        "peak_gpu_mem_gb": 6.58367488,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 3.93216
+      }
+    ],
+    "5000|uniform_r32": [
+      {
+        "total_mean_ms": 27.264181384816766,
+        "total_p50_ms": 27.17715874314308,
+        "total_p99_ms": 28.492917781695724,
+        "p99_over_p50": 1.0484141499480557,
+        "assemble_mean_ms": 0.48971778713166714,
+        "forward_mean_ms": 26.7744635976851,
+        "forward_p50_ms": 26.706750970333815,
+        "assemble_share_pct": 1.7961947223707497,
+        "throughput_samples_sec": 1173.70111166516,
+        "peak_gpu_mem_gb": 34.368236032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 31.45728
+      },
+      {
+        "total_mean_ms": 27.27473041974008,
+        "total_p50_ms": 27.19903877004981,
+        "total_p99_ms": 28.154741153120995,
+        "p99_over_p50": 1.0351373587556174,
+        "assemble_mean_ms": 0.49960616510361433,
+        "forward_mean_ms": 26.775124254636467,
+        "forward_p50_ms": 26.714004576206207,
+        "assemble_share_pct": 1.8317547319992005,
+        "throughput_samples_sec": 1173.2471598267387,
+        "peak_gpu_mem_gb": 34.368236032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 31.45728
+      },
+      {
+        "total_mean_ms": 27.251773648895323,
+        "total_p50_ms": 27.179261669516563,
+        "total_p99_ms": 27.753044487908483,
+        "p99_over_p50": 1.0211110524402307,
+        "assemble_mean_ms": 0.4654597071930766,
+        "forward_mean_ms": 26.786313941702247,
+        "forward_p50_ms": 26.72041207551956,
+        "assemble_share_pct": 1.707997847002316,
+        "throughput_samples_sec": 1174.235497926835,
+        "peak_gpu_mem_gb": 34.368236032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 31.45728
+      },
+      {
+        "total_mean_ms": 27.257763822562993,
+        "total_p50_ms": 27.179026044905186,
+        "total_p99_ms": 27.87248145788908,
+        "p99_over_p50": 1.0255143584556035,
+        "assemble_mean_ms": 0.4607787961140275,
+        "forward_mean_ms": 26.796985026448965,
+        "forward_p50_ms": 26.722265873104334,
+        "assemble_share_pct": 1.6904497342977616,
+        "throughput_samples_sec": 1173.9774476111484,
+        "peak_gpu_mem_gb": 34.368236032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 31.45728
+      },
+      {
+        "total_mean_ms": 27.270407918840647,
+        "total_p50_ms": 27.18636067584157,
+        "total_p99_ms": 28.374350331723686,
+        "p99_over_p50": 1.0436980024670162,
+        "assemble_mean_ms": 0.47154750674963,
+        "forward_mean_ms": 26.798860412091017,
+        "forward_p50_ms": 26.727284770458937,
+        "assemble_share_pct": 1.7291545771995807,
+        "throughput_samples_sec": 1173.4331255782852,
+        "peak_gpu_mem_gb": 34.368236032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 31.45728
+      }
+    ],
+    "5000|mixed_4+8+16+32_padded": [
+      {
+        "total_mean_ms": 27.263181367889047,
+        "total_p50_ms": 27.174212504178286,
+        "total_p99_ms": 28.226434653624885,
+        "p99_over_p50": 1.0387213483844218,
+        "assemble_mean_ms": 0.49359780736267567,
+        "forward_mean_ms": 26.76958356052637,
+        "forward_p50_ms": 26.706240139901638,
+        "assemble_share_pct": 1.8104923292042578,
+        "throughput_samples_sec": 1173.7441631698216,
+        "peak_gpu_mem_gb": 34.368236032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 31.45728
+      },
+      {
+        "total_mean_ms": 27.35030801501125,
+        "total_p50_ms": 27.265596203505993,
+        "total_p99_ms": 28.436152832582593,
+        "p99_over_p50": 1.0429316351764235,
+        "assemble_mean_ms": 0.5330622335895896,
+        "forward_mean_ms": 26.81724578142166,
+        "forward_p50_ms": 26.741727255284786,
+        "assemble_share_pct": 1.9490172955164444,
+        "throughput_samples_sec": 1170.0051049676208,
+        "peak_gpu_mem_gb": 34.368236032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 31.45728
+      },
+      {
+        "total_mean_ms": 27.287811348214746,
+        "total_p50_ms": 27.205657213926315,
+        "total_p99_ms": 28.9943971671164,
+        "p99_over_p50": 1.0657488234569994,
+        "assemble_mean_ms": 0.49007384572178125,
+        "forward_mean_ms": 26.797737502492964,
+        "forward_p50_ms": 26.728141587227583,
+        "assemble_share_pct": 1.7959441285636248,
+        "throughput_samples_sec": 1172.6847416105998,
+        "peak_gpu_mem_gb": 34.368236032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 31.45728
+      },
+      {
+        "total_mean_ms": 27.357079521752894,
+        "total_p50_ms": 27.257325127720833,
+        "total_p99_ms": 28.32369089126587,
+        "p99_over_p50": 1.0391221720601094,
+        "assemble_mean_ms": 0.5084478110074997,
+        "forward_mean_ms": 26.848631710745394,
+        "forward_p50_ms": 26.763754431158304,
+        "assemble_share_pct": 1.8585602699411283,
+        "throughput_samples_sec": 1169.7155017791758,
+        "peak_gpu_mem_gb": 34.368236032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 31.45728
+      },
+      {
+        "total_mean_ms": 27.34824202954769,
+        "total_p50_ms": 27.19794772565365,
+        "total_p99_ms": 29.7508191782981,
+        "p99_over_p50": 1.0938626501674071,
+        "assemble_mean_ms": 0.4896171484142542,
+        "forward_mean_ms": 26.858624881133437,
+        "forward_p50_ms": 26.730571873486042,
+        "assemble_share_pct": 1.7903057457413905,
+        "throughput_samples_sec": 1170.0934913997924,
+        "peak_gpu_mem_gb": 34.368236032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 31.45728
+      }
+    ],
+    "5000|mixed_4+8+16+32_native": [
+      {
+        "total_mean_ms": 28.48922459408641,
+        "total_p50_ms": 28.399024158716202,
+        "total_p99_ms": 29.80664938688278,
+        "p99_over_p50": 1.049565971714368,
+        "assemble_mean_ms": 1.7511572828516364,
+        "forward_mean_ms": 26.738067311234772,
+        "forward_p50_ms": 26.664145290851593,
+        "assemble_share_pct": 6.146735503693313,
+        "throughput_samples_sec": 1123.2316939451673,
+        "peak_gpu_mem_gb": 17.576945664,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 14.7456
+      },
+      {
+        "total_mean_ms": 28.456325978040695,
+        "total_p50_ms": 28.417869471013546,
+        "total_p99_ms": 29.22999550588429,
+        "p99_over_p50": 1.0285780056699578,
+        "assemble_mean_ms": 1.7076444765552878,
+        "forward_mean_ms": 26.748681501485407,
+        "forward_p50_ms": 26.732920669019222,
+        "assemble_share_pct": 6.000930963024006,
+        "throughput_samples_sec": 1124.5302722738663,
+        "peak_gpu_mem_gb": 17.576945664,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 14.7456
+      },
+      {
+        "total_mean_ms": 28.522858479991555,
+        "total_p50_ms": 28.481355868279934,
+        "total_p99_ms": 29.208018463104963,
+        "p99_over_p50": 1.0255136236556184,
+        "assemble_mean_ms": 1.7208969173952937,
+        "forward_mean_ms": 26.80196156259626,
+        "forward_p50_ms": 26.77258662879467,
+        "assemble_share_pct": 6.033395701214457,
+        "throughput_samples_sec": 1121.907189717595,
+        "peak_gpu_mem_gb": 17.576945664,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 14.7456
+      },
+      {
+        "total_mean_ms": 28.52215202525258,
+        "total_p50_ms": 28.476922772824764,
+        "total_p99_ms": 29.5337185356766,
+        "p99_over_p50": 1.037110602549385,
+        "assemble_mean_ms": 1.719371611252427,
+        "forward_mean_ms": 26.802780414000154,
+        "forward_p50_ms": 26.75351593643427,
+        "assemble_share_pct": 6.028197345453288,
+        "throughput_samples_sec": 1121.9349778259455,
+        "peak_gpu_mem_gb": 17.576945664,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 14.7456
+      },
+      {
+        "total_mean_ms": 28.487472338601947,
+        "total_p50_ms": 28.46646122634411,
+        "total_p99_ms": 29.062486412003633,
+        "p99_over_p50": 1.0209378039974963,
+        "assemble_mean_ms": 1.696210028603673,
+        "forward_mean_ms": 26.791262309998274,
+        "forward_p50_ms": 26.76615212112665,
+        "assemble_share_pct": 5.954231419490397,
+        "throughput_samples_sec": 1123.300783574203,
+        "peak_gpu_mem_gb": 17.576945664,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 14.7456
+      }
+    ],
+    "10000|uniform_r4": [
+      {
+        "total_mean_ms": 27.101225522346795,
+        "total_p50_ms": 27.03324519097805,
+        "total_p99_ms": 28.338817395269867,
+        "p99_over_p50": 1.048295060214507,
+        "assemble_mean_ms": 0.4817830119282007,
+        "forward_mean_ms": 26.619442510418594,
+        "forward_p50_ms": 26.54973277822137,
+        "assemble_share_pct": 1.7777166996781677,
+        "throughput_samples_sec": 1180.7584115933737,
+        "peak_gpu_mem_gb": 10.51583488,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 7.86432
+      },
+      {
+        "total_mean_ms": 27.136158114299178,
+        "total_p50_ms": 27.089846786111593,
+        "total_p99_ms": 27.76168139651417,
+        "p99_over_p50": 1.0248002366239668,
+        "assemble_mean_ms": 0.47189943492412567,
+        "forward_mean_ms": 26.664258679375052,
+        "forward_p50_ms": 26.62445092573762,
+        "assemble_share_pct": 1.7390060631886652,
+        "throughput_samples_sec": 1179.238411908348,
+        "peak_gpu_mem_gb": 10.51583488,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 7.86432
+      },
+      {
+        "total_mean_ms": 27.184757026843727,
+        "total_p50_ms": 27.151314076036215,
+        "total_p99_ms": 27.834371281787753,
+        "p99_over_p50": 1.025157427144729,
+        "assemble_mean_ms": 0.47140428330749273,
+        "forward_mean_ms": 26.713352743536234,
+        "forward_p50_ms": 26.691317558288574,
+        "assemble_share_pct": 1.7340757647456704,
+        "throughput_samples_sec": 1177.1302560623014,
+        "peak_gpu_mem_gb": 10.51583488,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 7.86432
+      },
+      {
+        "total_mean_ms": 27.149161705747247,
+        "total_p50_ms": 27.140894904732704,
+        "total_p99_ms": 27.518815575167537,
+        "p99_over_p50": 1.0139243997576857,
+        "assemble_mean_ms": 0.45871893875300884,
+        "forward_mean_ms": 26.690442766994238,
+        "forward_p50_ms": 26.685715653002262,
+        "assemble_share_pct": 1.6896246879545527,
+        "throughput_samples_sec": 1178.6735939336893,
+        "peak_gpu_mem_gb": 10.51583488,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 7.86432
+      },
+      {
+        "total_mean_ms": 27.204485638067126,
+        "total_p50_ms": 27.135757729411125,
+        "total_p99_ms": 28.40208542533219,
+        "p99_over_p50": 1.046666384205979,
+        "assemble_mean_ms": 0.4725338611751795,
+        "forward_mean_ms": 26.731951776891947,
+        "forward_p50_ms": 26.68350050225854,
+        "assemble_share_pct": 1.7369703932720741,
+        "throughput_samples_sec": 1176.2766047383939,
+        "peak_gpu_mem_gb": 10.51583488,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 7.86432
+      }
+    ],
+    "10000|uniform_r32": [
+      {
+        "total_mean_ms": 27.23065080586821,
+        "total_p50_ms": 27.14201668277383,
+        "total_p99_ms": 28.39291104115545,
+        "p99_over_p50": 1.046087008677418,
+        "assemble_mean_ms": 0.49298308324068785,
+        "forward_mean_ms": 26.73766772262752,
+        "forward_p50_ms": 26.67542127892375,
+        "assemble_share_pct": 1.8103977270144787,
+        "throughput_samples_sec": 1175.1463535753614,
+        "peak_gpu_mem_gb": 65.825516032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 62.91456
+      },
+      {
+        "total_mean_ms": 27.20979421865195,
+        "total_p50_ms": 27.1524409763515,
+        "total_p99_ms": 27.63019976206123,
+        "p99_over_p50": 1.0175954267288836,
+        "assemble_mean_ms": 0.4579670215025544,
+        "forward_mean_ms": 26.751827197149396,
+        "forward_p50_ms": 26.703109499067068,
+        "assemble_share_pct": 1.683096233005041,
+        "throughput_samples_sec": 1176.0471153458568,
+        "peak_gpu_mem_gb": 65.825516032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 62.91456
+      },
+      {
+        "total_mean_ms": 27.233052123337984,
+        "total_p50_ms": 27.177699375897646,
+        "total_p99_ms": 27.814791174605485,
+        "p99_over_p50": 1.023441711893864,
+        "assemble_mean_ms": 0.47025966458022594,
+        "forward_mean_ms": 26.762792458757758,
+        "forward_p50_ms": 26.713944505900145,
+        "assemble_share_pct": 1.7267975049231674,
+        "throughput_samples_sec": 1175.0427331858582,
+        "peak_gpu_mem_gb": 65.825516032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 62.91456
+      },
+      {
+        "total_mean_ms": 27.334124566987157,
+        "total_p50_ms": 27.182658202946186,
+        "total_p99_ms": 31.57723438926041,
+        "p99_over_p50": 1.16166837523778,
+        "assemble_mean_ms": 0.4948486667126417,
+        "forward_mean_ms": 26.839275900274515,
+        "forward_p50_ms": 26.705759577453136,
+        "assemble_share_pct": 1.8103695455836775,
+        "throughput_samples_sec": 1170.6978184568627,
+        "peak_gpu_mem_gb": 65.825516032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 62.91456
+      },
+      {
+        "total_mean_ms": 27.220158423297107,
+        "total_p50_ms": 27.16081030666828,
+        "total_p99_ms": 27.96521345153451,
+        "p99_over_p50": 1.0296163161475613,
+        "assemble_mean_ms": 0.4698619246482849,
+        "forward_mean_ms": 26.750296498648822,
+        "forward_p50_ms": 26.70553745701909,
+        "assemble_share_pct": 1.7261542616377312,
+        "throughput_samples_sec": 1175.5993298191804,
+        "peak_gpu_mem_gb": 65.825516032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 62.91456
+      }
+    ],
+    "10000|mixed_4+8+16+32_padded": [
+      {
+        "total_mean_ms": 27.281990693882108,
+        "total_p50_ms": 27.2013689391315,
+        "total_p99_ms": 28.72656629420817,
+        "p99_over_p50": 1.0560706102141257,
+        "assemble_mean_ms": 0.5167607357725501,
+        "forward_mean_ms": 26.765229958109558,
+        "forward_p50_ms": 26.689629070460796,
+        "assemble_share_pct": 1.894146001187633,
+        "throughput_samples_sec": 1172.934935689128,
+        "peak_gpu_mem_gb": 65.825516032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 62.91456
+      },
+      {
+        "total_mean_ms": 27.170167984440923,
+        "total_p50_ms": 27.15317765250802,
+        "total_p99_ms": 27.65012852847576,
+        "p99_over_p50": 1.0183017576184805,
+        "assemble_mean_ms": 0.46192627400159836,
+        "forward_mean_ms": 26.708241710439324,
+        "forward_p50_ms": 26.69707778841257,
+        "assemble_share_pct": 1.7001229961703652,
+        "throughput_samples_sec": 1177.7623170502625,
+        "peak_gpu_mem_gb": 65.825516032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 62.91456
+      },
+      {
+        "total_mean_ms": 27.313740318641067,
+        "total_p50_ms": 27.20668353140354,
+        "total_p99_ms": 28.71383385732769,
+        "p99_over_p50": 1.0553963265748472,
+        "assemble_mean_ms": 0.5097015528008342,
+        "forward_mean_ms": 26.804038765840232,
+        "forward_p50_ms": 26.722210459411144,
+        "assemble_share_pct": 1.8660994314754225,
+        "throughput_samples_sec": 1171.5715104079193,
+        "peak_gpu_mem_gb": 65.825516032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 62.91456
+      },
+      {
+        "total_mean_ms": 27.336130100302398,
+        "total_p50_ms": 27.199144940823317,
+        "total_p99_ms": 29.320591241121285,
+        "p99_over_p50": 1.0779968011830356,
+        "assemble_mean_ms": 0.5330132693052292,
+        "forward_mean_ms": 26.80311683099717,
+        "forward_p50_ms": 26.7126327380538,
+        "assemble_share_pct": 1.949849036236965,
+        "throughput_samples_sec": 1170.6119294349571,
+        "peak_gpu_mem_gb": 65.825516032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 62.91456
+      },
+      {
+        "total_mean_ms": 27.20652550458908,
+        "total_p50_ms": 27.15110220015049,
+        "total_p99_ms": 27.785451561212536,
+        "p99_over_p50": 1.023363668862715,
+        "assemble_mean_ms": 0.4749490274116397,
+        "forward_mean_ms": 26.73157647717744,
+        "forward_p50_ms": 26.698338333517313,
+        "assemble_share_pct": 1.7457173181909145,
+        "throughput_samples_sec": 1176.1884109237828,
+        "peak_gpu_mem_gb": 65.825516032,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 62.91456
+      }
+    ],
+    "10000|mixed_4+8+16+32_native": [
+      {
+        "total_mean_ms": 28.30671539530158,
+        "total_p50_ms": 28.270786628127098,
+        "total_p99_ms": 28.853830061852932,
+        "p99_over_p50": 1.0206235306217393,
+        "assemble_mean_ms": 1.6748065361753106,
+        "forward_mean_ms": 26.63190885912627,
+        "forward_p50_ms": 26.535145938396454,
+        "assemble_share_pct": 5.916640319396786,
+        "throughput_samples_sec": 1130.4737958156545,
+        "peak_gpu_mem_gb": 32.322545664,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 29.4912
+      },
+      {
+        "total_mean_ms": 28.348419265821576,
+        "total_p50_ms": 28.325434308499098,
+        "total_p99_ms": 28.879575543105602,
+        "p99_over_p50": 1.019563379984618,
+        "assemble_mean_ms": 1.683679949492216,
+        "forward_mean_ms": 26.66473931632936,
+        "forward_p50_ms": 26.625020429491997,
+        "assemble_share_pct": 5.9392375063471485,
+        "throughput_samples_sec": 1128.8107354395231,
+        "peak_gpu_mem_gb": 32.322545664,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 29.4912
+      },
+      {
+        "total_mean_ms": 28.379704230464995,
+        "total_p50_ms": 28.328150510787964,
+        "total_p99_ms": 29.066772200167172,
+        "p99_over_p50": 1.0260737702977794,
+        "assemble_mean_ms": 1.7032214161008596,
+        "forward_mean_ms": 26.676482814364135,
+        "forward_p50_ms": 26.60983195528388,
+        "assemble_share_pct": 6.0015474519022245,
+        "throughput_samples_sec": 1127.5663671522234,
+        "peak_gpu_mem_gb": 32.322545664,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 29.4912
+      },
+      {
+        "total_mean_ms": 28.437399161048234,
+        "total_p50_ms": 28.359724208712578,
+        "total_p99_ms": 29.93800348602235,
+        "p99_over_p50": 1.0556521377180705,
+        "assemble_mean_ms": 1.779085025191307,
+        "forward_mean_ms": 26.658314135856926,
+        "forward_p50_ms": 26.574039831757545,
+        "assemble_share_pct": 6.256145349706193,
+        "throughput_samples_sec": 1125.278715496303,
+        "peak_gpu_mem_gb": 32.322545664,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 29.4912
+      },
+      {
+        "total_mean_ms": 28.48801806103438,
+        "total_p50_ms": 28.40332081541419,
+        "total_p99_ms": 30.29664095491171,
+        "p99_over_p50": 1.0666584077193548,
+        "assemble_mean_ms": 1.7947371629998088,
+        "forward_mean_ms": 26.693280898034573,
+        "forward_p50_ms": 26.59669006243348,
+        "assemble_share_pct": 6.299972006317392,
+        "throughput_samples_sec": 1123.2792653894471,
+        "peak_gpu_mem_gb": 32.322545664,
+        "batches_at_fleet_max_rank_pct": 100.0,
+        "store_gb": 29.4912
+      }
+    ]
+  }
+}

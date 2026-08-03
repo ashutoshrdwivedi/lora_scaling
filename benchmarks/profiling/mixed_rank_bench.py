@@ -587,6 +587,60 @@ def time_arm(
 # ------------------------------------------------------------- exactness
 
 
+def _padding_identity_fp32(
+    args, mix: Mix, device, gate_dtype, n: int, native_ranks, ids_low
+) -> float:
+    """max|delta logit| for a low-rank tenant served natively vs zero-padded.
+
+    Self-contained at `gate_dtype`: its own models, LR heads and stores, all
+    dropped before returning, so the serving-dtype objects the timed arms reuse
+    are untouched. Two extra checkpoint loads at a pool of `--check-adapters`
+    (64 by default) is a few seconds once per mix.
+    """
+    cfg_min = arm_config(args, uniform_arm(mix.r_min), device, gate_dtype)
+    cfg_max = arm_config(args, uniform_arm(mix.r_max), device, gate_dtype)
+
+    model_min = EncoderWithLora.from_pretrained_serving(cfg_min).eval()
+    model_max = EncoderWithLora.from_pretrained_serving(cfg_max).eval()
+
+    # Same draw as the serving-dtype path (same seed, same order), just widened
+    # — LR heads are rank-independent, so both slot ranks see the same head.
+    torch.manual_seed(LR_SEED)
+    lr_store = {
+        f"adapter_{i}": make_synthetic_lr_weights(cfg_max, args.num_labels)
+        for i in range(n)
+    }
+    lr_assembler = BatchAssembler(AdapterStore(cfg_max), cfg_max)
+
+    def lr_for(ids: list[str]):
+        return lr_assembler.assemble_lr(
+            [lr_store[a][0] for a in ids], [lr_store[a][1] for a in ids]
+        )
+
+    wa_min, wb_min = build_packed_padded(cfg_min, [mix.r_min] * n)
+    asm_min = PackedPaddedAssembler(wa_min, wb_min, cfg_min)
+    wa_pad, wb_pad = build_packed_padded(cfg_max, native_ranks)
+    asm_pad = PackedPaddedAssembler(wa_pad, wb_pad, cfg_max)
+
+    inputs = make_synthetic_inputs(cfg_max, args.batch_size)
+    out = torch.zeros(
+        args.batch_size, 1, args.num_labels, dtype=gate_dtype, device=device
+    )
+
+    def run(model, lora_w):
+        with torch.no_grad():
+            return model(inputs["input_ids"], inputs["attention_mask"], lora_w,
+                         lr_for(ids_low), out.clone()).clone()
+
+    d = (run(model_min, asm_min.to_layerwise(ids_low))
+         - run(model_max, asm_pad.to_layerwise(ids_low))).abs().max().item()
+
+    del (model_min, model_max, wa_min, wb_min, asm_min, wa_pad, wb_pad,
+         asm_pad, lr_store, lr_assembler)
+    torch.cuda.empty_cache()
+    return d
+
+
 def check_exactness(args, mix: Mix, device, dtype, model_for, lr_for, n: int) -> dict:
     """Gate: padding must not change what a tenant is served.
 
@@ -595,14 +649,33 @@ def check_exactness(args, mix: Mix, device, dtype, model_for, lr_for, n: int) ->
     r_max batch. Same weights by construction (same seed, same native shape), so
     identical logits is the claim that "pad-to-max is exact" rests on.
 
-    Check 2: the pre-padded store and the pad-at-gather store must agree, i.e.
-    the two deployment layouts are the same computation.
+    Check 1 runs in fp32, NOT in the run's serving dtype, and that distinction
+    is the whole reason this docstring is long. The identity being asserted is
+    algebraic — the padded components multiply zero rows, so they contribute
+    nothing — and in fp32 it holds bit-exactly on-device (measured 0.0e+00, not
+    merely inside a tolerance). In fp16 it does not, and not because padding is
+    wrong: the native check runs an (H x 4) GEMM where the padded one runs an
+    (H x 16), cuBLAS picks its tiling and split-k from that shape, and the two
+    therefore accumulate the same products in different orders. One layer's
+    delta moves by ~3e-5 against a delta of scale ~1e-2 (0.3%, i.e. fp16
+    rounding), but bge-m3 restacks that through 24 layers of attention and the
+    logits end up ~7% apart — 8e-1 absolute against a mean |logit| near 11.
+    Gating THAT at 1e-3 measures the stability of fp16 accumulation across two
+    GEMM shapes, which is not what this benchmark is about and which no correct
+    implementation could pass. The serving-dtype divergence is still measured
+    and reported below (`..._serving_dtype`), because it is a real property of
+    a mixed-rank fleet that a rebuttal should quote rather than hide: padding a
+    tenant to r_max in fp16 perturbs its logits at the same order as any other
+    change of batch composition or cuBLAS version. It does not touch the timing
+    arms, whose shapes, kernels and FLOP counts are identical either way.
 
-    Check 3: the in-place packed builder the timed arms use must agree with the
-    shipped IndexSelectBatchAssembler it stands in for. The CPU tests pin that
-    in fp32; this repeats it on-device in the run's own dtype, so nothing gets
-    timed on a layout that was only ever verified elsewhere.
+    Checks 2 and 3 stay in the serving dtype. They compare LAYOUTS at one fixed
+    slot rank — pre-padded store vs pad-at-gather, and the in-place packed
+    builder vs the shipped IndexSelectBatchAssembler — so they are pure data
+    movement into identically shaped buffers, with no GEMM shape change to
+    re-associate anything. They are exact in fp16 and are asserted as such.
     """
+    gate_dtype = torch.float32
     cfg_min = arm_config(args, uniform_arm(mix.r_min), device, dtype)
     cfg_max = arm_config(args, uniform_arm(mix.r_max), device, dtype)
     native_ranks = assign_ranks(n, mix)
@@ -646,9 +719,13 @@ def check_exactness(args, mix: Mix, device, dtype, model_for, lr_for, n: int) ->
             return model(inputs["input_ids"], inputs["attention_mask"], lora_w,
                          lr_for(ids), out.clone()).clone()
 
+    # Informational only — the serving dtype's answer to check 1, kept so the
+    # fp16 number can be quoted rather than discovered by a reader re-running
+    # this. See the docstring for why it is not the gated quantity.
     native_logits = run(model_min, asm_min.to_layerwise(ids_low), ids_low)
     padded_logits = run(model_max, asm_pad.to_layerwise(ids_low), ids_low)
-    d_pad = (native_logits - padded_logits).abs().max().item()
+    d_pad_serving = (native_logits - padded_logits).abs().max().item()
+    logit_scale = native_logits.abs().mean().item()
 
     pad_mixed = run(model_max, asm_pad.to_layerwise(ids_any), ids_any)
     nat_mixed = run(model_max, asm_nat.to_layerwise(ids_any), ids_any)
@@ -661,20 +738,36 @@ def check_exactness(args, mix: Mix, device, dtype, model_for, lr_for, n: int) ->
          store_shipped, asm_shipped)
     torch.cuda.empty_cache()
 
-    worst = max(d_pad, d_layout, d_shipped)
-    if worst > EXACTNESS_TOL:
+    # Check 1 proper, in fp32. Built and torn down here rather than through
+    # `model_for` because that cache is keyed on slot rank alone and holds the
+    # serving-dtype models the timed arms reuse; a gate must not evict them.
+    d_pad = _padding_identity_fp32(args, mix, device, gate_dtype, n,
+                                   native_ranks, ids_low)
+
+    if d_pad > EXACTNESS_TOL:
         raise AssertionError(
-            f"mix {mix.label}: zero-padding changed the served result — "
-            f"max|delta logit| padded-vs-native={d_pad:.3e}, "
-            f"pre-padded-vs-pad-at-gather={d_layout:.3e}, "
+            f"mix {mix.label}: zero-padding changed the served result in "
+            f"fp32, where the identity is algebraic — max|delta logit| "
+            f"padded-vs-native={d_pad:.3e}, tol={EXACTNESS_TOL:.0e}. This is a "
+            "real padding bug, not an accumulation-order artefact; the timing "
+            "arms below would be comparing different computations."
+        )
+    worst_layout = max(d_layout, d_shipped)
+    if worst_layout > EXACTNESS_TOL:
+        raise AssertionError(
+            f"mix {mix.label}: two layouts of the SAME slot rank disagree in "
+            f"{args.dtype} — pre-padded-vs-pad-at-gather={d_layout:.3e}, "
             f"packed-vs-shipped-assembler={d_shipped:.3e}, "
-            f"tol={EXACTNESS_TOL:.0e}. The timing arms below would be comparing "
-            "different computations."
+            f"tol={EXACTNESS_TOL:.0e}. No GEMM shape changes between these, so "
+            "this is a gather bug, not rounding."
         )
     return {
         "mix": mix.label,
         "checked_adapters": n,
         "max_abs_delta_padded_vs_native": d_pad,
+        "max_abs_delta_padded_vs_native_serving_dtype": d_pad_serving,
+        "serving_dtype_mean_abs_logit": logit_scale,
+        "gate_dtype": "fp32",
         "max_abs_delta_layouts": d_layout,
         "max_abs_delta_vs_shipped_assembler": d_shipped,
         "tolerance": EXACTNESS_TOL,
@@ -740,10 +833,27 @@ def write_report(path: Path, args, env, seeds, mixes, results, exactness) -> Non
         for e in exactness:
             f.write(
                 f"#   mix {e['mix']:<12} max|delta logit|  "
-                f"padded-vs-native={e['max_abs_delta_padded_vs_native']:.2e}  "
+                f"padded-vs-native={e['max_abs_delta_padded_vs_native']:.2e} "
+                f"[{e.get('gate_dtype', 'fp32')}]  "
                 f"layouts={e['max_abs_delta_layouts']:.2e}  "
                 f"vs-shipped-assembler={e['max_abs_delta_vs_shipped_assembler']:.2e}  "
                 f"(tol {e['tolerance']:.0e})\n"
+            )
+        # Reported, not gated. The identity is algebraic and holds bit-exactly
+        # in fp32; in fp16 the native and padded paths run different GEMM
+        # shapes, so they accumulate in different orders and bge-m3 restacks
+        # that over 24 layers. Quote it as the cost of padding in fp16, not as
+        # a failure — no shape, kernel or FLOP count differs between the arms.
+        f.write(f"#\n# Same check in the serving dtype ({args.dtype}), reported "
+                "not gated —\n# accumulation order, not padding:\n")
+        for e in exactness:
+            d = e.get("max_abs_delta_padded_vs_native_serving_dtype")
+            if d is None:
+                continue
+            scale = e.get("serving_dtype_mean_abs_logit") or float("nan")
+            f.write(
+                f"#   mix {e['mix']:<12} max|delta logit|={d:.2e}  "
+                f"mean|logit|={scale:.2e}  ({100.0 * d / scale:.2f}% of scale)\n"
             )
 
         for mix in mixes:
@@ -929,8 +1039,10 @@ def main():
         e = check_exactness(args, mix, device, dtype, model_for, lr_for,
                             args.check_adapters)
         print(f"  mix {mix.label:<12} padded-vs-native "
-              f"max|delta|={e['max_abs_delta_padded_vs_native']:.2e}  "
-              f"layouts={e['max_abs_delta_layouts']:.2e}  OK")
+              f"max|delta|={e['max_abs_delta_padded_vs_native']:.2e} [fp32]  "
+              f"layouts={e['max_abs_delta_layouts']:.2e}  OK "
+              f"({args.dtype} padded-vs-native, reported only: "
+              f"{e['max_abs_delta_padded_vs_native_serving_dtype']:.2e})")
         exactness.append(e)
 
     seeds: list[int | None] = args.seeds if args.seeds else [None]

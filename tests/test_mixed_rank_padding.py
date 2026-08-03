@@ -73,9 +73,24 @@ class TestPaddingIdentity:
         b_pad = torch.zeros(B, R_MAX, H)
         a_pad[:, :, :R_MIN] = a
         b_pad[:, :R_MIN, :] = b
-        padded = torch.bmm(torch.bmm(x, a_pad), b_pad)
+        shrink_pad = torch.bmm(x, a_pad)
+        padded = torch.bmm(shrink_pad, b_pad)
 
-        assert torch.equal(native, padded)
+        # The exact part of the claim, and the only part that can be asserted
+        # bitwise: the padded columns of the shrink output are identically zero,
+        # so the padded rows of B are multiplied by nothing and the r_max bmm
+        # sums the same R_MIN products the native one does.
+        assert not shrink_pad[:, :, R_MIN:].any()
+
+        # The values themselves are only equal in exact arithmetic. Both bmms
+        # reduce over the same K, but the padded one has a 4x wider output, and
+        # BLAS picks its blocking from the output shape — so the FMAs are
+        # re-associated and the last bits move. Observed worst case here is
+        # ~4e-5 relative (a few fp32 ULPs accumulated over a 32-term dot product
+        # and a second reduction); asserting torch.equal makes this test a
+        # report on the host's GEMM kernel selection rather than on padding.
+        # The benchmark's on-device gate takes the same view at EXACTNESS_TOL.
+        torch.testing.assert_close(native, padded, rtol=1e-4, atol=1e-5)
 
     def test_padded_store_matches_native_draw(self, config):
         """A padded adapter holds its native draw, and zeros beyond it.
