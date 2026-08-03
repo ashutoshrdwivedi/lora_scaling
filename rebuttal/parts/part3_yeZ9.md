@@ -2,14 +2,7 @@ We thank Reviewer yeZ9 for an exceptionally thorough, insightful review. We addr
 
 **Q1/Q3/W5 (End-to-End Latency & High-QPS CPU Assembly).** Reported latencies are already end-to-end (CPU gather + GPU forward). Result scatter (per-tenant slicing) adds only 0.15–2.12 ms (**0.7–1.3% of latency**). For high QPS, our pure-PyTorch GPU-resident assembler (`index_select`) lifts MiniLM single-stream throughput from 5,192 to 15,315 samples/s, cuts assembly share from 58–65% to 1.8–4.4% ($B \ge 64$), and stabilizes tail latency (p99/p50 from 5.28× to 1.03×). On bge-m3 it gives 1.14–1.80× speedup. Paper figures use the CPU assembler and are conservative.
 
-**Q2 (VRAM Footprint & KV-Cache).** To clarify: encoders have no KV cache, so sequence length affects only transient activations, freed per batch. VRAM is set by adapter geometry ($2MLdr$; at $r{=}8$ fp16, 1.50 MiB/adapter for bge-m3, 5.62 MiB for XLM-R-XL). On our A100 (79.3 GiB usable per CUDA):
-
-| Model ($B{=}32, r{=}8$) | Base | Adapter Store | Peak VRAM | Headroom |
-|---|---|---|---|---|
-| bge-m3 ($N{=}52,000$) | 1.06 GiB | 76.2 GiB | 78.4 GiB | 0.9 GiB |
-| XLM-R-XL ($N{=}12,000$) | 6.49 GiB | 65.9 GiB | 73.2 GiB | 6.1 GiB |
-
-Peak is predictable: base $+\ N\times$adapter$\times1.0133 + 0.137$ GB (1.33% alloc padding) fits 6 points ($N{=}46$–52k) to **within 0.36 MB**. Load barely moves it: $B{:}8\to128$ costs 0.5 GB (bge-m3), 1.0 GB (XLM-R-XL). The bge-m3 row is a new direct probe ($B{=}32$, single-seed, `expandable_segments:True`): **52,000** fits, 53,000 OOMs, p50 flat to 0.68%; 
+**Q2 (VRAM Footprint & KV-Cache).** To clarify, Encoders don't have KV cache. At $r{=}8$ one bge-m3 adapter is 786,432 params = 1.57 MB fp16. 47,000 adapters carry 73.9 GB of parameters. Measured peak at $B{=}32$ is 76.2 GB, 3.1% above the parameter count.
 
 **Q4/W2 (Generality Across Models, Hardware & Nodes).** Headline claims replicate on ELECTRA-large (334M), DeBERTa-v2-xlarge (885M), XLM-RoBERTa-XL (3.5B), and an L40S-48GB GPU (p50 flat within +1.29% at ceiling; 2.3–32.7× vs PEFT). On **W2**, multi-node horizontal scaling (Appendix C) shards adapter pools by tenant with zero inter-GPU sync; we concede empirical multi-node evaluation remains a design claim.
 
