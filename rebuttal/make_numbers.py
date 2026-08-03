@@ -476,6 +476,138 @@ def analyse_assembly(path: Path) -> dict:
     return out
 
 
+# ---------------------------------------------------------- mixed rank
+
+
+def analyse_mixed_rank(path: Path) -> dict:
+    """Mixed-rank arms: does flat-in-N survive a heterogeneous fleet?
+
+    Two quantities carry the answer. The PADDING TAX is what a low-rank tenant
+    pays for sharing a batch with high-rank tenants (mixed vs a uniform batch at
+    the fleet's lowest rank) -- the cost the uniform-rank limitation is about.
+    The OVERHEAD VS R_MAX is whether a mixed batch costs anything beyond its
+    padded shape; zero-padding makes the batch tensors identical to a uniform
+    r_max batch, so this is the check that no gather cost sneaks in.
+
+    The N-spread of the mixed arm is computed the same way as the main configs'
+    spread_pct_worst -- (max-min)/min over the pool sweep -- so the mixed-rank
+    curve and the paper's Figure 3 curve are directly comparable numbers.
+    """
+    d = read_json(path)
+    out = {
+        "model": d["config"]["model"],
+        "gpu": d["gpu"],
+        "batch_size": d["config"]["batch_size"],
+        "adapters": d["config"]["adapters"],
+        "assembler": d["config"]["assembler"],
+        "warmup": d["config"]["warmup"],
+        "iters": d["config"]["iters"],
+        "seeds": len(d["seeds"]),
+        "mixes": [m["label"] for m in d["mixes"]],
+        # The exactness gate ran before any timing; if padding had changed the
+        # served result the benchmark would have aborted, so this is the parity
+        # number backing "zero-padding is exact", not a tolerance we chose after
+        # seeing the data.
+        # fp32 only. The `_serving_dtype` sibling is deliberately excluded: it
+        # is the same comparison run in fp16, where the native and padded paths
+        # use different GEMM shapes and so accumulate in different orders. It is
+        # a real number and it is carried below under its own key, but folding
+        # it into `max()` here would report accumulation noise as the parity of
+        # the padding identity and put an ~1e-1 where an exact 0.0 belongs.
+        "exactness_max_abs_delta": max(
+            v
+            for e in d["exactness"]
+            for k, v in e.items()
+            if k.startswith("max_abs_delta")
+            and not k.endswith("_serving_dtype")
+        ),
+        "exactness_gate_dtype": d["exactness"][0].get("gate_dtype", "fp32"),
+        # What padding costs a tenant in the dtype actually served, as a
+        # fraction of the logit scale. Quote this, not the fp32 zero, when the
+        # claim is about what a mixed-rank fleet does to outputs in production.
+        "exactness_serving_dtype_max_abs_delta": max(
+            (
+                e["max_abs_delta_padded_vs_native_serving_dtype"]
+                for e in d["exactness"]
+                if "max_abs_delta_padded_vs_native_serving_dtype" in e
+            ),
+            default=None,
+        ),
+        "exactness_serving_dtype_pct_of_logit_scale": max(
+            (
+                100.0
+                * e["max_abs_delta_padded_vs_native_serving_dtype"]
+                / e["serving_dtype_mean_abs_logit"]
+                for e in d["exactness"]
+                if e.get("serving_dtype_mean_abs_logit")
+            ),
+            default=None,
+        ),
+    }
+
+    agg = d["aggregated"]
+
+    def p50(n: int, arm: str):
+        key = f"{n}|{arm}"
+        return agg[key]["total_p50_ms"]["mean"] if key in agg else None
+
+    by_mix: dict = {}
+    taxes, fwd_taxes, overheads, store_ratios, at_max, spreads = [], [], [], [], [], []
+    for mix in d["mixes"]:
+        label = mix["label"]
+        cells = {}
+        for key, dv in d["derived"].items():
+            n_str, mix_label = key.split("|", 1)
+            if mix_label != label:
+                continue
+            cells[n_str] = {
+                "padding_tax_pct": round(dv["padded_padding_tax_vs_rmin_pct"], 2),
+                "padding_tax_forward_pct": round(dv["padded_padding_tax_forward_pct"], 2),
+                "overhead_vs_rmax_pct": round(dv["padded_overhead_vs_rmax_pct"], 2),
+                "native_padding_tax_pct": round(dv["native_padding_tax_vs_rmin_pct"], 2),
+                "native_store_vs_padded": round(dv["native_store_vs_padded"], 3),
+                "batches_at_fleet_max_pct": round(dv["padded_batches_at_fleet_max_pct"], 1),
+                "uniform_rank_delta_pct": round(dv["uniform_rank_delta_pct"], 2),
+            }
+            taxes.append(dv["padded_padding_tax_vs_rmin_pct"])
+            fwd_taxes.append(dv["padded_padding_tax_forward_pct"])
+            overheads.append(dv["padded_overhead_vs_rmax_pct"])
+            store_ratios.append(dv["native_store_vs_padded"])
+            at_max.append(dv["padded_batches_at_fleet_max_pct"])
+        if not cells:
+            continue
+
+        # Flat-in-N for the mixed fleet itself: the reviewer's literal question.
+        mixed_arm = f"mixed_{label}_padded"
+        series = [v for n in d["config"]["adapters"] if (v := p50(n, mixed_arm))]
+        entry = {"by_n": cells}
+        if len(series) > 1:
+            entry["p50_ms_by_n"] = {
+                str(n): round(p50(n, mixed_arm), 2)
+                for n in d["config"]["adapters"]
+                if p50(n, mixed_arm)
+            }
+            spread = 100.0 * (max(series) - min(series)) / min(series)
+            entry["spread_pct_over_n"] = round(spread, 2)
+            spreads.append(spread)
+        by_mix[label] = entry
+
+    out["by_mix"] = by_mix
+    if taxes:
+        out["padding_tax_pct_max"] = round(max(taxes), 2)
+        out["padding_tax_pct_min"] = round(min(taxes), 2)
+        out["padding_tax_forward_pct_max"] = round(max(fwd_taxes), 2)
+        out["overhead_vs_rmax_pct_max"] = round(max(overheads), 2)
+        out["overhead_vs_rmax_pct_min"] = round(min(overheads), 2)
+        out["native_store_vs_padded_min"] = round(min(store_ratios), 3)
+        out["batches_at_fleet_max_pct_min"] = round(min(at_max), 1)
+    if spreads:
+        out["spread_pct_over_n_max"] = round(max(spreads), 2)
+    if d["oom_cells"]:
+        out["oom_cells"] = len(d["oom_cells"])
+    return out
+
+
 def analyse_breakdown() -> dict:
     d = read_json(RES / "forward_breakdown.json")
     return {
@@ -507,6 +639,22 @@ def main() -> None:
         p = RES / "rebuttal_assembly" / fname
         if p.exists():
             reg["assembly"][tag] = analyse_assembly(p)
+
+    # Written by benchmarks/run_rebuttal_mixed_rank.sh. The key is omitted
+    # entirely until that pod session runs, rather than emitted empty: this file
+    # is committed, and a regenerate that has no new measurements to report
+    # should leave it byte-identical.
+    mixed_rank = {}
+    for tag, fname in [
+        ("bgem3_4_16", "mixed_rank_4_16.json"),
+        ("bgem3_spread", "mixed_rank_spread.json"),
+        ("bgem3_4_16_cpuasm", "mixed_rank_4_16_cpuasm.json"),
+    ]:
+        p = RES / "rebuttal_mixed_rank" / fname
+        if p.exists():
+            mixed_rank[tag] = analyse_mixed_rank(p)
+    if mixed_rank:
+        reg["mixed_rank"] = mixed_rank
 
     # ---- cross-config roll-ups, the phrasings the rebuttal actually uses
     new = ["electra", "deberta", "xlmr_xl", "l40s"]
@@ -636,6 +784,66 @@ def main() -> None:
             L.append(f"- result-scatter share, index_select: {a['indexsel_scatter_share_pct']}")
             L.append(f"- result-scatter time (ms), baseline: {a['baseline_scatter_ms']}")
         L.append("")
+
+    if reg.get("mixed_rank"):
+        L.append("## Mixed-rank serving (yeZ9 Q5 / W1)")
+        L.append("")
+        L.append(
+            "Padding tax = mixed batch vs a uniform batch at the fleet's LOWEST "
+            "rank (what a low-rank tenant pays for sharing a batch). Overhead vs "
+            "r_max = cost beyond the padded shape; ~0 means padding adds nothing "
+            "the uniform max-rank sweep did not already measure."
+        )
+        L.append("")
+        for tag, a in reg["mixed_rank"].items():
+            L.append(f"### {tag} — {a['model']}")
+            L.append(f"- {a['gpu']}, B={a['batch_size']}, assembler={a['assembler']}")
+            L.append(
+                f"- N={a['adapters']}, warmup {a['warmup']} / iters {a['iters']}, "
+                f"{a['seeds']} seeds, mixes={a['mixes']}"
+            )
+            L.append(
+                f"- padding exactness: max|delta logit| = "
+                f"{a['exactness_max_abs_delta']:.2e} (asserted before timing)"
+            )
+            for label, entry in a["by_mix"].items():
+                L.append(f"- mix {label}:")
+                if "p50_ms_by_n" in entry:
+                    L.append(f"    - p50 by N: {entry['p50_ms_by_n']}")
+                    L.append(f"    - spread across N: {entry['spread_pct_over_n']}%")
+                for n, c in entry["by_n"].items():
+                    L.append(
+                        f"    - N={n}: padding tax {c['padding_tax_pct']:+}% "
+                        f"(forward {c['padding_tax_forward_pct']:+}%), "
+                        f"vs uniform r_max {c['overhead_vs_rmax_pct']:+}%, "
+                        f"uniform r_min->r_max {c['uniform_rank_delta_pct']:+}%, "
+                        f"native store {c['native_store_vs_padded']}x, "
+                        f"batches at fleet max {c['batches_at_fleet_max_pct']}%"
+                    )
+            if "padding_tax_pct_max" in a:
+                L.append(
+                    f"- worst padding tax: {a['padding_tax_pct_max']:+}% "
+                    f"(best {a['padding_tax_pct_min']:+}%); worst forward-only "
+                    f"{a['padding_tax_forward_pct_max']:+}%"
+                )
+                L.append(
+                    f"- overhead vs uniform r_max: "
+                    f"{a['overhead_vs_rmax_pct_min']:+}% to "
+                    f"{a['overhead_vs_rmax_pct_max']:+}%"
+                )
+                L.append(
+                    f"- native store vs pre-padded: "
+                    f"{a['native_store_vs_padded_min']}x; batches at fleet max "
+                    f"rank >= {a['batches_at_fleet_max_pct_min']}%"
+                )
+            if "spread_pct_over_n_max" in a:
+                L.append(
+                    f"- worst mixed-fleet spread across N: "
+                    f"{a['spread_pct_over_n_max']}%"
+                )
+            if "oom_cells" in a:
+                L.append(f"- WARNING: {a['oom_cells']} cell(s) OOM'd and are missing")
+            L.append("")
 
     L.append("## LoRA-path ablation (Finding 6)")
     L.append("")
