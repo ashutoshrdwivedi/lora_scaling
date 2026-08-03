@@ -13,20 +13,14 @@ The overhead is small in our measurements. Across the $\{4,16\}$ example and a w
 
 The tradeoff is memory: per-rank stores use $0.625\times$ memory for ${4,16}$ and $0.469\times$ for ${4,8,16,32}$, at a small gather-time coststorage path
 
-**W3 (Custom Kernel Optimality Ceiling).** Our 9.0% bound is **measured via ablation** (disabling the LoRA path saves 2.4 ms of 26.4 ms forward time), not purely analytic. Disentangling FLOPs shows $3d/r = 384$, bounding free-kernel FLOP gains at 0.26% (shrinking to 0.10% on XLM-R-XL). Profiling charges 4.94% of GPU time to LoRA `bmm` vs 50.6% to base projections. No custom-kernel engine (Punica, S-LoRA, vLLM) supports encoder multi-tenant LoRA; porting them is future work.
-
 ## Q6 (Registration Churn: Production Impact).
 We measured interleaved “add adapter while serving” on bge-m3/A100 ($B{=}32$, three seeds, 60 cells), timing the production-style AdapterStore.load_from_file path from adapter file to GPU weights while inference continues. Registration is effectively $O(1)$ in pool size: 11.90 ms at 1,000 adapters versus 11.98 ms at 47,000 (0.7%; 95% CI ±0.10 ms). A second A100 replicated this (14.92 vs 15.02 ms; 0.67%). Installing the classification head takes 0.02 ms and is immaterial.
 This is 41× Finding 7’s 0.29 ms because that figure measures synthetic pool construction without adapter-file I/O. 
 
 At 10 admissions/s, replacement share is 12.07% at 1,000 adapters and 12.15% at the 47,000-adapter ceiling; mean update cost is 11.77/11.74 ms and mean p99 serving latency is 27.97/27.51 ms. Thus the per-update serving impact remains stable at capacity.
 
-**W4 (8 examples/class accuracy).** We agree this does not establish that rank-8 LoRA is the optimal adaptation choice in full-data regimes. Our accuracy contribution is narrower: under the standard SetFit few-shot protocol, rank-8 LoRA
-  on bge-m3 retains 98.1% of full fine-tuning's mean accuracy and improves over a frozen encoder, which validates that the served workload is meaningful rather than a synthetic latency-only case. Separately, our serving path is numerically
-  faithful to PEFT on real checkpoints ($<10^{-4}$ relative error). The main systems claims — latency, throughput, tenant ceiling, and cold-start — depend on tensor shapes $(L,d,r)$ and batch structure, not on the number of training
-  examples. We will make this scope explicit.
+## W4 (8 examples/class accuracy).
+We agree this does not establish that rank-8 LoRA is the optimal adaptation choice in full-data regimes. Our accuracy contribution is narrower: under the standard SetFit few-shot protocol, rank-8 LoRA on bge-m3 retains 98.1% of full fine-tuning's mean accuracy and beats a frozen encoder, validating a realistic served workload. Separately, our serving path matches PEFT checkpoints ($<10^{-4}$ relative error). The main claims — latency, throughput, tenant ceiling, and cold-start — depend on tensor shapes $(L,d,r)$ and batch structure, not on the training set size.
 
-
-  **W6 (Downstream Workloads).** bge-m3 is itself a retrieval/embedding encoder, so embedding generation uses the same benchmarked path with the classification head omitted. Cross-encoder reranking is also an encoder forward over a query-document pair, so we expect the same serving behavior, though we did not run an end-to-end reranking load test. 
-  For the camera-ready pip-installable library, we will expose task-level wrappers for common encoder workloads, so users can apply the same serving path without having to write it themselves.
-
+## W6 (Downstream Workloads).
+bge-m3 embedding generation uses the same benchmarked path without the classification head. Cross-encoder reranking is also an encoder forward over a query-document pair, so we expect the same serving behavior, though we did not run an end-to-end reranking load test. For the camera-ready pip-installable library, we will expose task-level wrappers for common encoder workloads.
