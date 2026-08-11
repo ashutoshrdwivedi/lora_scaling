@@ -1,10 +1,10 @@
 #!/bin/bash
-# Rebuttal pod -- A100-80GB -- mixed-rank serving (yeZ9 Q5 / W1).
+# A100-80GB -- mixed-rank serving.
 #
-# Answers "Fig 3 shows latency flat as N scales -- does this hold under
-# mixed-rank deployments (e.g. some adapters r=4, others r=16 in the same
-# batch)?" and its paired weakness, that padding low-rank adapters up to the
-# batch maximum "wastes compute" and the overhead "is potentially severe".
+# Does the flat-in-N latency of Fig 3 hold under mixed-rank deployments (e.g.
+# some adapters r=4, others r=16 in the same batch)? And does padding low-rank
+# adapters up to the batch maximum waste enough compute for the overhead to
+# matter?
 #
 # The paper's rank sweep (Finding 3) varies r UNIFORMLY. Zero-padding makes a
 # mixed batch bit-identically shaped to a uniform r_max batch, so that sweep
@@ -14,14 +14,14 @@
 #
 # Two artifacts, because the two mixes have different memory ceilings and one
 # file per artifact is the rule here:
-#   mixed_rank_4_16.*     the reviewer's own example, 50/50 r=4 / r=16.
+#   mixed_rank_4_16.*     the 50/50 r=4 / r=16 case.
 #                         r_max=16 -> 3.14 MB/adapter, so N reaches 20,000.
 #   mixed_rank_spread.*   full-spread worst case, 25% each of r=4,8,16,32.
 #                         r_max=32 -> 6.29 MB/adapter, so N stops at 10,000.
 # Both peak near 63 GB of adapter store at their top N; expandable_segments is
 # not optional here (see the fragmentation note in run_rebuttal_l40s.sh).
 #
-# A third, short arm re-measures the reviewer's mix under the CPU-loop
+# A third, short arm re-measures the 4/16 mix under the CPU-loop
 # BatchAssembler -- the assembler the published figures used -- so the headline
 # can be quoted either way without a second pod session.
 #

@@ -4,7 +4,7 @@ tests/test_hf_wrapper.py pins these properties on tiny random models, which is
 fast but not sufficient: the DeBERTa shared-position-bias divergence only
 appears with *trained* weights (on a randomly initialised model the position
 bias is near-noise, and our output matches PEFT to ~1e-7). These tests
-therefore run against the actual checkpoints the rebuttal measures.
+therefore run against the actual checkpoints the generality rows measure.
 
 Requires CUDA and multi-GB model downloads (xlm-roberta-xl 14G,
 deberta-v2-xlarge 3.4G, electra-large 1.3G), so they are marked

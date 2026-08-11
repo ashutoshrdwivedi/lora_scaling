@@ -1,5 +1,5 @@
 #!/bin/bash
-# Rebuttal pod A3 (short) -- A100-80GB -- result-scatter instrumentation.
+# A100-80GB (short) -- result-scatter instrumentation.
 #
 # Quantifies the CPU-path cost: the per-tenant slice + softmax, to show it is
 # negligible next to batch assembly. Must run on an A100-80GB so the numbers
@@ -21,7 +21,7 @@
 # New output directory: does NOT clobber the submitted assembly_bench.txt /
 # assembly_bench_minilm.txt results. Compare, then promote deliberately.
 #
-# Runtime ~25 min. Independent of the other rebuttal scripts -- pairs well
+# Runtime ~25 min. Independent of the other generality scripts -- pairs well
 # appended to run_rebuttal_electra.sh on the same pod.
 set -u
 export HOME=/root
@@ -33,7 +33,7 @@ export HF_HOME=${HF_HOME:-/workspace/hf_cache}
 export UV_CACHE_DIR=${UV_CACHE_DIR:-/root/.cache/uv}
 export TMPDIR=${TMPDIR:-/workspace/tmp}
 # PYTORCH_CUDA_ALLOC_CONF is deliberately NOT set here, unlike every other
-# rebuttal script. Two reasons, and they both point the same way.
+# sweep script. Two reasons, and they both point the same way.
 #   1. No exposure. This bench runs at N=2000 (~3 GB of adapters on an 80 GB
 #      card), nowhere near the ceiling, so the setting would buy no capacity.
 #   2. It would confound the one comparison this script exists to make. Per the

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Rebuttal pod A2 -- A100-80GB -- ELECTRA-large generality row.
+# A100-80GB -- ELECTRA-large generality row.
 #
 # Architecture-generality row beyond the BERT/RoBERTa family.
 # ELECTRA is a replaced-token-detection discriminator, a different pretraining
@@ -19,7 +19,7 @@
 # switch and were measured on the custom encoder. They are valid as wall-clock
 # (the pooler is one B x H x H GEMM out of 24 layers and was never read for
 # anything but latency), but re-run this script before citing the row as
-# wrapper-measured, and keep rebuttal_response.md's engine attribution in sync.
+# wrapper-measured, and keep the reported engine attribution in sync.
 #
 # Same L=24, d=1024 adapter geometry as bge-m3 -> identical 1.57 MB/adapter and
 # the same ~47k ceiling, which is itself a clean confirmation that Finding 4's
@@ -31,7 +31,7 @@
 # without a second pod session.
 # 6 N x 5 B + 3 rank cells = 33 configs x 5 seeds = 165 runs.
 #
-# Runtime ~2h30m. Independent of the other rebuttal scripts. If you have a
+# Runtime ~2h30m. Independent of the other generality scripts. If you have a
 # spare slot on this pod, run_rebuttal_assembly.sh (~25 min) pairs well here.
 set -u
 export HOME=/root

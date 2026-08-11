@@ -1,5 +1,5 @@
 #!/bin/bash
-# Rebuttal pod B -- L40S-48GB -- hardware-generality row.
+# L40S-48GB -- hardware-generality row.
 #
 # Runs the paper's reference model (bge-m3) on an inference-class GPU -- Ada,
 # GDDR6, ~864 GB/s vs the A100's HBM2e ~2 TB/s -- to show the O(1)-in-N property
@@ -40,7 +40,7 @@
 # cross-node comparison.
 #
 # Runtime ~1h30m measured 2026-07-27 (the ~2h45m estimate was conservative);
-# the sweep is ~1h of it. Independent of the other rebuttal scripts.
+# the sweep is ~1h of it. Independent of the other generality scripts.
 set -u
 export HOME=/root
 export PATH=$HOME/.local/bin:$PATH
@@ -93,8 +93,8 @@ if [ $rc -ne 0 ]; then
 fi
 
 # Capacity is probed TWICE, once per allocator, because the 26k-vs-28k gap is
-# itself a reported result -- rebuttal_response.md calls it "a free capacity
-# gain we had not previously quantified" (+7.7%) -- and not merely a run
+# itself a reported result -- a free capacity gain not previously quantified
+# (+7.7%) -- and not merely a run
 # artifact. The archived split (sweep_capacity_l40s.csv at 26000 under the
 # default allocator, sweep_capacity_l40s_expseg.csv at 28000 under
 # expandable_segments) exists only because the export landed between two
