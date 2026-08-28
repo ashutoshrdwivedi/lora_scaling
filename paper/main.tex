@@ -593,6 +593,22 @@ $\PNinetyNineOverPFiftyAtBSixtyFour\times$ at $\mathcal{B}{=}64$, with
 profiling localizing the spike to occasional Python/GC stalls during
 assembly; the GPU forward exhibits no such variance.
 
+This ceiling is not intrinsic. Holding the adapter cache in one contiguous GPU
+tensor and gathering with \texttt{torch.index\_select}---still pure PyTorch, no
+custom kernel---cuts assembly from
+\AsmBaselineShareMinPct--\AsmBaselineShareMaxPct\% of latency to
+\IdxSelShareMinPct--\IdxSelShareMaxPct\%, the p99/p50 ratio from
+\AsmBaselineTailMax$\times$ to \IdxSelTailMax$\times$, and raises throughput
+\IdxSelSpeedupMin--\IdxSelSpeedupMax$\times$ on \texttt{bge-m3}.
+The gain is larger on smaller models where assembly dominates. On \MiniLmName{},
+where assembly reaches
+\MiniLmBaselineShareLoPct--\MiniLmBaselineShareHiPct\% of latency at
+$\mathcal{B} \geq 64$, \texttt{index\_select} lifts single-stream throughput
+from \MiniLmBaselineTputMax{} to \MiniLmIdxSelTputMax{} samples/s
+(\MiniLmSpeedupMin--\MiniLmSpeedupMax$\times$).
+Every result in \S\ref{sec:experiments} uses the CPU assembler and is therefore
+conservative.
+
 \paragraph{Finding 6: Custom LoRA kernels offer only single-digit upside on
 encoders.}
 \label{sec:results_custom_kernels}
@@ -729,15 +745,6 @@ A masked-BMM variant that skips padded lanes remains future work.
 Workloads whose adapter population exceeds a single GPU's capacity require
 an LRU eviction policy with CPU offload, or paged adapter storage as in
 S-LoRA's unified paging \cite{sheng2024slora}; either is a natural extension.
-
-\paragraph{CPU-side batch assembly.}
-The \texttt{BatchAssembler} runs on CPU and gathers per-sample adapter
-slices into per-layer lists via Python loops.
-For very high request rates ($>$10{,}000 requests/sec), this becomes the
-throughput bottleneck.
-Moving the adapter cache into a single contiguous GPU tensor and performing
-batch assembly via GPU-resident index selection (e.g., \texttt{torch.index\_select})
-removes this CPU bottleneck while retaining pure-PyTorch compatibility.
 
 \paragraph{Single-node evaluation.}
 All latency and throughput results are measured on one GPU. The architecture
