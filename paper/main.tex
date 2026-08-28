@@ -716,14 +716,13 @@ GPU cost across tenants and scales out as stateless, tenant-sharded replicas
 % =============================================================================
 \section*{Limitations}
 
-\paragraph{Uniform rank constraint.}
-All adapters in a batch must share the same rank $r$ and the same set of
-target modules.
-Serving tenants with heterogeneous fine-tuning strategies requires padding
-every adapter to the maximum rank present in the batch, wasting compute on
-low-rank adapters; a masked-BMM variant that avoids this padding overhead
-remains future work.
-% TODO (Task #8): mixed-rank experiment, finalize this paragraph after.
+\paragraph{Uniform rank within a batch.}
+All adapters in a batch share one rank $r$ and one set of target modules, so a
+heterogeneous fleet must pad every adapter to the largest rank present.
+Padding costs at most \MixedRankOverheadMaxPct\% in latency
+(\ref{app:mixed_rank}); the real cost is memory, and per-rank stores
+recover it (to $\MixedRankStoreWide\times$).
+A masked-BMM variant that skips padded lanes remains future work.
 
 \paragraph{Pre-loaded adapter cache.}
 \sysname{} holds all adapters in GPU memory permanently.
@@ -794,6 +793,50 @@ sizes.
   $\mathcal{O}(1)$-in-$N$ scaling property of \sysname.}
   \label{fig:latency_adapters}
 \end{figure}
+
+% =============================================================================
+\section{Rank Sweep Across Encoders and GPUs}
+\label{app:ranks_models}
+
+Table~\ref{tab:ranks_models} details the rank-insensitivity claim of
+\S\ref{sec:results_generalization}, with ranks interleaved within each seed
+pass. No configuration shows a resolvable trend in $r$: the largest spread
+across the four ranks is \GenRankSpreadAllMaxPct\%, below the
+\GenSeedSdWorstPct\% between-seed s.d.\ of the noisiest cell we measure.
+
+\begin{table*}[!t]
+  \centering
+  \footnotesize
+  \setlength{\tabcolsep}{5pt}
+  \caption{p50 latency (ms) versus LoRA rank, per configuration
+    ($\mathcal{B}{=}\HeadlineBatch$, $N{=}1{,}000$, mean over
+    \SweepNumSeeds{} seeds). \emph{Spread} is
+  $(\max-\min)/\min$ across the four ranks.}
+  \label{tab:ranks_models}
+  \input{table_ranks_models.tex}
+\end{table*}
+
+% =============================================================================
+\section{Mixed-Rank Fleets}
+\label{app:mixed_rank}
+
+A batch must be rank-homogeneous, so a fleet with mixed ranks pads each adapter
+to the batch maximum. We measured the cost on \texttt{bge-m3}/A100
+($\mathcal{B}{=}\MixedRankBatch$, \MixedRankSeeds{} seeds) for an $r \in
+\MixedRankFleetSmall$ fleet swept to $N{=}\MixedRankNMax$ and a wider $r \in
+\MixedRankFleetWide$ fleet swept to $N{=}\MixedRankNMaxWide$, stored either
+pre-padded to the fleet maximum or in per-rank buckets padded at assembly time.
+Against a uniform batch already running at the fleet maximum---whether mixing
+costs anything beyond the padded shape---the spread is
+$\MixedRankOverheadMinPct$\% to $+\MixedRankOverheadMaxPct$\%, so it does not.
+What remains is the cost of the padded shape itself, which is just the cost of
+running every adapter at the maximum rank; the rank sweep of
+\ref{app:ranks_models} measures that as negligible. Equal-rank sampling put the
+fleet maximum in \MixedRankAtFleetMaxPct\% of batches, making every measurement
+a worst case. p50 also stays flat in $N$ (\MixedRankSpreadMaxPct\% spread). The
+cost is memory: pre-padding charges every adapter for the fleet maximum, while
+per-rank stores charge each its own, at $\MixedRankStoreSmall\times$ and
+$\MixedRankStoreWide\times$ the footprint.
 
 % =============================================================================
 \section{Protocol Validation on the SetFit Backbone}
