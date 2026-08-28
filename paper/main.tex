@@ -756,18 +756,13 @@ Finally, throughput remains multi-fold above PEFT's mixed-batch API in every cas
 (\GenSpeedupMin--\GenSpeedupMax$\times$, Finding~7).
 Batching and assembly dynamics (Findings~2, 5, and~6) operate at fixed $N$ and are orthogonal to tenant scaling.
 
-\paragraph{Finding 8: Flat-in-$N$ latency strengthens with model scale.}
-XLM-RoBERTa-XL, the largest evaluated encoder, exhibits the flattest profile of all five configurations
-(\GenXlmrXLSpreadPct\% total spread across its sweep).
-This directly follows from \S\ref{sec:complexity}: because the shared base forward scales quadratically
-with hidden size ($\mathcal{O}(d^2 L)$) while the per-tenant delta path scales linearly ($\mathcal{O}(r d L)$),
-the tenant-independent term increasingly dominates execution time as model size grows.
-Scaling model capacity therefore pushes the two operational axes in opposite directions---latency
-flattens further while per-GPU tenant capacity decreases---making VRAM capacity, rather than latency,
-the binding constraint for large backbones.
-The \emph{Spread} column in Table~\ref{tab:generalization} primarily captures baseline measurement noise:
-it is anchored at $N{=}100$ (the lowest-latency, highest-variance cell, where seed s.d.\ reaches
-\GenSeedSdWorstPct\% on the L40S vs.\ $\leq$0.5\% elsewhere) rather than systematic drift.
+The ceilings above show what scale erodes: XLM-RoBERTa-XL, the largest encoder
+we test, sustains the smallest tenant pool of the five, so VRAM rather than
+latency is the binding constraint on large backbones.
+The \emph{Spread} column in Table~\ref{tab:generalization} is measurement noise
+rather than systematic drift: it is anchored at $N{=}100$, the lowest-latency
+and highest-variance cell, where seed s.d.\ reaches \GenSeedSdWorstPct\% on the
+L40S against $\leq$0.5\% elsewhere.
 
 % =============================================================================
 \section{Conclusion}
