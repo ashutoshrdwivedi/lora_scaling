@@ -740,11 +740,10 @@ any HuggingFace encoder exposing standard projection modules.\footnote{These swe
   and
   \texttt{expandable\_segments} allocation is enabled, so reported ceilings
   reflect available VRAM rather than allocator fragmentation. The
-  \texttt{bge-m3}/A100 row is the original run and carries neither change.}\footnote{On DeBERTa-v2 we adapt the
-  value projections only (\GenDebertaTargets), because its query projection is
-  shared with batch-level relative-position embeddings
-  (\texttt{share\_att\_key}). Wrapping fewer modules also gives PEFT less
-  mixed-batch work to do, so the DeBERTa speedup row is conservative.}
+  \texttt{bge-m3}/A100 row is the original run and carries neither change.}\footnote{DeBERTa-v2 also uses the query projection for batch-shared position
+  bias. Our sweep targets value projections (\GenDebertaTargets) only, to
+  maintain equivalence with PEFT. Because fewer modules are wrapped, PEFT
+  incurs less mixed-batch overhead, making our speedup row conservative.}
 
 \paragraph{Every property transfers unchanged.}
 As summarized in Table~\ref{tab:generalization}, all headline properties replicate across all
