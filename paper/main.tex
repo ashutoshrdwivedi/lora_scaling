@@ -722,7 +722,7 @@ lower bounds that only widen, rendering PEFT impractical for large tenant pools.
 \subsection{Generalization Across Models and Hardware}
 \label{sec:results_generalization}
 
-We next extend our evaluation across diverse models and hardware to confirm that
+We next extend our evaluation across diverse models and hardware to empirically verify that
 $\mathcal{O}(1)$-in-$N$ latency scaling is an intrinsic architectural property of our
 decomposition (\S\ref{sec:lf_decomp}) rather than an artifact of a specific encoder or GPU.
 Specifically, we replicate the full sweep protocol of \S\ref{sec:setup} (\SweepNumSeeds{} seeds,
@@ -732,8 +732,15 @@ ELECTRA-large \cite{clark2020electra} (replaced-token detection);
 DeBERTa-v2-xlarge \cite{he2021deberta} (disentangled attention);
 XLM-RoBERTa-XL \cite{goyal2021xlmrxl} (\GenXlmrLayers{} layers, $d{=}\GenXlmrHidden$);
 and \texttt{bge-m3} on an L40S-48GB.
-The serving path remains entirely unmodified: a generic attachment wrapper binds \sysname{} to
-any HuggingFace encoder exposing standard projection modules, requiring zero model-specific code.\footnote{On DeBERTa-v2 we adapt the
+The serving path requires zero model-specific code: a generic attachment wrapper binds \sysname{} to
+any HuggingFace encoder exposing standard projection modules.\footnote{These sweeps differ from
+  \S\ref{sec:results_latency}--\ref{sec:results_baselines} in two respects:
+  LoRA is attached via the generic forward-hook path on a stock HuggingFace
+  \texttt{AutoModel} rather than the BERT-family reimplementation used there,
+  and
+  \texttt{expandable\_segments} allocation is enabled, so reported ceilings
+  reflect available VRAM rather than allocator fragmentation. The
+  \texttt{bge-m3}/A100 row is the original run and carries neither change.}\footnote{On DeBERTa-v2 we adapt the
   value projections only (\GenDebertaTargets), because its query projection is
   shared with batch-level relative-position embeddings
   (\texttt{share\_att\_key}). Wrapping fewer modules also gives PEFT less
