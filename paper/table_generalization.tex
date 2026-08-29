@@ -1,0 +1,12 @@
+\begin{tabular}{@{}llrrrrr@{}}
+\toprule
+Encoder & GPU & Params & Ceiling $N$ & $\Delta$p50 & Spread & vs.\ PEFT \\
+ & & & ($r{=}8$) & at ceil. & (sweep) & mixed \\
+\midrule
+\texttt{bge-m3}$^{\dagger}$ & A100-80GB & 568M & 47{,}000 & $+0.65$\% & 3.31\% & 5.6--21.2$\times$ \\
+ELECTRA-large & A100-80GB & 334M & 51{,}000 & $-0.16$\% & 1.36\% & 6.2--20.9$\times$ \\
+DeBERTa-v2-xlarge & A100-80GB & 885M & 64{,}000 & $+0.43$\% & 1.16\% & 2.4--7.1$\times$ \\
+XLM-RoBERTa-XL & A100-80GB & 3.5B & 12{,}000 & $-0.38$\% & 0.70\% & 2.3--19.5$\times$ \\
+\texttt{bge-m3} & L40S-48GB & 568M & 28{,}000 & $+1.29$\% & 1.60\% & 3.1--32.7$\times$ \\
+\bottomrule
+\end{tabular}

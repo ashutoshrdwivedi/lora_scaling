@@ -149,7 +149,7 @@ custom CUDA kernels yield an optimistic upper bound of single-digit performance 
 This structural difference makes standard batched matrix
 multiplication (BMM) the appropriate primitive for encoder serving.
 
-We present \sysname,\footnote{Code and benchmarks: \url{\codeurl}} a serving system built on this primitive. Rather than
+We present \sysname,\footnote{Code and benchmarks: \url{\codeurl}; \texttt{pip install latefuse}} a serving system built on this primitive. Rather than
 merging each $B_i A_i$ into $W_0$, which forces per-sample weights to be applied
 serially, \sysname{} keeps the base output $W_0 x$ and the delta $B_i A_i x$ as
 separate terms and sums them (\emph{activation-space} fusion, not parameter-space
