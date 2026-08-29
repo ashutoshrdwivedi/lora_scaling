@@ -467,14 +467,16 @@ cloud-managed node in \HeadlineDtype{} precision, with PyTorch
 \EnvTransformersVersion{}, and \texttt{peft} \EnvPeftVersion{}.
 
 \paragraph{Benchmark protocol.}
-We measure end-to-end latency (batch assembly + encoder forward pass + LR head)
+We measure end-to-end latency (batch assembly + encoder forward pass + LR head) at
+sequence length $S{=}128$
 using \SysWarmup{}/\SysIters{} warm-up/measured iterations for \sysname{}; the
 PEFT baselines use \PeftWarmup{}/\PeftIters{}, since PEFT-grouped reaches
 $\sim$80~s/iter at the largest configuration.
 GPU-side work is timed with reusable \texttt{torch.cuda.Event} pairs and
 synchronized once per iteration; CPU-side assembly is timed with
 \texttt{time.perf\_counter} between identical synchronization points.
-We sweep adapter count $N \in \{100$, $1{,}000$, $5{,}000$, $10{,}000$,
+All configurations are evaluated across \SweepNumSeeds{} independent random seeds,
+sweeping adapter count $N \in \{100$, $1{,}000$, $5{,}000$, $10{,}000$,
 $20{,}000$, $40{,}000$, $\CapacityRankEight\}$,
 batch size $\mathcal{B} \in \{8,\,16,\,32,\,64,\,128\}$, and rank
 $r \in \{4,\,8,\,16,\,32\}$.
