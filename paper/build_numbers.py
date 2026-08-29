@@ -106,6 +106,12 @@ HEADLINE_DTYPE  = "float16"
 # ===========================================================================
 REPO    = Path(__file__).resolve().parent.parent
 RESULTS = REPO / "benchmarks" / "results"
+# Camera-ready additions (generalization sweep, GPU-resident assembler,
+# mixed-rank fleets, registration churn) are aggregated by
+# rebuttal/make_numbers.py, which reads the same raw CSVs this file does and
+# writes one flat registry. Reading its output rather than re-deriving keeps a
+# single definition of, say, "speedup" across the paper and the response.
+REBUTTAL_JSON = REPO / "rebuttal" / "numbers.json"
 QUALITY = REPO / "benchmarks" / "quality"
 OUT     = REPO / "paper"
 
@@ -928,6 +934,16 @@ def build() -> None:
     m.add("HeadlineSpeedupLow",   min(speedups_grouped))
     m.add("HeadlineSpeedupHigh",  max(speedups_grouped))
 
+    # ---- Camera-ready blocks (multi-model sweep, GPU-resident assembler,
+    #      mixed-rank fleets, registration churn). Sourced from the rebuttal
+    #      registry so the paper and the response cannot drift apart.
+    reb = load_rebuttal()
+    emit_generalization_macros(m, reb)
+    emit_assembler_macros(m, reb)
+    emit_mixed_rank_macros(m, reb)
+    emit_churn_macros(m, reb)
+    emit_footprint_macros(m, reb)
+
     # =======================================================================
     # Write outputs
     # =======================================================================
@@ -944,6 +960,9 @@ def build() -> None:
         (OUT / "table_accuracy_bge.tex").write_text(render_table_accuracy(
             setfit_bge, BGE_HIDDEN_SIZE, BGE_NUM_LAYERS,
             BGE_TARGET_MODULES, BGE_NUM_PARAMS))
+    (OUT / "table_generalization.tex").write_text(render_table_generalization(reb))
+    (OUT / "table_ranks_models.tex").write_text(render_table_ranks_models(reb))
+    (OUT / "table_churn.tex").write_text(render_table_churn(reb))
 
     # Stdout summary
     storage_reduction_x = round(
@@ -953,6 +972,263 @@ def build() -> None:
                   fwd, setfit, env, storage_reduction_x,
                   have_setfit_bge=setfit_bge is not None)
 
+
+
+# ===========================================================================
+# Camera-ready blocks sourced from rebuttal/numbers.json
+# ===========================================================================
+
+def load_rebuttal() -> dict[str, Any]:
+    if not REBUTTAL_JSON.exists():
+        raise FileNotFoundError(
+            f"{REBUTTAL_JSON} is missing. Run `python rebuttal/make_numbers.py` "
+            "first -- it aggregates the multi-model, assembler, mixed-rank and "
+            "churn results the camera-ready sections quote."
+        )
+    with open(REBUTTAL_JSON) as fh:
+        return json.load(fh)
+
+
+# Order is the order of rows in Table tab:generalization: the paper's own
+# configuration first, then the new encoders by parameter count, then the
+# second GPU class.
+GEN_ROWS = [
+    ("bgem3_a100", "\\texttt{bge-m3}",           "A100-80GB", True),
+    ("electra",    "ELECTRA-large",               "A100-80GB", False),
+    ("deberta",    "DeBERTa-v2-xlarge",           "A100-80GB", False),
+    ("xlmr_xl",    "XLM-RoBERTa-XL",              "A100-80GB", False),
+    ("l40s",       "\\texttt{bge-m3}",           "L40S-48GB", False),
+]
+
+GEN_TAGS = {"bgem3_a100": "BgeAOneHundred", "electra": "Electra",
+            "deberta": "Deberta", "xlmr_xl": "XlmrXL", "l40s": "LFortyS"}
+
+
+def fmt_params(m_params: float) -> str:
+    """334.1 -> '334M'; 3482.5 -> '3.5B'. Table cells, so no decimals below 1B."""
+    return f"{m_params / 1000:.1f}B" if m_params >= 1000 else f"{m_params:.0f}M"
+
+
+def fmt_signed(pct: float) -> str:
+    """Math mode so the sign is a real minus, not a hyphen."""
+    return f"${pct:+.2f}$"
+
+
+def emit_generalization_macros(m: Macros, reg: dict[str, Any]) -> None:
+    cs, roll = reg["configs"], reg["rollup"]
+    m.section("Generalization across encoders and GPUs (Sec 4.5, Finding 8)",
+              "rebuttal/numbers.json <- benchmarks/results/rebuttal_*/")
+    new_keys = ["electra", "deberta", "xlmr_xl", "l40s"]
+    m.add("GenNumConfigs", len(GEN_ROWS))
+    m.add("GenNumNewEncoders", 3, comment="ELECTRA, DeBERTa, XLM-R-XL")
+    m.add("GenParamsMin", fmt_params(roll["params_min_m"]))
+    m.add("GenParamsMax", fmt_params(roll["params_max_m"]))
+    m.add("GenAtCeilingWorstPct", f'{roll["at_ceiling_max_all"]:.2f}',
+          comment="worst (most positive) p50 drift at ceiling vs N=1000, all configs")
+    m.add("GenAtCeilingBestPct", f'{roll["at_ceiling_min_over_new"]:.2f}',
+          comment="most negative, i.e. faster at the ceiling")
+    m.add("GenSpreadMinPct", f'{roll["spread_pct_min_over_new"]:.2f}')
+    m.add("GenSpreadMaxPct", f'{roll["spread_pct_max_over_new"]:.2f}')
+    m.add("GenSpeedupMin", f'{roll["speedup_min_over_new"]:.1f}')
+    m.add("GenSpeedupMax", f'{roll["speedup_max_over_new"]:.1f}')
+    m.add("GenSpeedupMaxAOneHundred", f'{roll["speedup_max_a100"]:.1f}')
+    m.add("GenRankSpreadMaxPct", f'{roll["rank_spread_max_over_new"]:.2f}')
+    m.add("GenRankSpreadAllMaxPct",
+          f'{max(cs[k]["rank_spread_pct"] for k in cs):.2f}',
+          comment="largest rank spread over ALL configs in the table, "
+                  "including the primary one; over_new excludes it")
+    m.add("GenPoolGrowthMax", reg["derived"]["pool_growth_vs_n1000_max"],
+          comment="ceiling / 1000, the multiplier the flat-p50 claim survives")
+    for key in new_keys + ["bgem3_a100"]:
+        tag, c = GEN_TAGS[key], cs[key]
+        m.add(f"Gen{tag}Ceiling", num_comma(c["ceiling_n"]))
+        m.add(f"Gen{tag}MB", f'{c["mb_per_adapter_r8"]:.2f}')
+        m.add(f"Gen{tag}SpreadPct", f'{c["spread_pct_worst"]:.2f}')
+        m.add(f"Gen{tag}RankSpreadPct", f'{c["rank_spread_pct"]:.2f}')
+        m.add(f"Gen{tag}ParamsM", fmt_params(c["total_params_m"]))
+    m.add("GenXlmrLayers", cs["xlmr_xl"]["num_layers"])
+    m.add("GenXlmrHidden", cs["xlmr_xl"]["hidden_size"])
+    m.add("GenDebertaHidden", cs["deberta"]["hidden_size"])
+    m.add("GenDebertaTargets", "\\texttt{value\\_proj}")
+    m.add("GenSeedSdWorstPct", f'{max(cs[k]["seed_sd_pct_worst"] for k in cs):.2f}',
+          comment="noisiest cell in any sweep; bounds what 'spread' can mean")
+
+
+def emit_assembler_macros(m: Macros, reg: dict[str, Any]) -> None:
+    a = reg["assembly"]
+    bge, mini = a["bgem3"], a["minilm"]
+    m.section("GPU-resident batch assembler (Finding 5, Limitations)",
+              "rebuttal/numbers.json <- benchmarks/results/rebuttal_assembly/")
+    m.add("AsmAdapters", num_comma(bge["num_adapters"]))
+    m.add("AsmSeeds", bge["seeds"])
+    m.add("IdxSelSpeedupMin", f'{bge["speedup_min"]:.2f}')
+    m.add("IdxSelSpeedupMax", f'{bge["speedup_max"]:.2f}')
+    m.add("AsmBaselineShareMinPct", f'{bge["baseline_assemble_share_min"]:.1f}')
+    m.add("AsmBaselineShareMaxPct", f'{bge["baseline_assemble_share_max"]:.1f}')
+    m.add("IdxSelShareMinPct", f'{bge["indexsel_assemble_share_min"]:.1f}')
+    m.add("IdxSelShareMaxPct", f'{bge["indexsel_assemble_share_max"]:.1f}')
+    m.add("AsmBaselineTailMax", f'{bge["baseline_tail_ratio_max"]:.2f}')
+    m.add("IdxSelTailMax", f'{bge["indexsel_tail_ratio_max"]:.2f}')
+    # Result scatter: the per-tenant slicing the head does after the forward.
+    m.add("ScatterMsMin", f'{min(bge["baseline_scatter_ms"].values()):.2f}')
+    m.add("ScatterMsMax", f'{max(bge["baseline_scatter_ms"].values()):.2f}')
+    m.add("ScatterSharePctMin", f'{bge["baseline_scatter_share_min"]:.1f}')
+    m.add("ScatterSharePctMax", f'{bge["baseline_scatter_share_max"]:.1f}')
+
+    # MiniLM is the CPU-bound corner: shallow and fast enough that assembly,
+    # not the GPU, sets the ceiling. It is where the >10k req/s claim lives.
+    b64 = mini["baseline_assemble_share_b64plus"]
+    i64 = mini["indexsel_assemble_share_b64plus"]
+    tail_b = max(mini["baseline_tail_ratio"], key=lambda k: mini["baseline_tail_ratio"][k])
+    m.add("MiniLmName", "\\texttt{all-MiniLM-L6-v2}")
+    m.add("MiniLmBaselineTputMax", num_comma(mini["baseline_tput_max"]))
+    m.add("MiniLmIdxSelTputMax", num_comma(mini["indexsel_tput_max"]))
+    m.add("MiniLmIdxSelTputAtLarge", num_comma(min(mini["indexsel_tput_at_large_batches"])))
+    m.add("MiniLmSpeedupMin", f'{mini["speedup_min"]:.2f}')
+    m.add("MiniLmSpeedupMax", f'{mini["speedup_max"]:.2f}')
+    m.add("MiniLmBaselineShareLoPct", f"{b64[0]:.1f}")
+    m.add("MiniLmBaselineShareHiPct", f"{b64[1]:.1f}")
+    m.add("MiniLmIdxSelShareLoPct", f"{i64[0]:.1f}")
+    m.add("MiniLmIdxSelShareHiPct", f"{i64[1]:.1f}")
+    m.add("MiniLmTailBaseline", f'{mini["baseline_tail_ratio"][tail_b]:.2f}',
+          comment=f"p99/p50 at B={tail_b}, the worst baseline cell")
+    m.add("MiniLmTailIdxSel", f'{mini["indexsel_tail_ratio"][tail_b]:.2f}',
+          comment=f"same cell, B={tail_b}")
+    m.add("MiniLmTailBatch", tail_b)
+
+
+def emit_mixed_rank_macros(m: Macros, reg: dict[str, Any]) -> None:
+    mr = reg["mixed_rank"]
+    two, four = mr["bgem3_4_16"], mr["bgem3_spread"]
+    m.section("Mixed-rank fleets (Limitations: uniform rank)",
+              "rebuttal/numbers.json <- benchmarks/results/rebuttal_mixed_rank/")
+    m.add("MixedRankOverheadMaxPct",
+          f'{max(two["overhead_vs_rmax_pct_max"], four["overhead_vs_rmax_pct_max"]):.2f}',
+          comment="pre-padded fleet vs a uniform batch already at r_max")
+    m.add("MixedRankSpreadMaxPct",
+          f'{max(two["spread_pct_over_n_max"], four["spread_pct_over_n_max"]):.2f}',
+          comment="worst p50 spread across N, so latency stays flat under mixing")
+    m.add("MixedRankOverheadMinPct",
+          f'{min(two["overhead_vs_rmax_pct_min"], four["overhead_vs_rmax_pct_min"]):.2f}',
+          comment="most negative shape overhead; the sign flip says the effect is zero")
+    m.add("MixedRankNMax", num_comma(max(two["adapters"])),
+          comment="ceiling of the {4,16} fleet only -- the wider fleet stopped lower")
+    m.add("MixedRankNMaxWide", num_comma(max(four["adapters"])))
+    m.add("MixedRankBatch", two["batch_size"])
+    m.add("MixedRankFleetSmall", "\\{4, 16\\}")
+    m.add("MixedRankFleetWide", "\\{4, 8, 16, 32\\}")
+    m.add("MixedRankStoreSmall", f'{two["native_store_vs_padded_min"]:.3f}')
+    m.add("MixedRankStoreWide", f'{four["native_store_vs_padded_min"]:.3f}')
+    m.add("MixedRankAtFleetMaxPct",
+          f'{min(two["batches_at_fleet_max_pct_min"], four["batches_at_fleet_max_pct_min"]):.1f}',
+          comment="share of sampled batches containing the fleet max rank -> worst case")
+    m.add("MixedRankSeeds", two["seeds"])
+
+
+def emit_churn_macros(m: Macros, reg: dict[str, Any]) -> None:
+    c = reg["churn"]
+    m.section("Adapter registration under serving churn (Finding 7)",
+              "rebuttal/numbers.json <- benchmarks/results/churn_registration_a100/")
+    m.add("ChurnPoolSmall", num_comma(c["pool_small"]))
+    m.add("ChurnPoolLarge", num_comma(c["pool_large"]))
+    m.add("ChurnPoolGrowth", c["pool_growth"])
+    m.add("ChurnRegMsSmall", f'{c["file_ms_small"]:.2f}')
+    m.add("ChurnRegMsLarge", f'{c["file_ms_large"]:.2f}')
+    m.add("ChurnRegDriftPct", f'{c["file_drift_pct"]:.2f}')
+    m.add("ChurnRegCI", f'{c["file_ci95_ms"]:.2f}',
+          comment="95% CI half-width on the seed mean, wider of the two cells")
+    m.add("ChurnHeadMs", f'{c["head_install_ms"]:.2f}')
+    m.add("ChurnSeeds", c["by_path"]["file"][str(c["pool_small"])]["seeds"])
+    m.add("ChurnHostTwoSmall", f'{c["host2_file_ms_small"]:.2f}')
+    m.add("ChurnHostTwoLarge", f'{c["host2_file_ms_large"]:.2f}')
+    m.add("ChurnHostTwoDriftPct", f'{c["host2_file_drift_pct"]:.2f}')
+    m.add("ChurnHostTwoSlowerPct", f'{c["host2_slower_pct"]:.0f}')
+    lo1, hi1 = c["share_pct_at_1_per_s"]
+    lo10, hi10 = c["share_pct_at_10_per_s"]
+    m.add("ChurnShareOneLoPct", f"{lo1:.2f}")
+    m.add("ChurnShareOneHiPct", f"{hi1:.2f}")
+    m.add("ChurnShareTenLoPct", f"{lo10:.2f}")
+    m.add("ChurnShareTenHiPct", f"{hi10:.2f}")
+    m.add("ChurnSustainableRate", f'{c["sustainable_rate_at_1pct"]:.2f}',
+          comment="updates/s that cost 1% of pod wall-clock capacity")
+    m.add("ChurnSaturationRate", f'{c["saturation_rate"]:.0f}')
+    p50lo, p50hi = c["register_p50_ms_quoted_range"]
+    p99lo, p99hi = c["serve_p99_ms_quoted_range"]
+    m.add("ChurnRegPFiftyLo", f"{p50lo:.2f}")
+    m.add("ChurnRegPFiftyHi", f"{p50hi:.2f}")
+    m.add("ChurnServePNinetyNineLo", f"{p99lo:.2f}")
+    m.add("ChurnServePNinetyNineHi", f"{p99hi:.2f}")
+
+
+def emit_footprint_macros(m: Macros, reg: dict[str, Any]) -> None:
+    b, d = reg["configs"]["bgem3_a100"], reg["derived"]
+    m.section("Adapter-store footprint at the ceiling (decimal GB throughout)",
+              "rebuttal/numbers.json <- benchmarks/results/sweep_capacity.csv")
+    store, peak, base = d["store_gb_at_ceiling"], b["ceiling_peak_mem_gb"], b["base_fp16_gb"]
+    m.add("StoreGBAtCeiling", f"{store:.1f}")
+    m.add("StoreGiBAtCeiling", f'{d["store_gib_at_ceiling"]:.1f}')
+    m.add("PeakGBAtCeiling", f"{peak:.1f}")
+    m.add("BaseGBFpSixteen", f"{base:.2f}")
+    m.add("PeakOverStorePct", f"{100.0 * (peak - store) / store:.1f}",
+          comment="peak vs the analytic parameter count: activations + allocator")
+
+
+def render_table_generalization(reg: dict[str, Any]) -> str:
+    cs = reg["configs"]
+    L = ["\\begin{tabular}{@{}llrrrrr@{}}", "\\toprule"]
+    L.append("Encoder & GPU & Params & Ceiling $N$ & $\\Delta$p50 & Spread & "
+             "vs.\\ PEFT \\\\")
+    L.append(" & & & ($r{=}8$) & at ceil. & (sweep) & mixed \\\\")
+    L.append("\\midrule")
+    for key, label, gpu, is_paper in GEN_ROWS:
+        c = cs[key]
+        mark = "$^{\\dagger}$" if is_paper else ""
+        L.append(
+            f"{label}{mark} & {gpu} & {fmt_params(c['total_params_m'])} & "
+            f"{num_comma(c['ceiling_n'])} & {fmt_signed(c['at_ceiling_pct_worst'])}\\% & "
+            f"{c['spread_pct_worst']:.2f}\\% & "
+            f"{c['speedup_min']:.1f}--{c['speedup_max']:.1f}$\\times$ \\\\")
+    L.append("\\bottomrule")
+    L.append("\\end{tabular}")
+    return "\n".join(L) + "\n"
+
+
+def render_table_ranks_models(reg: dict[str, Any]) -> str:
+    cs = reg["configs"]
+    ranks = ["4", "8", "16", "32"]
+    L = ["\\begin{tabular}{@{}lrrrrr@{}}", "\\toprule"]
+    L.append("Configuration & " + " & ".join(f"$r{{=}}{r}$" for r in ranks) +
+             " & Spread \\\\")
+    L.append("\\midrule")
+    for key, label, gpu, _ in GEN_ROWS:
+        c = cs[key]
+        cells = " & ".join(f"{c['rank_p50_ms'][r]:.2f}" for r in ranks)
+        L.append(f"{label} / {gpu} & {cells} & {c['rank_spread_pct']:.2f}\\% \\\\")
+    L.append("\\bottomrule")
+    L.append("\\end{tabular}")
+    return "\n".join(L) + "\n"
+
+
+def render_table_churn(reg: dict[str, Any]) -> str:
+    c = reg["churn"]
+    small, large = str(c["pool_small"]), str(c["pool_large"])
+    L = ["\\begin{tabular}{@{}rrrrrrr@{}}", "\\toprule"]
+    L.append("Updates & Resident & Capacity & \\multicolumn{2}{c}{Registration (ms)} & "
+             "\\multicolumn{2}{c}{Serving (ms)} \\\\")
+    L.append("\\cmidrule(lr){4-5}\\cmidrule(lr){6-7}")
+    L.append("per s & adapters & lost & p50 & p95 & p50 & p99 \\\\")
+    L.append("\\midrule")
+    for rate in ("1.0", "10.0"):
+        for n in (small, large):
+            cell = c["rate_sweep"][rate][n]
+            L.append(
+                f"{float(rate):.0f} & {num_comma(int(n))} & "
+                f"{cell['registration_share_pct']:.2f}\\% & "
+                f"{cell['register_p50_ms']:.2f} & {cell['register_p95_ms']:.2f} & "
+                f"{cell['serve_p50_ms']:.2f} & {cell['serve_p99_ms']:.2f} \\\\")
+    L.append("\\bottomrule")
+    L.append("\\end{tabular}")
+    return "\n".join(L) + "\n"
 
 # ===========================================================================
 # Table renderers
