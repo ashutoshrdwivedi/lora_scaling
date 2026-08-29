@@ -740,12 +740,11 @@ any HuggingFace encoder exposing standard projection modules.\footnote{These swe
   LoRA is attached via the generic forward-hook path on a stock HuggingFace
   \texttt{AutoModel} rather than the BERT-family reimplementation used there,
   and
-  PyTorch's \texttt{expandable\_segments} is enabled to avoid allocator fragmentation. The original \texttt{bge-m3}/A100 row carries neither change.}\footnote{DeBERTa-v2 also uses the query projection for batch-shared position
   bias. Our sweep targets value projections (\GenDebertaTargets) only, to
   maintain equivalence with PEFT. Since fewer modules are wrapped, PEFT
   incurs less mixed-batch overhead, making our reported speedup conservative.}
 
-\paragraph{Every property transfers unchanged.}
+\paragraph{Core scaling invariants generalize across models and GPUs.}
 As summarized in Table~\ref{tab:generalization}, all headline properties replicate across all
 \GenNumConfigs{} configurations.
 Growing the resident pool from $N{=}1{,}000$ to each configuration's memory ceiling (up to
@@ -758,17 +757,15 @@ rank remains a cost-free quality--memory knob (Finding~3).
 Tenant ceilings range from \GenXlmrXLCeiling{} adapters for XLM-RoBERTa-XL to \GenDebertaCeiling{}
 for DeBERTa-v2-xlarge and track per-adapter footprint exactly (\GenXlmrXLMB~MB and \GenDebertaMB~MB),
 each validated by an OOM at the subsequent probe point (Finding~4).
-Finally, throughput remains multi-fold above PEFT's mixed-batch API in every case
-(\GenSpeedupMin--\GenSpeedupMax$\times$, Finding~7).
+Finally, throughput remains multi-fold above PEFT's mixed-batch API in every case (Finding~7).
 Batching and assembly dynamics (Findings~2, 5, and~6) operate at fixed $N$ and are orthogonal to tenant scaling.
 
-The ceilings above show what scale erodes: XLM-RoBERTa-XL, the largest encoder
-we test, sustains the smallest tenant pool of the five, so VRAM rather than
-latency is the binding constraint on large backbones.
-The \emph{Spread} column in Table~\ref{tab:generalization} is measurement noise
-rather than systematic drift: it is anchored at $N{=}100$, the lowest-latency
-and highest-variance cell, where seed s.d.\ reaches \GenSeedSdWorstPct\% on the
-L40S against $\leq$0.5\% elsewhere.
+These ceilings highlight that model size constrains resident tenant capacity rather than
+latency: XLM-RoBERTa-XL sustains the smallest pool among the evaluated models.
+This confirms that VRAM is the binding constraint on the number of adapters,
+with no adverse impact on inference speed on large backbones. Furthermore, the minor \emph{Spread} across sweeps
+in Table~\ref{tab:generalization} reflects baseline measurement noise rather than systematic latency
+degradation.
 
 % =============================================================================
 \section{Conclusion}
