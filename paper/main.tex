@@ -740,11 +740,10 @@ any HuggingFace encoder exposing standard projection modules.\footnote{These swe
   LoRA is attached via the generic forward-hook path on a stock HuggingFace
   \texttt{AutoModel} rather than the BERT-family reimplementation used there,
   and
-  Pytorch's \texttt{expandable\_segments} is enabled to avoid allocator fragmentation.
-  The original \texttt{bge-m3}/A100 row carries neither change.}\footnote{DeBERTa-v2 also uses the query projection for batch-shared position
+  PyTorch's \texttt{expandable\_segments} is enabled to avoid allocator fragmentation. The original \texttt{bge-m3}/A100 row carries neither change.}\footnote{DeBERTa-v2 also uses the query projection for batch-shared position
   bias. Our sweep targets value projections (\GenDebertaTargets) only, to
-  maintain equivalence with PEFT. Because fewer modules are wrapped, PEFT
-  incurs less mixed-batch overhead, making our speedup row conservative.}
+  maintain equivalence with PEFT. Since fewer modules are wrapped, PEFT
+  incurs less mixed-batch overhead, making our reported speedup conservative.}
 
 \paragraph{Every property transfers unchanged.}
 As summarized in Table~\ref{tab:generalization}, all headline properties replicate across all
