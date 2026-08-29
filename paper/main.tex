@@ -732,7 +732,7 @@ Specifically, we replicate the full sweep protocol of \S\ref{sec:setup} (\SweepN
 second GPU class:
 ELECTRA-large \cite{clark2020electra} (replaced-token detection);
 DeBERTa-v2-xlarge \cite{he2021deberta} (disentangled attention);
-XLM-RoBERTa-XL \cite{goyal2021xlmrxl} (\GenXlmrLayers{} layers, $d{=}\GenXlmrHidden$);
+XLM-RoBERTa-XL \cite{goyal-etal-2021-larger} (\GenXlmrLayers{} layers, $d{=}\GenXlmrHidden$);
 and \texttt{bge-m3} on an L40S-48GB.
 The serving path requires zero model-specific code: a generic attachment wrapper binds \sysname{} to
 any HuggingFace encoder exposing standard projection modules.\footnote{These sweeps differ from
