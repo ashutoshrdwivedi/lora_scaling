@@ -110,7 +110,8 @@ yields consistent accuracy gains over a frozen shared encoder
 \cite{devlin2019bert,tunstall2022efficient,jain2026succeeding}.
 Serving an isolated, fully fine-tuned model per tenant, however, is
 infeasible at scale.
-At $\approx$\BgeFpSixteenGB{}~GB per copy in float16 precision, serving
+At $\approx$\BgeFpSixteenGB{}~GB per copy in float16 precision
+(\texttt{bge-m3}, \BgeParamsM{}M parameters), serving
 20{,}000 tenants would require \StorageTwentyKTB{}~TB of model
 weights (requiring \StorageTwentyKGPUs{} A100-80GB GPUs) and eliminate any
 opportunity for cross-tenant request batching.
