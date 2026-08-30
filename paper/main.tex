@@ -893,31 +893,25 @@ across the four ranks is \GenRankSpreadAllMaxPct\%, below the
 \section{GPU-Resident Batch Assembly}
 \label{app:assembly}
 
-Finding~5 identifies CPU-side batch assembly as the residual bottleneck. This
-appendix reports the measurement behind the GPU-resident alternative referenced
-there. We pack the adapter store into one contiguous tensor per target
-module---shape $(N, L, d, r)$ for the shrink matrices and $(N, L, r, d)$ for the
-expand matrices---and assemble a batch with one \texttt{torch.index\_select} per
-module, each gathering all $L$ layers for the whole batch in a single
-device-side gather. The only remaining host-side work is an
-$\mathcal{O}(\mathcal{B})$ adapter-ID to row-index lookup, independent of $L$
-and $|\mathcal{M}|$. Logits are asserted identical to the baseline assembler
-before any timing, so the speedups in Table~\ref{tab:assembly} are for a
-numerically identical computation. We sweep both encoders at
+Finding~5 identifies CPU-side batch assembly as the residual bottleneck. The
+alternative, a GPU-resident assembler, holds the adapter store as one contiguous
+tensor per target module: shape $(N, L, d, r)$ for the shrink matrices and
+$(N, L, r, d)$ for the expand matrices. Each batch is then built with one
+\texttt{torch.index\_select} per module, which gathers all $L$ layers for the
+whole batch on the device. We sweep both encoders at
 $N{=}\AsmAdapters{}$, $r{=}\HeadlineRank$, \HeadlineDtype{}, sequence length
-128, \AsmSeeds{} seeds, on the \HeadlineGPU{} used throughout.
+128, \AsmSeeds{} seeds, on the same A100.
+Table~\ref{tab:assembly} reports the result.
 
 \begin{table}[h]
   \centering
   \small
   \setlength{\tabcolsep}{4pt}
-  \caption{Batch-assembly strategies at $N{=}\AsmAdapters{}$,
+  \caption{CPU baseline assembler (\emph{base}) versus the GPU-resident
+    \texttt{index\_select} assembler (\emph{idx-sel}) at $N{=}\AsmAdapters{}$,
     $r{=}\HeadlineRank$, \HeadlineDtype{}, \AsmSeeds{} seeds.
     \emph{Asm.\ share} is assembly as a fraction of end-to-end latency, before
-    $\to$ after. Wrapping the gather in \texttt{torch.compile} (not shown) adds
-    \CompileAsmOverheadMinMs--\CompileAsmOverheadMaxMs~ms to the assembly step
-    in every cell and is never faster end-to-end, since the adapter-ID lookup
-  graph-breaks and the gather alone offers no fusion opportunity.}
+    $\to$ after.}
   \label{tab:assembly}
   \input{table_assembly.tex}
 \end{table}
