@@ -595,14 +595,16 @@ $\PNinetyNineOverPFiftyAtBSixtyFour\times$ at $\mathcal{B}{=}64$, with
 profiling localizing the spike to occasional Python/GC stalls during
 assembly; the GPU forward exhibits no such variance.
 
-Both the share and the variance are host-side, so we evaluate a GPU-resident
+The bottleneck is CPU-side, so we evaluate a GPU-resident
 assembler in a separate benchmark ($N{=}\AsmAdapters{}$ adapters, \AsmSeeds{}
 seeds): the adapter cache held in one contiguous GPU tensor and gathered with a
-single \texttt{torch.index\_select} per module in PyTorch, still without any
-custom kernel. Because assembly's share grows as the encoder gets cheaper, we
-construct an adversarial case: a high-QPS regime on a small enough encoder,
-\MiniLmName{}, where low GPU compute shifts the bottleneck onto the host.
+single \texttt{torch.index\_select} per module, still without any
+custom kernel.
 
+Because assembly's share grows as the encoder gets cheaper, we
+construct an adversarial case: a high-QPS regime on a small encoder,
+\MiniLmName{}, whose forward is short enough that CPU-side assembly dominates
+each iteration.
 There assembly consumes
 \MiniLmBaselineShareLoPct--\MiniLmBaselineShareHiPct\% of latency at
 $\mathcal{B} \geq 64$ and caps single-stream throughput at
@@ -805,7 +807,7 @@ S-LoRA's unified paging \cite{sheng2024slora}; either is a natural extension.
 \paragraph{Choice of batch assembler.}
 The two assemblers trade dynamism against throughput. The default
 \texttt{BatchAssembler} keeps adapters in a per-adapter store, so a tenant can
-be admitted or evicted without touching the others, but its host-side gather
+be admitted or evicted without touching the others, but its CPU-side gather
 scales with batch size and becomes the bottleneck as the encoder gets cheaper
 (\S\ref{sec:results_assembly}). The GPU-resident assembler removes that cost, at
 the price of a contiguous tensor whose capacity is fixed at construction:
@@ -881,7 +883,7 @@ across the four ranks is \GenRankSpreadAllMaxPct\%, below the
   \centering
   \scriptsize
   \setlength{\tabcolsep}{2pt}
-  \caption{p50 latency (ms) versus LoRA rank, per configuration
+  \caption{p50 latency (ms) at each LoRA rank
     ($\mathcal{B}{=}\HeadlineBatch$, $N{=}1{,}000$, mean over
     \SweepNumSeeds{} seeds). \emph{Spread} is
   $(\max-\min)/\min$ across the four ranks.}
@@ -898,7 +900,7 @@ alternative, a GPU-resident assembler, holds the adapter store as one contiguous
 tensor per target module: shape $(N, L, d, r)$ for the shrink matrices and
 $(N, L, r, d)$ for the expand matrices. Each batch is then built with one
 \texttt{torch.index\_select} per module, which gathers all $L$ layers for the
-whole batch on the device. We sweep both encoders at
+whole batch on the GPU. We sweep both encoders at
 $N{=}\AsmAdapters{}$, $r{=}\HeadlineRank$, \HeadlineDtype{}, sequence length
 128, \AsmSeeds{} seeds, on the same A100.
 Table~\ref{tab:assembly} reports the result.
