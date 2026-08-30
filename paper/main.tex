@@ -791,9 +791,10 @@ GPU cost across tenants and scales out as stateless, tenant-sharded replicas
 \paragraph{Uniform rank within a batch.}
 All adapters in a batch share one rank $r$ and one set of target modules, so a
 heterogeneous fleet must pad every adapter to the largest rank present.
-Padding costs at most \MixedRankOverheadMaxPct\% in latency
-(\ref{app:mixed_rank}); the real cost is memory, and per-rank stores
-recover it (to $\MixedRankStoreWide\times$).
+A padded batch matches a uniform one at the same rank to within
+\MixedRankOverheadMaxPct\% in latency (\ref{app:mixed_rank}); the cost is
+memory, and per-rank stores recover it (to $\MixedRankStoreWide\times$) for a
+small gather-time cost.
 A masked-BMM variant that skips padded lanes remains future work.
 
 \paragraph{Pre-loaded adapter cache.}
@@ -936,16 +937,18 @@ only during batch assembly.
 
 Across an $r \in \MixedRankFleetSmall$ fleet swept to $N{=}\MixedRankNMax$ and a
 wider $r \in \MixedRankFleetWide$ fleet swept to $N{=}\MixedRankNMaxWide$,
-pre-padding adds at most \MixedRankOverheadMaxPct\% mean end-to-end latency over
-a uniform batch already running at the fleet maximum, measured with the
-GPU-resident assembler of \S\ref{sec:results_assembly}. Latency also stays flat as
+a pre-padded mixed batch matches a uniform batch already running at the fleet
+maximum to within \MixedRankOverheadMaxPct\% mean end-to-end latency, measured
+with the GPU-resident assembler of \S\ref{sec:results_assembly}. Latency also stays flat as
 the pool grows: the worst p50 spread across $N$ is \MixedRankSpreadMaxPct\%.
 Since every sampled batch contained the fleet maximum, these are worst-case
 mixed batches.
 
-The tradeoff is memory: per-rank stores use $\MixedRankStoreSmall\times$ memory
-for $\MixedRankFleetSmall$ and $\MixedRankStoreWide\times$ for
-$\MixedRankFleetWide$, at a small gather-time cost.
+The two stores trade memory against assembly. Pre-padding holds every adapter at
+the fleet maximum, so a batch gathers ready-shaped tensors; per-rank stores hold
+each at its own rank---$\bar{r}/r_{\max}$ of the pre-padded footprint, or
+$\MixedRankStoreSmall\times$ and $\MixedRankStoreWide\times$ for our two
+fleets---but must pad during assembly, a small gather-time cost.
 % =============================================================================
 \section{Protocol Validation on the SetFit Backbone}
 \label{app:accuracy}
