@@ -1033,11 +1033,13 @@ def emit_generalization_macros(m: Macros, reg: dict[str, Any]) -> None:
     m.add("GenSpeedupMin", f'{roll["speedup_min_over_new"]:.1f}')
     m.add("GenSpeedupMax", f'{roll["speedup_max_over_new"]:.1f}')
     m.add("GenSpeedupMaxAOneHundred", f'{roll["speedup_max_a100"]:.1f}')
-    m.add("GenRankSpreadMaxPct", f'{roll["rank_spread_max_over_new"]:.2f}')
+    # Spread over ALL configs. The "over_new" variant (which excluded the
+    # primary bge-m3/A100 config, and so reported a smaller number than the
+    # table shows) is deliberately not emitted: "new" is only meaningful
+    # relative to the submitted version, not to a reader of this paper.
     m.add("GenRankSpreadAllMaxPct",
           f'{max(cs[k]["rank_spread_pct"] for k in cs):.2f}',
-          comment="largest rank spread over ALL configs in the table, "
-                  "including the primary one; over_new excludes it")
+          comment="largest rank spread over ALL configs in the table")
     m.add("GenPoolGrowthMax", reg["derived"]["pool_growth_vs_n1000_max"],
           comment="ceiling / 1000, the multiplier the flat-p50 claim survives")
     for key in new_keys + ["bgem3_a100"]:

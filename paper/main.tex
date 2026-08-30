@@ -755,8 +755,8 @@ Growing the resident pool from $N{=}1{,}000$ to each configuration's memory ceil
 \GenPoolGrowthMax$\times$ more tenants) moves p50 latency by at most \GenAtCeilingWorstPct\% (Finding~1);
 on two configurations, latency at the ceiling is slightly lower than at $N{=}1{,}000$
 (to $\GenAtCeilingBestPct$\%), consistent with zero true effect and residual seed noise.
-Sweeping $r \in \{4, 8, 16, 32\}$ leaves p50 flat within \GenRankSpreadMaxPct\% across all
-new configurations (Table~\ref{tab:ranks_models}, \ref{app:ranks_models}), confirming that
+Sweeping $r \in \{4, 8, 16, 32\}$ leaves p50 flat within \GenRankSpreadAllMaxPct\% across all
+\GenNumConfigs{} configurations (Table~\ref{tab:ranks_models}, \ref{app:ranks_models}), confirming that
 rank remains a cost-free quality--memory knob (Finding~3).
 Tenant ceilings range from \GenXlmrXLCeiling{} adapters for XLM-RoBERTa-XL to \GenDebertaCeiling{}
 for DeBERTa-v2-xlarge and track per-adapter footprint exactly (\GenXlmrXLMB~MB and \GenDebertaMB~MB),
