@@ -675,6 +675,22 @@ single-tenant batches: one \texttt{set\_adapter} and one batched forward each.
   \input{table_baselines.tex}
 \end{table}
 
+\begin{table*}[!t]
+  \centering
+  \footnotesize
+  \setlength{\tabcolsep}{5pt}
+  \renewcommand{\arraystretch}{0.95}
+  \caption{\sysname{} across encoders and GPU classes, same sweep protocol
+    throughout (\S\ref{sec:setup}). $\Delta$p50 compares p50 latency at each
+    configuration's tenant ceiling against $N{=}1{,}000$; \emph{Spread} is the
+    total max$-$min p50 over the whole sweep, anchored at $N{=}100$.
+    \emph{vs.\ PEFT} is the throughput ratio over PEFT's mixed-batch API across
+    the cells PEFT can run. $^{\dagger}$the configuration used in
+  \S\ref{sec:results_latency}--\ref{sec:results_baselines}.}
+  \label{tab:generalization}
+  \input{table_generalization.tex}
+\end{table*}
+
 \paragraph{Finding 7: PEFT does not scale to large tenant pools.}
 \emph{Homogeneous} batching, PEFT's best case, is competitive at $N{=}100$, even
 edging \sysname{} at $\mathcal{B}{=}128$
@@ -708,55 +724,38 @@ We cap the sweep at $N{=}1{,}000$, but both costs grow with the pool by
 construction, so the throughput and load-time gaps above are conservative
 lower bounds that only widen, rendering PEFT impractical for large tenant pools.
 
-\begin{table*}[!t]
-  \centering
-  \footnotesize
-  \setlength{\tabcolsep}{5pt}
-  \renewcommand{\arraystretch}{0.95}
-  \caption{\sysname{} across encoders and GPU classes, same sweep protocol
-    throughout (\S\ref{sec:setup}). $\Delta$p50 compares p50 latency at each
-    configuration's tenant ceiling against $N{=}1{,}000$; \emph{Spread} is the
-    total max$-$min p50 over the whole sweep, anchored at $N{=}100$.
-    \emph{vs.\ PEFT} is the throughput ratio over PEFT's mixed-batch API across
-    the cells PEFT can run. $^{\dagger}$the configuration used in
-  \S\ref{sec:results_latency}--\ref{sec:results_baselines}.}
-  \label{tab:generalization}
-  \input{table_generalization.tex}
-\end{table*}
 
 \subsection{Generalization Across Models and Hardware}
 \label{sec:results_generalization}
 
-We next extend our evaluation across diverse models and hardware to empirically verify that
-$\mathcal{O}(1)$-in-$N$ latency scaling is an intrinsic architectural property of our
-decomposition (\S\ref{sec:lf_decomp}) rather than an artifact of a specific encoder or GPU.
-Specifically, we replicate the full sweep protocol of \S\ref{sec:setup} (\SweepNumSeeds{} seeds,
+To empirically verify that $\mathcal{O}(1)$-in-$N$ latency scaling is a property of the
+decomposition (\S\ref{sec:lf_decomp}) rather than an artifact of a specific encoder or GPU,
+we replicate the sweep protocol of \S\ref{sec:setup} (\SweepNumSeeds{} seeds,
 \HeadlineDtype{}, sequence length 128) on \GenNumNewEncoders{} additional encoders and a
 second GPU class:
 ELECTRA-large \cite{clark2020electra} (replaced-token detection);
-DeBERTa-v2-xlarge \cite{he2021deberta} (disentangled attention);
-XLM-RoBERTa-XL \cite{goyal-etal-2021-larger} (\GenXlmrLayers{} layers, $d{=}\GenXlmrHidden$);
-and \texttt{bge-m3} on an L40S-48GB.
-The serving path requires zero model-specific code: a generic attachment wrapper binds \sysname{} to
-any HuggingFace encoder exposing standard projection modules.\footnote{These sweeps differ from
-  \S\ref{sec:results_latency}--\ref{sec:results_baselines} in two respects:
-  LoRA is attached via the generic forward-hook path on a stock HuggingFace
-  \texttt{AutoModel} rather than the BERT-family reimplementation used there,
-  and
-  PyTorch's \texttt{expandable\_segments} is enabled to avoid allocator fragmentation.
-  The \texttt{bge-m3}/A100 row carries neither change.}
-  \footnote{DeBERTa-v2 uses the query projection for batch-shared position
+DeBERTa-v2-xlarge \cite{he2021deberta} (disentangled attention)\footnote{DeBERTa-v2 uses the query projection for batch-shared position
   bias too. Our sweep targets value projections (\GenDebertaTargets) only, to
   maintain equivalence with PEFT. Since fewer modules are wrapped, PEFT
-  incurs less mixed-batch overhead, making our reported speedup conservative.}
+  incurs less mixed-batch overhead, making our reported speedup conservative.};
+XLM-RoBERTa-XL \cite{goyal-etal-2021-larger} (\GenXlmrLayers{} layers, $d{=}\GenXlmrHidden$);
+and \texttt{bge-m3} on an L40S-48GB.
+
+To serve these models we use a generic attachment wrapper that binds \sysname{}
+to any HuggingFace encoder exposing standard projection modules, rather than the
+BERT-family encoder reimplementation used in
+\S\ref{sec:results_latency}--\ref{sec:results_baselines}; we also enable
+PyTorch's \texttt{expandable\_segments} to avoid allocator fragmentation.
+Neither change applies to \texttt{bge-m3}/A100, including its row in
+Table~\ref{tab:generalization}, and neither alters the decomposition of
+\S\ref{sec:lf_decomp}.
 
 \paragraph{Core scaling invariants generalize across models and GPUs.}
 As summarized in Table~\ref{tab:generalization}, all headline properties replicate across all
 \GenNumConfigs{} configurations.
 Growing the resident pool from $N{=}1{,}000$ to each configuration's memory ceiling (up to
-\GenPoolGrowthMax$\times$ more tenants) moves p50 latency by at most \GenAtCeilingWorstPct\% (Finding~1);
-on two configurations, latency at the ceiling is slightly lower than at $N{=}1{,}000$
-(to $\GenAtCeilingBestPct$\%), consistent with zero true effect and residual seed noise.
+\GenPoolGrowthMax$\times$ more tenants) moves p50 latency by at most \GenAtCeilingWorstPct\%,
+negative on two configurations, consistent with zero effect and seed noise (Finding~1).
 Sweeping $r \in \{4, 8, 16, 32\}$ leaves p50 flat within \GenRankSpreadAllMaxPct\% across all
 \GenNumConfigs{} configurations (Table~\ref{tab:ranks_models}, \ref{app:ranks_models}), confirming that
 rank remains a cost-free quality--memory knob (Finding~3).
