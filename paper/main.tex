@@ -890,6 +890,39 @@ across the four ranks is \GenRankSpreadAllMaxPct\%, below the
 \end{table}
 
 % =============================================================================
+\section{GPU-Resident Batch Assembly}
+\label{app:assembly}
+
+Finding~5 identifies CPU-side batch assembly as the residual bottleneck. This
+appendix reports the measurement behind the GPU-resident alternative referenced
+there. We pack the adapter store into one contiguous tensor per target
+module---shape $(N, L, d, r)$ for the shrink matrices and $(N, L, r, d)$ for the
+expand matrices---and assemble a batch with one \texttt{torch.index\_select} per
+module, each gathering all $L$ layers for the whole batch in a single
+device-side gather. The only remaining host-side work is an
+$\mathcal{O}(\mathcal{B})$ adapter-ID to row-index lookup, independent of $L$
+and $|\mathcal{M}|$. Logits are asserted identical to the baseline assembler
+before any timing, so the speedups in Table~\ref{tab:assembly} are for a
+numerically identical computation. We sweep both encoders at
+$N{=}\AsmAdapters{}$, $r{=}\HeadlineRank$, \HeadlineDtype{}, sequence length
+128, \AsmSeeds{} seeds, on the \HeadlineGPU{} used throughout.
+
+\begin{table}[h]
+  \centering
+  \small
+  \setlength{\tabcolsep}{4pt}
+  \caption{Batch-assembly strategies at $N{=}\AsmAdapters{}$,
+    $r{=}\HeadlineRank$, \HeadlineDtype{}, \AsmSeeds{} seeds.
+    \emph{Asm.\ share} is assembly as a fraction of end-to-end latency, before
+    $\to$ after. Wrapping the gather in \texttt{torch.compile} (not shown) adds
+    \CompileAsmOverheadMinMs--\CompileAsmOverheadMaxMs~ms to the assembly step
+    in every cell and is never faster end-to-end, since the adapter-ID lookup
+  graph-breaks and the gather alone offers no fusion opportunity.}
+  \label{tab:assembly}
+  \input{table_assembly.tex}
+\end{table}
+
+% =============================================================================
 \section{Mixed-Rank Fleets}
 \label{app:mixed_rank}
 
@@ -996,38 +1029,5 @@ restart.
 Sticky routing pins a tenant to one pod, so a single high-traffic tenant cannot
 be spread across nodes without sacrificing cache locality; cluster behavior
 under skewed tenant traffic is left to future work.
-
-% =============================================================================
-\section{GPU-Resident Batch Assembly}
-\label{app:assembly}
-
-Finding~5 identifies CPU-side batch assembly as the residual bottleneck. This
-appendix reports the measurement behind the GPU-resident alternative referenced
-there. We pack the adapter store into one contiguous tensor per target
-module---shape $(N, L, d, r)$ for the shrink matrices and $(N, L, r, d)$ for the
-expand matrices---and assemble a batch with one \texttt{torch.index\_select} per
-module, each gathering all $L$ layers for the whole batch in a single
-device-side gather. The only remaining host-side work is an
-$\mathcal{O}(\mathcal{B})$ adapter-ID to row-index lookup, independent of $L$
-and $|\mathcal{M}|$. Logits are asserted identical to the baseline assembler
-before any timing, so the speedups in Table~\ref{tab:assembly} are for a
-numerically identical computation. We sweep both encoders at
-$N{=}\AsmAdapters{}$, $r{=}\HeadlineRank$, \HeadlineDtype{}, sequence length
-128, \AsmSeeds{} seeds, on the \HeadlineGPU{} used throughout.
-
-\begin{table}[h]
-  \centering
-  \small
-  \setlength{\tabcolsep}{4pt}
-  \caption{Batch-assembly strategies at $N{=}\AsmAdapters{}$,
-    $r{=}\HeadlineRank$, \HeadlineDtype{}, \AsmSeeds{} seeds.
-    \emph{Asm.\ share} is assembly as a fraction of end-to-end latency, before
-    $\to$ after. Wrapping the gather in \texttt{torch.compile} (not shown) adds
-    \CompileAsmOverheadMinMs--\CompileAsmOverheadMaxMs~ms to the assembly step
-    in every cell and is never faster end-to-end, since the adapter-ID lookup
-  graph-breaks and the gather alone offers no fusion opportunity.}
-  \label{tab:assembly}
-  \input{table_assembly.tex}
-\end{table}
 
 \end{document}
