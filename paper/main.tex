@@ -927,23 +927,25 @@ $N{=}\AsmAdapters{}$, $r{=}\HeadlineRank$, \HeadlineDtype{}, sequence length
 \label{app:mixed_rank}
 
 A batch must be rank-homogeneous, so a fleet with mixed ranks pads each adapter
-to the batch maximum. We measured the cost on \texttt{bge-m3}/A100
-($\mathcal{B}{=}\MixedRankBatch$, \MixedRankSeeds{} seeds) for an $r \in
-\MixedRankFleetSmall$ fleet swept to $N{=}\MixedRankNMax$ and a wider $r \in
-\MixedRankFleetWide$ fleet swept to $N{=}\MixedRankNMaxWide$, stored either
-pre-padded to the fleet maximum or in per-rank buckets padded at assembly time.
-Against a uniform batch already running at the fleet maximum---whether mixing
-costs anything beyond the padded shape---the spread is
-$\MixedRankOverheadMinPct$\% to $+\MixedRankOverheadMaxPct$\%, so it does not.
-What remains is the cost of the padded shape itself, which is just the cost of
-running every adapter at the maximum rank; the rank sweep of
-\ref{app:ranks_models} measures that as negligible. Equal-rank sampling put the
-fleet maximum in \MixedRankAtFleetMaxPct\% of batches, making every measurement
-a worst case. p50 also stays flat in $N$ (\MixedRankSpreadMaxPct\% spread). The
-cost is memory: pre-padding charges every adapter for the fleet maximum, while
-per-rank stores charge each its own, at $\MixedRankStoreSmall\times$ and
-$\MixedRankStoreWide\times$ the footprint.
+to the batch maximum. Finding~3 predicts this is cheap: p50 is flat across
+ranks, so padding to the fleet maximum should cost little while the base path
+dominates the forward. We test it directly on \texttt{bge-m3}/A100
+($\mathcal{B}{=}\MixedRankBatch$, \MixedRankSeeds{} seeds), serving a
+heterogeneous fleet two ways: a pre-padded store, and per-rank stores that pad
+only during batch assembly.
 
+Across an $r \in \MixedRankFleetSmall$ fleet swept to $N{=}\MixedRankNMax$ and a
+wider $r \in \MixedRankFleetWide$ fleet swept to $N{=}\MixedRankNMaxWide$,
+pre-padding adds at most \MixedRankOverheadMaxPct\% mean end-to-end latency over
+a uniform batch already running at the fleet maximum, measured with the
+GPU-resident assembler of \S\ref{sec:results_assembly}. Latency also stays flat as
+the pool grows: the worst p50 spread across $N$ is \MixedRankSpreadMaxPct\%.
+Since every sampled batch contained the fleet maximum, these are worst-case
+mixed batches.
+
+The tradeoff is memory: per-rank stores use $\MixedRankStoreSmall\times$ memory
+for $\MixedRankFleetSmall$ and $\MixedRankStoreWide\times$ for
+$\MixedRankFleetWide$, at a small gather-time cost.
 % =============================================================================
 \section{Protocol Validation on the SetFit Backbone}
 \label{app:accuracy}
