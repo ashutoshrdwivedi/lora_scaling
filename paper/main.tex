@@ -877,17 +877,17 @@ pass. No configuration shows a resolvable trend in $r$: the largest spread
 across the four ranks is \GenRankSpreadAllMaxPct\%, below the
 \GenSeedSdWorstPct\% between-seed s.d.\ of the noisiest cell we measure.
 
-\begin{table*}[!t]
+\begin{table}[t]
   \centering
-  \footnotesize
-  \setlength{\tabcolsep}{5pt}
+  \scriptsize
+  \setlength{\tabcolsep}{2pt}
   \caption{p50 latency (ms) versus LoRA rank, per configuration
     ($\mathcal{B}{=}\HeadlineBatch$, $N{=}1{,}000$, mean over
     \SweepNumSeeds{} seeds). \emph{Spread} is
   $(\max-\min)/\min$ across the four ranks.}
   \label{tab:ranks_models}
   \input{table_ranks_models.tex}
-\end{table*}
+\end{table}
 
 % =============================================================================
 \section{Mixed-Rank Fleets}
