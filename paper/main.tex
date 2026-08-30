@@ -742,7 +742,7 @@ any HuggingFace encoder exposing standard projection modules.\footnote{These swe
   \texttt{AutoModel} rather than the BERT-family reimplementation used there,
   and
   PyTorch's \texttt{expandable\_segments} is enabled to avoid allocator fragmentation.
-  The baseline \texttt{bge-m3}/A100 row carries neither change.}
+  The \texttt{bge-m3}/A100 row carries neither change.}
   \footnote{DeBERTa-v2 uses the query projection for batch-shared position
   bias too. Our sweep targets value projections (\GenDebertaTargets) only, to
   maintain equivalence with PEFT. Since fewer modules are wrapped, PEFT
