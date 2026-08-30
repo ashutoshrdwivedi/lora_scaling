@@ -485,6 +485,17 @@ def analyse_assembly(path: Path) -> dict:
         out[f"{variant}_tput_at_large_batches"] = [
             int(round(tput[b])) for b in batches if b >= 64
         ]
+    # Per-batch measured latencies, for the Appendix table (build_numbers.py
+    # renders table_assembly.tex from these rather than back-deriving ms from
+    # the rounded throughputs above).
+    for variant in ("baseline", "indexsel", "indexsel_compile"):
+        out[f"{variant}_total_ms_by_batch"] = {
+            str(b): round(g(b, variant, "total_mean_ms"), 2) for b in batches
+        }
+        out[f"{variant}_assemble_ms_by_batch"] = {
+            str(b): round(g(b, variant, "assemble_mean_ms"), 3) for b in batches
+        }
+
     out["speedup_by_batch"] = {
         str(b): round(g(b, "baseline", "total_mean_ms") / g(b, "indexsel", "total_mean_ms"), 2)
         for b in batches

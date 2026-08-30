@@ -595,21 +595,22 @@ $\PNinetyNineOverPFiftyAtBSixtyFour\times$ at $\mathcal{B}{=}64$, with
 profiling localizing the spike to occasional Python/GC stalls during
 assembly; the GPU forward exhibits no such variance.
 
-This ceiling is not intrinsic. Holding the adapter cache in one contiguous GPU
-tensor and gathering with \texttt{torch.index\_select}---still pure PyTorch, no
-custom kernel---cuts assembly from
-\AsmBaselineShareMinPct--\AsmBaselineShareMaxPct\% of latency to
-\IdxSelShareMinPct--\IdxSelShareMaxPct\%, the p99/p50 ratio from
-\AsmBaselineTailMax$\times$ to \IdxSelTailMax$\times$, and raises throughput
-\IdxSelSpeedupMin--\IdxSelSpeedupMax$\times$ on \texttt{bge-m3}.
-The gain is larger on smaller models where assembly dominates. On \MiniLmName{},
-where assembly reaches
+Both the share and the variance are host-side, so we evaluate a GPU-resident
+assembler in a separate benchmark ($N{=}\AsmAdapters{}$ adapters, \AsmSeeds{}
+seeds): the adapter cache held in one contiguous GPU tensor and gathered with a
+single \texttt{torch.index\_select} per module in PyTorch, still without any
+custom kernel. Because assembly's share grows as the encoder gets cheaper, we
+construct an adversarial case: a high-QPS regime on a small enough encoder,
+\MiniLmName{}, where low GPU compute shifts the bottleneck onto the host.
+
+There assembly consumes
 \MiniLmBaselineShareLoPct--\MiniLmBaselineShareHiPct\% of latency at
-$\mathcal{B} \geq 64$, \texttt{index\_select} lifts single-stream throughput
-from \MiniLmBaselineTputMax{} to \MiniLmIdxSelTputMax{} samples/s
-(\MiniLmSpeedupMin--\MiniLmSpeedupMax$\times$).
-Every result in \S\ref{sec:experiments} uses the CPU assembler and is therefore
-conservative.
+$\mathcal{B} \geq 64$ and caps single-stream throughput at
+\MiniLmBaselineTputMax{}~samples/s; the GPU-resident assembler lifts that to
+\MiniLmIdxSelTputMax{}~samples/s, makes assembly negligible, and stabilizes the
+tail (\ref{app:assembly}). On \texttt{bge-m3} the same change gives up to
+\IdxSelSpeedupMax$\times$. Both assemblers ship in our library; every latency
+and throughput result in \S\ref{sec:experiments} uses the CPU path.
 
 \paragraph{Finding 6: Custom LoRA kernels offer only single-digit upside on
 encoders.}
@@ -801,6 +802,16 @@ Workloads whose adapter population exceeds a single GPU's capacity require
 an LRU eviction policy with CPU offload, or paged adapter storage as in
 S-LoRA's unified paging \cite{sheng2024slora}; either is a natural extension.
 
+\paragraph{Choice of batch assembler.}
+The two assemblers trade dynamism against throughput. The default
+\texttt{BatchAssembler} keeps adapters in a per-adapter store, so a tenant can
+be admitted or evicted without touching the others, but its host-side gather
+scales with batch size and becomes the bottleneck as the encoder gets cheaper
+(\S\ref{sec:results_assembly}). The GPU-resident assembler removes that cost, at
+the price of a contiguous tensor whose capacity is fixed at construction:
+continuous admission needs slot reservation and a grow strategy, which we did
+not measure. We ship both and report the CPU path throughout.
+
 \paragraph{Single-node evaluation.}
 All latency and throughput results are measured on one GPU. The architecture
 targets horizontal scale-out via stateless, tenant-sticky replicas, with a
@@ -985,5 +996,38 @@ restart.
 Sticky routing pins a tenant to one pod, so a single high-traffic tenant cannot
 be spread across nodes without sacrificing cache locality; cluster behavior
 under skewed tenant traffic is left to future work.
+
+% =============================================================================
+\section{GPU-Resident Batch Assembly}
+\label{app:assembly}
+
+Finding~5 identifies CPU-side batch assembly as the residual bottleneck. This
+appendix reports the measurement behind the GPU-resident alternative referenced
+there. We pack the adapter store into one contiguous tensor per target
+module---shape $(N, L, d, r)$ for the shrink matrices and $(N, L, r, d)$ for the
+expand matrices---and assemble a batch with one \texttt{torch.index\_select} per
+module, each gathering all $L$ layers for the whole batch in a single
+device-side gather. The only remaining host-side work is an
+$\mathcal{O}(\mathcal{B})$ adapter-ID to row-index lookup, independent of $L$
+and $|\mathcal{M}|$. Logits are asserted identical to the baseline assembler
+before any timing, so the speedups in Table~\ref{tab:assembly} are for a
+numerically identical computation. We sweep both encoders at
+$N{=}\AsmAdapters{}$, $r{=}\HeadlineRank$, \HeadlineDtype{}, sequence length
+128, \AsmSeeds{} seeds, on the \HeadlineGPU{} used throughout.
+
+\begin{table}[h]
+  \centering
+  \small
+  \setlength{\tabcolsep}{4pt}
+  \caption{Batch-assembly strategies at $N{=}\AsmAdapters{}$,
+    $r{=}\HeadlineRank$, \HeadlineDtype{}, \AsmSeeds{} seeds.
+    \emph{Asm.\ share} is assembly as a fraction of end-to-end latency, before
+    $\to$ after. Wrapping the gather in \texttt{torch.compile} (not shown) adds
+    \CompileAsmOverheadMinMs--\CompileAsmOverheadMaxMs~ms to the assembly step
+    in every cell and is never faster end-to-end, since the adapter-ID lookup
+  graph-breaks and the gather alone offers no fusion opportunity.}
+  \label{tab:assembly}
+  \input{table_assembly.tex}
+\end{table}
 
 \end{document}

@@ -1,6 +1,13 @@
 {
   "assembly": {
     "bgem3": {
+      "baseline_assemble_ms_by_batch": {
+        "128": 75.113,
+        "16": 8.015,
+        "32": 15.213,
+        "64": 35.787,
+        "8": 3.171
+      },
       "baseline_assemble_share_b64plus": [
         42.8,
         45.0
@@ -38,6 +45,13 @@
         "8": 1.12
       },
       "baseline_tail_ratio_max": 4.29,
+      "baseline_total_ms_by_batch": {
+        "128": 166.66,
+        "16": 26.85,
+        "32": 41.26,
+        "64": 83.52,
+        "8": 21.39
+      },
       "baseline_tput_at_large_batches": [
         766,
         768
@@ -60,6 +74,13 @@
       "cpu": "AMD EPYC 7742 64-Core Processor",
       "cpu_cgroup_quota": 27.2,
       "gpu": "NVIDIA A100-SXM4-80GB",
+      "indexsel_assemble_ms_by_batch": {
+        "128": 0.503,
+        "16": 0.411,
+        "32": 0.469,
+        "64": 0.472,
+        "8": 0.407
+      },
       "indexsel_assemble_share_b64plus": [
         0.5,
         1.0
@@ -72,6 +93,20 @@
         "32": 1.8,
         "64": 1.0,
         "8": 2.2
+      },
+      "indexsel_compile_assemble_ms_by_batch": {
+        "128": 0.658,
+        "16": 0.551,
+        "32": 0.593,
+        "64": 0.6,
+        "8": 0.538
+      },
+      "indexsel_compile_total_ms_by_batch": {
+        "128": 93.27,
+        "16": 19.29,
+        "32": 26.77,
+        "64": 48.72,
+        "8": 19.0
       },
       "indexsel_compile_tput_at_large_batches": [
         1314,
@@ -109,6 +144,13 @@
         "8": 1.08
       },
       "indexsel_tail_ratio_max": 1.1,
+      "indexsel_total_ms_by_batch": {
+        "128": 92.85,
+        "16": 19.1,
+        "32": 26.62,
+        "64": 48.41,
+        "8": 18.75
+      },
       "indexsel_tput_at_large_batches": [
         1322,
         1379
@@ -137,6 +179,14 @@
       "warmup": 50
     },
     "minilm": {
+      "baseline_assemble_ms_by_batch": {
+        "128": 15.183,
+        "16": 1.622,
+        "256": 34.028,
+        "32": 3.219,
+        "64": 7.541,
+        "8": 0.834
+      },
       "baseline_assemble_share_b64plus": [
         58.0,
         65.3
@@ -178,6 +228,14 @@
         "8": 1.2
       },
       "baseline_tail_ratio_max": 5.28,
+      "baseline_total_ms_by_batch": {
+        "128": 24.65,
+        "16": 6.54,
+        "256": 52.12,
+        "32": 7.9,
+        "64": 13.0,
+        "8": 5.47
+      },
       "baseline_tput_at_large_batches": [
         4925,
         5192,
@@ -203,6 +261,14 @@
       "cpu": "AMD EPYC 7742 64-Core Processor",
       "cpu_cgroup_quota": 27.2,
       "gpu": "NVIDIA A100-SXM4-80GB",
+      "indexsel_assemble_ms_by_batch": {
+        "128": 0.277,
+        "16": 0.196,
+        "256": 0.306,
+        "32": 0.219,
+        "64": 0.234,
+        "8": 0.197
+      },
       "indexsel_assemble_share_b64plus": [
         1.8,
         4.4
@@ -216,6 +282,22 @@
         "32": 4.6,
         "64": 4.4,
         "8": 4.1
+      },
+      "indexsel_compile_assemble_ms_by_batch": {
+        "128": 0.366,
+        "16": 0.314,
+        "256": 0.418,
+        "32": 0.316,
+        "64": 0.338,
+        "8": 0.307
+      },
+      "indexsel_compile_total_ms_by_batch": {
+        "128": 9.06,
+        "16": 5.17,
+        "256": 16.84,
+        "32": 4.9,
+        "64": 5.4,
+        "8": 4.97
       },
       "indexsel_compile_tput_at_large_batches": [
         11863,
@@ -258,6 +340,14 @@
         "8": 1.13
       },
       "indexsel_tail_ratio_max": 1.17,
+      "indexsel_total_ms_by_batch": {
+        "128": 8.98,
+        "16": 5.07,
+        "256": 16.72,
+        "32": 4.77,
+        "64": 5.27,
+        "8": 4.86
+      },
       "indexsel_tput_at_large_batches": [
         12152,
         14255,
