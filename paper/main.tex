@@ -976,9 +976,10 @@ On mpnet, LoRA retains \SetfitRetainsPct\% of full fine-tuning's mean accuracy,
 losing \SetfitMeanDropPP{}~percentage points (Table~\ref{tab:accuracy}); the
 gap is smallest on EnronSpam (\SetfitMinDropPP pp) and largest on Amazon-CF
 (\SetfitMaxDropPP pp, reported as MCC, where the low absolute scores magnify
-the difference). The same LoRA full fine-tuning pattern therefore holds on a
-second backbone, confirming that the protocol we apply to the serving model in
-\S\ref{sec:background_lora} is sound. We report a frozen-encoder baseline only
+the difference). The protocol reproduces SetFit-comparable accuracy and shows
+the same LoRA full fine-tuning pattern on a second backbone, confirming that
+the protocol we apply to the serving model in \S\ref{sec:background_lora} is
+sound. We report a frozen-encoder baseline only
 for the serving model (\S\ref{sec:background_lora}); the corresponding mpnet
 comparison is given by \citet{tunstall2022efficient}. In the case where the
 LoRA full-fine-tuning gap is unacceptable, rank can be increased at zero
