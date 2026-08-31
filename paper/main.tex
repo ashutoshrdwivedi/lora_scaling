@@ -680,12 +680,11 @@ single-tenant batches: one \texttt{set\_adapter} and one batched forward each.
   \footnotesize
   \setlength{\tabcolsep}{5pt}
   \renewcommand{\arraystretch}{0.95}
-  \caption{\sysname{} across encoders and GPU classes, same sweep protocol
-    throughout (\S\ref{sec:setup}). $\Delta$p50 compares p50 latency at each
-    configuration's tenant ceiling against $N{=}1{,}000$; \emph{Spread} is the
-    total max$-$min p50 over the whole sweep, anchored at $N{=}100$.
-    \emph{vs.\ PEFT} is the throughput ratio over PEFT's mixed-batch API across
-    the cells PEFT can run. $^{\dagger}$the configuration used in
+  \caption{\sysname{} across encoders and GPU classes (protocol:
+    \S\ref{sec:setup}). $\Delta$p50: p50 at each configuration's tenant ceiling
+    versus $N{=}1{,}000$. \emph{Spread}: max$-$min p50 over the sweep.
+    \emph{vs.\ PEFT}: throughput ratio over PEFT's mixed-batch API, on cells
+    where it runs. $^{\dagger}$the configuration of
   \S\ref{sec:results_latency}--\ref{sec:results_baselines}.}
   \label{tab:generalization}
   \input{table_generalization.tex}
