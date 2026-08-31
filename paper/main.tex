@@ -695,7 +695,8 @@ single-tenant batches: one \texttt{set\_adapter} and one batched forward each.
 \emph{Homogeneous} batching, PEFT's best case, is competitive at $N{=}100$, even
 edging \sysname{} at $\mathcal{B}{=}128$
 (\PeftHomogQpsNHundredBOneTwentyEight{}
-vs.\ \SysRefQpsNHundredBOneTwentyEight~samples/sec). This edge is a small-pool
+vs.\ \SysRefQpsNHundredBOneTwentyEight~samples/sec;
+Table~\ref{tab:baselines}). This edge is a small-pool
 artifact: at the same $\mathcal{B}{=}128$, growing the pool to $1{,}000$
 collapses it from \PeftHomogQpsNHundredBOneTwentyEight{} to
 \PeftHomogQpsNOneKBOneTwentyEight~samples/sec (up to
