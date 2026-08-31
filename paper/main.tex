@@ -960,9 +960,9 @@ each at its own rank, but must pad during assembly, a small gather-time cost.
 \label{app:accuracy}
 
 To confirm that our few-shot protocol reproduces results comparable to the
-SetFit literature, we replicate it on the standard SetFit-MPNet backbone \cite{tunstall2022efficient},
-built using the Sentence Transformer framework \cite{reimers2019sentencebert},
-across the same seven public benchmarks used in
+SetFit literature, we replicate it on \texttt{paraphrase-mpnet-base-v2}
+\cite{reimers2019sentencebert}, the standard SetFit backbone
+\cite{tunstall2022efficient}, across the same seven public benchmarks used in
 that work: SST-2, SST-5, CR, Amazon-Counterfactual, Emotion, EnronSpam, and AG
 News. For each dataset we train two variants at $N{=}8$ labeled examples per
 class: a full fine-tune of the encoder (\MpnetVanillaParamsM{}M trainable
