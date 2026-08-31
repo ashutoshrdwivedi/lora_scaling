@@ -282,14 +282,12 @@ June~2026).\footnote{TEI issue \href{https://github.com/huggingface/text-embeddi
 Vishwanathan et al.~\cite{vishwanathan2022multitenant} serve a shared sentence
 bi-encoder with per-tenant final-layer weights swapped per request, forcing
 each request to be single-tenant. PetS \cite{zhou2022pets}, the closest prior
-system, serves multi-adapter encoders for Adapter \cite{houlsby2019adapter},
-BitFit \cite{benzaken2022bitfit}, and MaskBERT \cite{zhao2020masking} on
-BERT/DistilBERT, but predates LoRA and supports neither low-rank decompositions
-nor per-tenant classification heads. \sysname{} closes this gap: LoRA-native
+system, batches multi-task encoder inference for Adapter \cite{houlsby2019adapter},
+BitFit \cite{benzaken2022bitfit}, and MaskBERT \cite{zhao2020masking} and related parameter-efficient
+methods on BERT/DistilBERT. It does not implement LoRA’s low-rank updates or
+the per-sample low-rank BMM. \sysname{} closes this gap: LoRA-native
 batching of arbitrary external adapters and their classification heads in a
-single encoder forward pass.
-
-% =============================================================================
+single encoder forward pass.% =============================================================================
 \section{\sysname: System Design}
 \label{sec:system}
 
