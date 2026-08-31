@@ -1020,8 +1020,8 @@ an application-level hash ring with virtual nodes). Each tenant is thus pinned
 to a single pod that holds its adapter resident in GPU memory, so the
 $\mathcal{O}(1)$-in-$N$ latency we measure holds at each pod, and because the
 replicas are independent, aggregate request throughput grows with the number of
-pods ($\approx\!K\times$ a single node for $K$ pods). Serving more than a single
-node's $\approx$\CapacityRankEight-adapter ceiling (Finding~4)
+pods ($\approx\!K\times$ a single node for $K$ pods). Serving more adapters than a single
+node's adapter ceiling (Finding~4)
 additionally requires
 partitioning the adapters across pods by the same hash, so each pod loads only its
 shard; the reference deployment instead replicates a fixed adapter set per
