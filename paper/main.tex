@@ -982,8 +982,8 @@ the difference). These numbers track the SetFit-reported accuracies,
 confirming that the protocol we apply to the serving model in
 \S\ref{sec:background_lora} is sound. We report a frozen-encoder baseline only
 for the serving model (\S\ref{sec:background_lora}); the corresponding mpnet
-comparison is given by \citet{tunstall2022efficient}. Where the
-LoRA--full-fine-tuning gap is unacceptable, rank can be increased at zero
+comparison is given by \citet{tunstall2022efficient}. In the case where the
+LoRA full-fine-tuning gap is unacceptable, rank can be increased at zero
 latency cost (Finding~3); the only price is GPU memory.
 
 \begin{table}[h]
