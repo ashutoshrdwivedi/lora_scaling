@@ -803,15 +803,15 @@ Workloads whose adapter population exceeds a single GPU's capacity require
 an LRU eviction policy with CPU offload, or paged adapter storage as in
 S-LoRA's unified paging \cite{sheng2024slora}; either is a natural extension.
 
-\paragraph{Batch assembler tradeoff.}
-The two assemblers trade dynamism against throughput. The default
+\paragraph{Batch assembler tradeoff.} The default
 \texttt{BatchAssembler} keeps adapters in a per-adapter store, so a tenant can
 be admitted or evicted without touching the others, but its CPU-side gather
 scales with batch size and becomes the bottleneck as the encoder gets cheaper
 (\S\ref{sec:results_assembly}). The GPU-resident assembler removes that cost, at
 the price of a contiguous tensor whose capacity is fixed at construction:
 continuous admission needs slot reservation and a grow strategy, which we did
-not measure. We ship both and report the CPU path throughout.
+not measure. We ship both assemblers; \S\ref{sec:experiments} reports the CPU
+path.
 
 \paragraph{Single-node evaluation.}
 All latency and throughput results are measured on one GPU. The architecture
