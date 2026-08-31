@@ -284,7 +284,7 @@ bi-encoder with per-tenant final-layer weights swapped per request, forcing
 each request to be single-tenant. PetS \cite{zhou2022pets}, the closest prior
 system, batches multi-task encoder inference for Adapter \cite{houlsby2019adapter},
 BitFit \cite{benzaken2022bitfit}, and MaskBERT \cite{zhao2020masking} and related parameter-efficient
-methods on BERT/DistilBERT \cite{sanh2020distilbertdistilledversionbert}. It does not implement LoRA’s low-rank updates or
+methods on BERT/DistilBERT \cite{sanh2020distilbertdistilledversionbert}. It does not implement LoRA's low-rank updates or
 the per-sample low-rank BMM. \sysname{} closes this gap: LoRA-native
 batching of arbitrary external adapters and their classification heads in a
 single encoder forward pass.% =============================================================================
