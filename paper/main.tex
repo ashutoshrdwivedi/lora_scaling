@@ -793,8 +793,9 @@ GPU cost across tenants and scales out as stateless, tenant-sharded replicas
 All adapters in a batch share one rank $r$ and one set of target modules, so a
 heterogeneous fleet must pad every adapter to the largest rank present.
 A padded batch matches a uniform one at the same rank to within
-\MixedRankOverheadMaxPct\% in latency (\ref{app:mixed_rank}); the cost is
-memory, and per-rank stores recover it for a small gather-time cost.
+\MixedRankOverheadMaxPct\% in latency (\ref{app:mixed_rank}).
+Padding costs memory rather than latency,
+and per-rank stores recover it for a small gather-time cost.
 A masked-BMM variant that skips padded lanes remains future work.
 
 \paragraph{Pre-loaded adapter cache.}
