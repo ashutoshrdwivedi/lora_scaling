@@ -766,7 +766,7 @@ Tenant ceilings range from \GenXlmrXLCeiling{} adapters for XLM-RoBERTa-XL to \G
 for DeBERTa-v2-xlarge and track per-adapter footprint exactly (\GenXlmrXLMB~MB and \GenDebertaMB~MB),
 each validated by an OOM at the subsequent probe point (Finding~4).
 Finally, throughput remains multi-fold above PEFT's mixed-batch API in every case (Finding~7).
-Findings 2, 5 and 6 concern batch size and assembly costs and do not depend on N, so they are unaffected by tenant scaling.
+Findings 2, 5, and 6 concern per-batch execution rather than pool size, so tenant scaling does not affect them.
 
 
 These ceilings highlight that model size constrains resident tenant capacity rather than
