@@ -602,7 +602,7 @@ seeds): the adapter cache held in one contiguous GPU tensor and gathered with a
 single \texttt{torch.index\_select} per module, still without any
 custom kernel.
 
-Because assembly's share grows as the encoder gets cheaper, we
+Since assembly's share grows as the encoder gets cheaper, we
 construct an adversarial case: a high-QPS regime on a small encoder,
 \MiniLmName{} \cite{reimers2019sentencebert}, whose forward is
 short enough that
@@ -613,8 +613,8 @@ $\mathcal{B} \geq 64$ and caps single-stream throughput at
 \MiniLmBaselineTputMax{}~samples/s; the GPU-resident assembler lifts that to
 \MiniLmIdxSelTputMax{}~samples/s, makes assembly negligible, and stabilizes the
 tail (\ref{app:assembly}). On \texttt{bge-m3} the same change gives up to
-\IdxSelSpeedupMax$\times$. Both assemblers ship in our library; every latency
-and throughput result in \S\ref{sec:experiments} uses the CPU path.
+\IdxSelSpeedupMax$\times$ speedup. Both assemblers ship in our library; however, the
+results in \S\ref{sec:experiments} use the CPU path.
 
 \paragraph{Finding 6: Custom LoRA kernels offer only single-digit upside on
 encoders.}
