@@ -104,10 +104,10 @@ Enterprise NLP features, such as intent detection \cite{arora2024intent}, ticket
 and text classification, require low latency and predictable cost at
 high request volume.
 In multi-tenant environments, these workloads are typically served by a
-shared bidirectional encoder with tenant-specific task heads.
+shared bidirectional encoder\cite{devlin2019bert} with tenant-specific task heads.
 Fine-tuning the encoder parameters alongside the task head
 yields consistent accuracy gains over a frozen shared encoder
-\cite{devlin2019bert,tunstall2022efficient,jain2026succeeding}.
+\cite{tunstall2022efficient,jain2026succeeding}.
 Serving an isolated, fully fine-tuned model per tenant, however, is
 infeasible at scale.
 At $\approx$\BgeFpSixteenGB{}~GB per copy in float16 precision
