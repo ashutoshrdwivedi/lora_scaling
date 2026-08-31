@@ -596,8 +596,8 @@ $\PNinetyNineOverPFiftyAtBSixtyFour\times$ at $\mathcal{B}{=}64$, with
 profiling localizing the spike to occasional Python/GC stalls during
 assembly; the GPU forward exhibits no such variance.
 
-The bottleneck is CPU-side, so we evaluate a GPU-resident
-assembler in a separate benchmark ($N{=}\AsmAdapters{}$ adapters, \AsmSeeds{}
+The bottleneck is CPU-side, so as an alternative we evaluate moving assembly
+onto the GPU in a separate benchmark ($N{=}\AsmAdapters{}$ adapters, \AsmSeeds{}
 seeds): the adapter cache held in one contiguous GPU tensor and gathered with a
 single \texttt{torch.index\_select} per module, still without any
 custom kernel.
