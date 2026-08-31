@@ -1,5 +1,5 @@
 #!/bin/bash
-# Rebuttal pod A1 -- A100-80GB -- DeBERTa-v2-xlarge generality row.
+# A100-80GB -- DeBERTa-v2-xlarge generality row.
 #
 # Architecture-generality row beyond the BERT/RoBERTa family, at larger scale:
 # 900M params, d=1536, disentangled attention. Runs on the
@@ -42,7 +42,7 @@
 # probe grid as written; expect the committed and rerun capacity CSVs to differ.
 #
 # Runtime ~3h35m (DeBERTa's forward is ~2.6x bge-m3's, so the full grid costs
-# more here than the paper's 2h). Independent of the other rebuttal scripts --
+# more here than the paper's 2h). Independent of the other generality scripts --
 # safe to run concurrently on a separate pod.
 set -u
 export HOME=/root

@@ -1,14 +1,24 @@
 We thank the reviewer for the encouraging assessment and for suggesting a broader evaluation across model families. We agree that extending validation across diverse encoders strengthens our findings, and we have executed these experiments.
 
 ### Only one model tested 
-Holding the system fixed, we re-ran the paper's full grid (same protocol, 5 seeds) on three further encoders and a second GPU class: ELECTRA-large (334M, a replaced-token-detection discriminator), DeBERTa-v2-xlarge (885M, disentangled attention), XLM-RoBERTa-XL (3.5B, 36 layers), and bge-m3 on an L40S-48GB. The results table is present in our general response. Three things replicate everywhere:
+Holding the system fixed, we re-ran the paper's full grid (same protocol, 5 seeds) on three further encoders and a second GPU class: ELECTRA-large (334M, a replaced-token-detection discriminator), DeBERTa-v2-xlarge (885M, disentangled attention), XLM-RoBERTa-XL (3.5B, 36 layers), and bge-m3 on an L40S-48GB. 
 
-- **$O(1)$ in tenant count.** Growing the pool to the memory ceiling moves p50 by at most **+1.29%** relative to $N{=}1000$.
+The results table is present in our general response. We share the rank sweep table here.
 
-- **The speedup over PEFT's mixed-batch API persists**: 2.3–20.9× on A100 and up to 32.7× on the L40S.
-- **Rank-insensitivity** (Finding 3) holds on all four new configurations, p50 flat within 0.73% across $r \in \{4,8,16,32\}$.
+| Config | $r{=}4$ p50 (ms) | $r{=}8$ p50 (ms) | $r{=}16$ p50 (ms) | $r{=}32$ p50 (ms) | Max spread |
+|---|---:|---:|---:|---:|---:|
+| ELECTRA-large / A100-80GB | 37.28 | 37.01 | 37.01 | 37.27 | 0.73% |
+| DeBERTa-v2-xlarge / A100-80GB | 75.92 | 75.76 | 75.84 | 76.08 | 0.41% |
+| XLM-RoBERTa-XL / A100-80GB | 123.35 | 122.64 | 122.95 | 123.46 | 0.67% |
+| bge-m3 / L40S-48GB | 39.22 | 39.22 | 39.22 | 39.25 | 0.07% |
 
-Notably the property is *strongest* at the largest scale: XLM-RoBERTa-XL has the flattest profile of all five configurations (0.70% total spread across the sweep), which is what the decomposition predicts. The base forward dominates more heavily as the encoder grows, so the per-tenant delta path matters less.
+Three things replicate everywhere:
+- *$O(1)$ in tenant count.* Growing the pool to the memory ceiling moves p50 by at most *+1.29%* relative to $N{=}1000$.
+
+- *The speedup over PEFT's mixed-batch API persists*: 2.3–20.9× on A100 and up to 32.7× on the L40S.
+- *Rank-insensitivity* (Finding 3) holds on all four new configurations, p50 flat within 0.73% across $r \in \{4,8,16,32\}$ as depicted in the table below:
+
+Notably the property is strongest at the largest scale: XLM-RoBERTa-XL has the flattest profile of all five configurations (0.70% total spread across the sweep), which is what the decomposition predicts. The base forward dominates more heavily as the encoder grows, so the per-tenant delta path matters less.
 
 These become a new subsection, "Generalization Across Models and Hardware", at camera-ready, using the additional page.
 

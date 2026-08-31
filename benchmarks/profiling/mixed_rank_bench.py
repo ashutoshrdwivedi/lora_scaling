@@ -1,10 +1,9 @@
 """Does Finding 1's flat-in-N latency survive a MIXED-RANK fleet?
 
-Reviewer question this answers: "Fig 3 shows latency flat as N scales — does
-this hold under mixed-rank deployments (e.g. some adapters r=4, others r=16 in
-the same batch)?", and the paired weakness "padding every adapter to the max
-rank in the batch wastes compute on low-rank adapters; the overhead is
-potentially severe".
+Fig 3 shows latency flat as N scales — does this hold under mixed-rank
+deployments (e.g. some adapters r=4, others r=16 in the same batch)? And does
+padding every adapter to the max rank in the batch waste enough compute on the
+low-rank adapters for the overhead to matter?
 
 The paper's serving path is uniform-rank: `LoraServingConfig.lora_rank` is a
 scalar, so every adapter in the store — and every slot in the (B, H, r) /
@@ -664,7 +663,7 @@ def check_exactness(args, mix: Mix, device, dtype, model_for, lr_for, n: int) ->
     GEMM shapes, which is not what this benchmark is about and which no correct
     implementation could pass. The serving-dtype divergence is still measured
     and reported below (`..._serving_dtype`), because it is a real property of
-    a mixed-rank fleet that a rebuttal should quote rather than hide: padding a
+    a mixed-rank fleet that should be quoted rather than hidden: padding a
     tenant to r_max in fp16 perturbs its logits at the same order as any other
     change of batch composition or cuBLAS version. It does not touch the timing
     arms, whose shapes, kernels and FLOP counts are identical either way.
@@ -942,8 +941,7 @@ def main():
         "--rank-mix", nargs="+", default=["4,16", "4,8,16,32"], metavar="SPEC",
         help="Fleet compositions. 'r1,r2' splits evenly; 'r1:f1,r2:f2' gives "
              "explicit fractions (normalised). The default covers the "
-             "reviewer's own example (4,16) and the full-spread worst case "
-             "(4,8,16,32).",
+             "even (4,16) split and the full-spread worst case (4,8,16,32).",
     )
     parser.add_argument("--engine", choices=["custom", "hf"], default="custom")
     parser.add_argument(

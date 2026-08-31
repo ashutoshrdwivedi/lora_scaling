@@ -1,0 +1,22 @@
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+$\mathcal{B}$ & \multicolumn{2}{c}{Latency (ms)} & Speed & Asm.\ share & p99/p50 \\
+\cmidrule(lr){2-3}
+ & base & idx-sel & -up & base $\to$ idx & base $\to$ idx \\
+\midrule
+\multicolumn{6}{@{}l}{\texttt{bge-m3}} \\
+8 & 21.39 & 18.75 & 1.14$\times$ & 14.8 $\to$ 2.2\% & 1.12 $\to$ 1.08 \\
+16 & 26.85 & 19.10 & 1.41$\times$ & 29.8 $\to$ 2.2\% & 1.14 $\to$ 1.10 \\
+32 & 41.26 & 26.62 & 1.55$\times$ & 36.8 $\to$ 1.8\% & 1.18 $\to$ 1.02 \\
+64 & 83.52 & 48.41 & 1.73$\times$ & 42.8 $\to$ 1.0\% & 4.29 $\to$ 1.02 \\
+128 & 166.66 & 92.85 & 1.80$\times$ & 45.0 $\to$ 0.5\% & 2.76 $\to$ 1.01 \\
+\midrule
+\multicolumn{6}{@{}l}{\texttt{all-MiniLM-L6-v2}} \\
+8 & 5.47 & 4.86 & 1.13$\times$ & 15.3 $\to$ 4.1\% & 1.20 $\to$ 1.13 \\
+16 & 6.54 & 5.07 & 1.29$\times$ & 24.8 $\to$ 3.9\% & 1.21 $\to$ 1.17 \\
+32 & 7.90 & 4.77 & 1.66$\times$ & 40.7 $\to$ 4.6\% & 1.17 $\to$ 1.13 \\
+64 & 13.00 & 5.27 & 2.47$\times$ & 58.0 $\to$ 4.4\% & 1.24 $\to$ 1.11 \\
+128 & 24.65 & 8.98 & 2.75$\times$ & 61.6 $\to$ 3.1\% & 1.48 $\to$ 1.06 \\
+256 & 52.12 & 16.72 & 3.12$\times$ & 65.3 $\to$ 1.8\% & 5.28 $\to$ 1.03 \\
+\bottomrule
+\end{tabular}

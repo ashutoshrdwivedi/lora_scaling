@@ -25,7 +25,7 @@ the rebuttal must trace to a line here.
 - peak mem vs batch at N=47,000: {'8': 76.1, '16': 76.1, '32': 76.2, '64': 76.3, '128': 76.6} (delta 0.5 GB)
 - at ceiling by batch: {'8': -0.05, '16': -0.57, '32': -0.37, '64': 0.37, '128': 0.65} (worst 0.65% at B=128)
 - MB/adapter r=8: 1.57 MB = 1.5 MiB (786,432 params)
-- store at ceiling: 68.8 GiB (73.9 GB); 3d/r = 384
+- store at ceiling: 73.9 GB; 3d/r = 384
 - registration: 0.29 ms/adapter at N=1,000
 - PEFT add_adapter totals: {'100': 14.2, '1000': 1229.2} s
 
@@ -41,7 +41,7 @@ the rebuttal must trace to a line here.
 - peak mem vs batch at N=47,000: {'8': 75.6, '16': 75.7, '32': 75.7, '64': 75.9, '128': 76.1} (delta 0.5 GB)
 - at ceiling by batch: {'32': -0.16} (worst -0.16% at B=32)
 - MB/adapter r=8: 1.57 MB = 1.5 MiB (786,432 params)
-- store at ceiling: 74.7 GiB (80.2 GB); 3d/r = 384
+- store at ceiling: 80.2 GB; 3d/r = 384
 - registration: 0.32 ms/adapter at N=1,000
 - PEFT add_adapter totals: {'100': 15.6, '1000': 1208.5} s
 
@@ -57,7 +57,7 @@ the rebuttal must trace to a line here.
 - peak mem vs batch at N=60,000: {'8': 74.6, '16': 74.8, '32': 75.1, '64': 75.8, '128': 77.1} (delta 2.5 GB)
 - at ceiling by batch: {'32': 0.43} (worst 0.43% at B=32)
 - MB/adapter r=8: 1.18 MB = 1.12 MiB (589,824 params)
-- store at ceiling: 70.3 GiB (75.5 GB); 3d/r = 576
+- store at ceiling: 75.5 GB; 3d/r = 576
 - registration: 0.3 ms/adapter at N=1,000
 - PEFT add_adapter totals: {'100': 7.7, '1000': 564.2} s
 
@@ -73,7 +73,7 @@ the rebuttal must trace to a line here.
 - peak mem vs batch at N=11,000: {'8': 72.5, '16': 72.6, '32': 72.7, '64': 73.0, '128': 73.5} (delta 1.0 GB)
 - at ceiling by batch: {'32': -0.38} (worst -0.38% at B=32)
 - MB/adapter r=8: 5.9 MB = 5.62 MiB (2,949,120 params)
-- store at ceiling: 65.9 GiB (70.8 GB); 3d/r = 960
+- store at ceiling: 70.8 GB; 3d/r = 960
 - registration: 0.23 ms/adapter at N=1,000
 - PEFT add_adapter totals: {'100': 21.3, '1000': 1742.5} s
 
@@ -89,7 +89,7 @@ the rebuttal must trace to a line here.
 - peak mem vs batch at N=28,000: {'8': 45.8, '16': 45.8, '32': 45.9, '64': 46.0, '128': 46.3} (delta 0.5 GB)
 - at ceiling by batch: {'8': 1.29, '16': -0.61, '32': 0.2, '64': 0.11, '128': -0.09} (worst 1.29% at B=8)
 - MB/adapter r=8: 1.57 MB = 1.5 MiB (786,432 params)
-- store at ceiling: 41.0 GiB (44.0 GB); 3d/r = 384
+- store at ceiling: 44.0 GB; 3d/r = 384
 - registration: 0.21 ms/adapter at N=1,000
 - PEFT add_adapter totals: {'100': 10.6, '1000': 918.8} s
 

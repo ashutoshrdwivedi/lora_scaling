@@ -1,6 +1,13 @@
 {
   "assembly": {
     "bgem3": {
+      "baseline_assemble_ms_by_batch": {
+        "128": 75.113,
+        "16": 8.015,
+        "32": 15.213,
+        "64": 35.787,
+        "8": 3.171
+      },
       "baseline_assemble_share_b64plus": [
         42.8,
         45.0
@@ -38,6 +45,13 @@
         "8": 1.12
       },
       "baseline_tail_ratio_max": 4.29,
+      "baseline_total_ms_by_batch": {
+        "128": 166.66,
+        "16": 26.85,
+        "32": 41.26,
+        "64": 83.52,
+        "8": 21.39
+      },
       "baseline_tput_at_large_batches": [
         766,
         768
@@ -60,6 +74,13 @@
       "cpu": "AMD EPYC 7742 64-Core Processor",
       "cpu_cgroup_quota": 27.2,
       "gpu": "NVIDIA A100-SXM4-80GB",
+      "indexsel_assemble_ms_by_batch": {
+        "128": 0.503,
+        "16": 0.411,
+        "32": 0.469,
+        "64": 0.472,
+        "8": 0.407
+      },
       "indexsel_assemble_share_b64plus": [
         0.5,
         1.0
@@ -72,6 +93,20 @@
         "32": 1.8,
         "64": 1.0,
         "8": 2.2
+      },
+      "indexsel_compile_assemble_ms_by_batch": {
+        "128": 0.658,
+        "16": 0.551,
+        "32": 0.593,
+        "64": 0.6,
+        "8": 0.538
+      },
+      "indexsel_compile_total_ms_by_batch": {
+        "128": 93.27,
+        "16": 19.29,
+        "32": 26.77,
+        "64": 48.72,
+        "8": 19.0
       },
       "indexsel_compile_tput_at_large_batches": [
         1314,
@@ -109,6 +144,13 @@
         "8": 1.08
       },
       "indexsel_tail_ratio_max": 1.1,
+      "indexsel_total_ms_by_batch": {
+        "128": 92.85,
+        "16": 19.1,
+        "32": 26.62,
+        "64": 48.41,
+        "8": 18.75
+      },
       "indexsel_tput_at_large_batches": [
         1322,
         1379
@@ -137,6 +179,14 @@
       "warmup": 50
     },
     "minilm": {
+      "baseline_assemble_ms_by_batch": {
+        "128": 15.183,
+        "16": 1.622,
+        "256": 34.028,
+        "32": 3.219,
+        "64": 7.541,
+        "8": 0.834
+      },
       "baseline_assemble_share_b64plus": [
         58.0,
         65.3
@@ -178,6 +228,14 @@
         "8": 1.2
       },
       "baseline_tail_ratio_max": 5.28,
+      "baseline_total_ms_by_batch": {
+        "128": 24.65,
+        "16": 6.54,
+        "256": 52.12,
+        "32": 7.9,
+        "64": 13.0,
+        "8": 5.47
+      },
       "baseline_tput_at_large_batches": [
         4925,
         5192,
@@ -203,6 +261,14 @@
       "cpu": "AMD EPYC 7742 64-Core Processor",
       "cpu_cgroup_quota": 27.2,
       "gpu": "NVIDIA A100-SXM4-80GB",
+      "indexsel_assemble_ms_by_batch": {
+        "128": 0.277,
+        "16": 0.196,
+        "256": 0.306,
+        "32": 0.219,
+        "64": 0.234,
+        "8": 0.197
+      },
       "indexsel_assemble_share_b64plus": [
         1.8,
         4.4
@@ -216,6 +282,22 @@
         "32": 4.6,
         "64": 4.4,
         "8": 4.1
+      },
+      "indexsel_compile_assemble_ms_by_batch": {
+        "128": 0.366,
+        "16": 0.314,
+        "256": 0.418,
+        "32": 0.316,
+        "64": 0.338,
+        "8": 0.307
+      },
+      "indexsel_compile_total_ms_by_batch": {
+        "128": 9.06,
+        "16": 5.17,
+        "256": 16.84,
+        "32": 4.9,
+        "64": 5.4,
+        "8": 4.97
       },
       "indexsel_compile_tput_at_large_batches": [
         11863,
@@ -258,6 +340,14 @@
         "8": 1.13
       },
       "indexsel_tail_ratio_max": 1.17,
+      "indexsel_total_ms_by_batch": {
+        "128": 8.98,
+        "16": 5.07,
+        "256": 16.72,
+        "32": 4.77,
+        "64": 5.27,
+        "8": 4.86
+      },
       "indexsel_tput_at_large_batches": [
         12152,
         14255,
@@ -386,6 +476,371 @@
       "p50_spread_pct": 0.68,
       "source": "benchmarks/results/rebuttal_bgem3_alloc/sweep_capacity_bgem3_alloc.csv"
     }
+  },
+  "churn": {
+    "batch_size": 32,
+    "by_path": {
+      "file": {
+        "1000": {
+          "achieved_admission_rate": 9.96,
+          "adapter_cache_gb": 1.57,
+          "batch_size": 32,
+          "delivered_throughput": 990,
+          "peak_gpu_mem_gb": 2.84,
+          "rate_attainment": 0.996,
+          "register_mean_ms": 11.9,
+          "register_p50_ms": 11.88,
+          "register_p95_ms": 12.04,
+          "registration_share_pct": 12.17,
+          "saturation_rate": 84.0,
+          "seeds": 3,
+          "serve_p50_ms": 27.43,
+          "serve_p99_ms": 27.71,
+          "sustainable_rate_at_1pct": 0.84,
+          "throughput_while_serving": 1155
+        },
+        "47000": {
+          "achieved_admission_rate": 9.96,
+          "adapter_cache_gb": 73.92,
+          "batch_size": 32,
+          "delivered_throughput": 967,
+          "peak_gpu_mem_gb": 76.16,
+          "rate_attainment": 0.996,
+          "register_mean_ms": 11.98,
+          "register_p50_ms": 11.96,
+          "register_p95_ms": 12.13,
+          "registration_share_pct": 12.36,
+          "saturation_rate": 83.5,
+          "seeds": 3,
+          "serve_p50_ms": 27.53,
+          "serve_p99_ms": 27.84,
+          "sustainable_rate_at_1pct": 0.83,
+          "throughput_while_serving": 1141
+        }
+      },
+      "file_pinned": {
+        "1000": {
+          "achieved_admission_rate": 9.97,
+          "adapter_cache_gb": 1.57,
+          "batch_size": 32,
+          "delivered_throughput": 1031,
+          "peak_gpu_mem_gb": 2.84,
+          "rate_attainment": 0.997,
+          "register_mean_ms": 7.38,
+          "register_p50_ms": 7.34,
+          "register_p95_ms": 7.58,
+          "registration_share_pct": 7.58,
+          "saturation_rate": 135.5,
+          "seeds": 3,
+          "serve_p50_ms": 27.5,
+          "serve_p99_ms": 29.27,
+          "sustainable_rate_at_1pct": 1.35,
+          "throughput_while_serving": 1145
+        },
+        "47000": {
+          "achieved_admission_rate": 9.96,
+          "adapter_cache_gb": 73.92,
+          "batch_size": 32,
+          "delivered_throughput": 994,
+          "peak_gpu_mem_gb": 76.16,
+          "rate_attainment": 0.997,
+          "register_mean_ms": 7.5,
+          "register_p50_ms": 7.43,
+          "register_p95_ms": 7.7,
+          "registration_share_pct": 7.78,
+          "saturation_rate": 133.3,
+          "seeds": 3,
+          "serve_p50_ms": 27.62,
+          "serve_p99_ms": 29.86,
+          "sustainable_rate_at_1pct": 1.33,
+          "throughput_while_serving": 1116
+        }
+      },
+      "synthetic": {
+        "1000": {
+          "achieved_admission_rate": 9.96,
+          "adapter_cache_gb": 1.57,
+          "batch_size": 32,
+          "delivered_throughput": 1104,
+          "peak_gpu_mem_gb": 2.84,
+          "rate_attainment": 0.996,
+          "register_mean_ms": 0.44,
+          "register_p50_ms": 0.44,
+          "register_p95_ms": 0.48,
+          "registration_share_pct": 0.48,
+          "saturation_rate": 2250.5,
+          "seeds": 3,
+          "serve_p50_ms": 27.52,
+          "serve_p99_ms": 28.14,
+          "sustainable_rate_at_1pct": 22.51,
+          "throughput_while_serving": 1143
+        },
+        "47000": {
+          "achieved_admission_rate": 9.96,
+          "adapter_cache_gb": 73.92,
+          "batch_size": 32,
+          "delivered_throughput": 1094,
+          "peak_gpu_mem_gb": 76.16,
+          "rate_attainment": 0.996,
+          "register_mean_ms": 0.44,
+          "register_p50_ms": 0.44,
+          "register_p95_ms": 0.46,
+          "registration_share_pct": 0.49,
+          "saturation_rate": 2267.2,
+          "seeds": 3,
+          "serve_p50_ms": 27.61,
+          "serve_p99_ms": 27.91,
+          "sustainable_rate_at_1pct": 22.67,
+          "throughput_while_serving": 1145
+        }
+      }
+    },
+    "file_ci95_ms": 0.09,
+    "file_drift_pct": 0.67,
+    "file_ms_large": 11.98,
+    "file_ms_small": 11.9,
+    "gpu": "NVIDIA A100-SXM4-80GB",
+    "head_install_ms": 0.02,
+    "head_pinned_copy_ms_range": [
+      0.0173,
+      0.0178
+    ],
+    "head_repeats": 3,
+    "head_synth_ms_range": [
+      0.019,
+      0.0194
+    ],
+    "host2_by_path": {
+      "file": {
+        "1000": {
+          "achieved_admission_rate": 9.96,
+          "adapter_cache_gb": 1.57,
+          "batch_size": 32,
+          "delivered_throughput": 846,
+          "peak_gpu_mem_gb": 2.84,
+          "rate_attainment": 0.996,
+          "register_mean_ms": 14.92,
+          "register_p50_ms": 14.87,
+          "register_p95_ms": 15.21,
+          "registration_share_pct": 15.13,
+          "saturation_rate": 67.0,
+          "seeds": 3,
+          "serve_p50_ms": 31.16,
+          "serve_p99_ms": 31.65,
+          "sustainable_rate_at_1pct": 0.67,
+          "throughput_while_serving": 1015
+        },
+        "47000": {
+          "achieved_admission_rate": 9.94,
+          "adapter_cache_gb": 73.92,
+          "batch_size": 32,
+          "delivered_throughput": 817,
+          "peak_gpu_mem_gb": 76.16,
+          "rate_attainment": 0.994,
+          "register_mean_ms": 15.02,
+          "register_p50_ms": 14.96,
+          "register_p95_ms": 15.35,
+          "registration_share_pct": 15.34,
+          "saturation_rate": 66.6,
+          "seeds": 3,
+          "serve_p50_ms": 31.28,
+          "serve_p99_ms": 33.01,
+          "sustainable_rate_at_1pct": 0.67,
+          "throughput_while_serving": 991
+        }
+      },
+      "synthetic": {
+        "1000": {
+          "achieved_admission_rate": 9.96,
+          "adapter_cache_gb": 1.57,
+          "batch_size": 32,
+          "delivered_throughput": 979,
+          "peak_gpu_mem_gb": 2.84,
+          "rate_attainment": 0.996,
+          "register_mean_ms": 0.43,
+          "register_p50_ms": 0.43,
+          "register_p95_ms": 0.51,
+          "registration_share_pct": 0.46,
+          "saturation_rate": 2298.6,
+          "seeds": 3,
+          "serve_p50_ms": 31.19,
+          "serve_p99_ms": 32.76,
+          "sustainable_rate_at_1pct": 22.99,
+          "throughput_while_serving": 1005
+        },
+        "47000": {
+          "achieved_admission_rate": 9.94,
+          "adapter_cache_gb": 73.92,
+          "batch_size": 32,
+          "delivered_throughput": 961,
+          "peak_gpu_mem_gb": 76.16,
+          "rate_attainment": 0.994,
+          "register_mean_ms": 0.47,
+          "register_p50_ms": 0.46,
+          "register_p95_ms": 0.53,
+          "registration_share_pct": 0.49,
+          "saturation_rate": 2146.6,
+          "seeds": 3,
+          "serve_p50_ms": 31.36,
+          "serve_p99_ms": 32.33,
+          "sustainable_rate_at_1pct": 21.47,
+          "throughput_while_serving": 998
+        }
+      }
+    },
+    "host2_file_drift_pct": 0.67,
+    "host2_file_ms_large": 15.02,
+    "host2_file_ms_small": 14.92,
+    "host2_slower_pct": 25.4,
+    "lora_rank": 8,
+    "mode": "blocking",
+    "model": "BAAI/bge-m3",
+    "note": "blocking arm only; see CAVEATS.md alongside the CSVs",
+    "pool_growth": 47,
+    "pool_large": 47000,
+    "pool_small": 1000,
+    "rate_sweep": {
+      "0.1": {
+        "1000": {
+          "achieved_admission_rate": 0.08,
+          "adapter_cache_gb": 1.57,
+          "batch_size": 32,
+          "delivered_throughput": 1121,
+          "peak_gpu_mem_gb": 2.84,
+          "rate_attainment": 0.833,
+          "register_mean_ms": 12.74,
+          "register_p50_ms": 12.14,
+          "register_p95_ms": 14.52,
+          "registration_share_pct": 0.11,
+          "saturation_rate": 78.6,
+          "seeds": 3,
+          "serve_p50_ms": 27.23,
+          "serve_p99_ms": 27.79,
+          "sustainable_rate_at_1pct": 0.79,
+          "throughput_while_serving": 1151
+        }
+      },
+      "1.0": {
+        "1000": {
+          "achieved_admission_rate": 0.98,
+          "adapter_cache_gb": 1.57,
+          "batch_size": 32,
+          "delivered_throughput": 1119,
+          "peak_gpu_mem_gb": 2.84,
+          "rate_attainment": 0.983,
+          "register_mean_ms": 11.94,
+          "register_p50_ms": 11.9,
+          "register_p95_ms": 12.08,
+          "registration_share_pct": 1.21,
+          "saturation_rate": 83.8,
+          "seeds": 3,
+          "serve_p50_ms": 27.25,
+          "serve_p99_ms": 27.66,
+          "sustainable_rate_at_1pct": 0.84,
+          "throughput_while_serving": 1162
+        },
+        "47000": {
+          "achieved_admission_rate": 0.98,
+          "adapter_cache_gb": 73.92,
+          "batch_size": 32,
+          "delivered_throughput": 1103,
+          "peak_gpu_mem_gb": 76.16,
+          "rate_attainment": 0.983,
+          "register_mean_ms": 14.84,
+          "register_p50_ms": 11.89,
+          "register_p95_ms": 12.16,
+          "registration_share_pct": 1.52,
+          "saturation_rate": 72.0,
+          "seeds": 3,
+          "serve_p50_ms": 27.01,
+          "serve_p99_ms": 27.4,
+          "sustainable_rate_at_1pct": 0.72,
+          "throughput_while_serving": 1163
+        }
+      },
+      "10.0": {
+        "1000": {
+          "achieved_admission_rate": 9.98,
+          "adapter_cache_gb": 1.57,
+          "batch_size": 32,
+          "delivered_throughput": 995,
+          "peak_gpu_mem_gb": 2.84,
+          "rate_attainment": 0.998,
+          "register_mean_ms": 11.77,
+          "register_p50_ms": 11.75,
+          "register_p95_ms": 11.95,
+          "registration_share_pct": 12.07,
+          "saturation_rate": 84.9,
+          "seeds": 3,
+          "serve_p50_ms": 27.29,
+          "serve_p99_ms": 27.97,
+          "sustainable_rate_at_1pct": 0.85,
+          "throughput_while_serving": 1160
+        },
+        "47000": {
+          "achieved_admission_rate": 9.98,
+          "adapter_cache_gb": 73.92,
+          "batch_size": 32,
+          "delivered_throughput": 984,
+          "peak_gpu_mem_gb": 76.16,
+          "rate_attainment": 0.998,
+          "register_mean_ms": 11.73,
+          "register_p50_ms": 11.71,
+          "register_p95_ms": 11.88,
+          "registration_share_pct": 12.15,
+          "saturation_rate": 85.2,
+          "seeds": 3,
+          "serve_p50_ms": 27.06,
+          "serve_p99_ms": 27.51,
+          "sustainable_rate_at_1pct": 0.85,
+          "throughput_while_serving": 1160
+        }
+      },
+      "100.0": {
+        "1000": {
+          "achieved_admission_rate": 84.86,
+          "adapter_cache_gb": 1.57,
+          "batch_size": 32,
+          "delivered_throughput": 18,
+          "peak_gpu_mem_gb": 2.84,
+          "rate_attainment": 0.849,
+          "register_mean_ms": 11.55,
+          "register_p50_ms": 11.52,
+          "register_p95_ms": 11.68,
+          "registration_share_pct": 98.16,
+          "saturation_rate": 86.6,
+          "seeds": 3,
+          "serve_p50_ms": 31.5,
+          "serve_p99_ms": 77.64,
+          "sustainable_rate_at_1pct": 0.87,
+          "throughput_while_serving": 987
+        }
+      }
+    },
+    "rate_sweep_quoted": [
+      "1.0",
+      "1.0",
+      "10.0",
+      "10.0"
+    ],
+    "register_p50_ms_quoted_range": [
+      11.71,
+      11.9
+    ],
+    "saturation_rate": 81.0,
+    "serve_p99_ms_quoted_range": [
+      27.4,
+      27.97
+    ],
+    "share_pct_at_10_per_s": [
+      12.07,
+      12.15
+    ],
+    "share_pct_at_1_per_s": [
+      1.21,
+      1.52
+    ],
+    "sustainable_rate_at_1pct": 0.81
   },
   "configs": {
     "bgem3_a100": {

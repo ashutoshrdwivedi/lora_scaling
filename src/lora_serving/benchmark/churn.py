@@ -1,12 +1,12 @@
-"""Adapter-registration churn microbenchmark (reviewer yeZ9, Q6).
+"""Adapter-registration churn microbenchmark.
 
-The question asked is whether the O(N^2)-vs-O(1) cold-start result translates
+The question is whether the O(N^2)-vs-O(1) cold-start result translates
 to production impact -- "what % of serving time is spent in adapter
 registration under realistic churn rates?".  Answering it needs three things
 the existing ``lora_serving.benchmark.run --churn`` path does not provide.
 
-**1. Registration has to be the production path.**  The number the rebuttal
-quotes today (0.29 ms/adapter) comes from ``adapter_load_total_s / N`` on the
+**1. Registration has to be the production path.**  The currently reported
+number (0.29 ms/adapter) comes from ``adapter_load_total_s / N`` on the
 startup preload, i.e. from :meth:`AdapterStore.load_synthetic` -- a
 ``torch.manual_seed`` + ``nn.init.normal_`` loop that generates random weights
 on the GPU with curand.  It reads no file and performs no host-to-device copy,
@@ -83,7 +83,7 @@ from lora_serving.weights.store import AdapterStore, LoraWeight
 DTYPE_MAP = {"fp16": torch.float16, "fp32": torch.float32, "bf16": torch.bfloat16}
 
 # Registration arms. "file" is the shipped path; the other two exist to explain
-# it -- "synthetic" reproduces the number the rebuttal currently quotes, and
+# it -- "synthetic" reproduces the currently reported number, and
 # "file_pinned" bounds how much of the file path is torch.load overhead versus
 # the host-to-device copy itself.
 REGISTRATION_PATHS = ("synthetic", "file", "file_pinned")
@@ -590,7 +590,7 @@ def summarize(cell: dict, batch_size: int, admission_rate: float) -> dict:
     and invites argument about what belongs in the denominator.  It is the
     sustainable admission rate: how many admissions per second fit inside a
     fixed fraction of serving wall-clock.  The share is still reported, because
-    it is the metric the reviewer named, but it is derived from the same two
+    it is the commonly requested metric, but it is derived from the same two
     measured quantities rather than being the primary claim.
     """
     serve = cell["serve_latencies"]

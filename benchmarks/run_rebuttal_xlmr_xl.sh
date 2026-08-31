@@ -1,5 +1,5 @@
 #!/bin/bash
-# Rebuttal pod A1 -- A100-80GB REQUIRED -- XLM-RoBERTa-XL scale row.
+# A100-80GB REQUIRED -- XLM-RoBERTa-XL scale row.
 #
 # Scale row: 3.48B params, d=2560, L=36 -- 6.1x bge-m3's 568M -- to show the
 # O(1)-in-N property holds on a much larger encoder.
@@ -36,14 +36,14 @@
 # DISK: the checkpoint is ~14 GB. Ensure the volume has headroom before
 # starting or the download dies mid-run (see the HF_HOME note below).
 #
-# Runtime ~5.7h (4.7h sweep + ~1h PEFT) -- the long pole among the rebuttal
+# Runtime ~5.7h (4.7h sweep + ~1h PEFT) -- the long pole among the generality
 # scripts. Extrapolated from measured A100 p50 at N=1000: 37.9 ms (B=8),
 # 136.7 ms (B=32), 584.1 ms (B=128), i.e. ~4.5-5.5x bge-m3's forward -- less
 # than the 9.4x a pure FLOP ratio predicts, since the wider model utilises the
 # A100 better. Note ~1.8h of that total is run_single_config reloading the 7 GB
 # base model once per cell (190 times); caching it across configs would be the
 # single biggest speedup available here.
-# Start this one FIRST. Independent of the other rebuttal scripts.
+# Start this one FIRST. Independent of the other generality scripts.
 set -u
 export HOME=/root
 export PATH=$HOME/.local/bin:$PATH

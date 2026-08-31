@@ -59,6 +59,20 @@ def num(x):
     return float(x) if x not in ("", None) else None
 
 
+def _gib(gb: float) -> float:
+    """Decimal GB -> binary GiB. Both units appear in this file; neither is
+    allowed to borrow the other's name."""
+    return gb * 1e9 / 1024**3
+
+
+def _gpu_total_gb(env_path) -> float | None:
+    """Card capacity as the driver reports it, from a run's env_metadata.csv."""
+    if env_path is None or not env_path.exists():
+        return None
+    rows = read_csv(env_path)
+    return num(rows[0].get("gpu_total_mem_gb")) if rows else None
+
+
 # Each config: sweep CSV, capacity CSV(s), PEFT-mixed CSV, metadata CSV.
 #
 # ONE FILE PER ARTIFACT. Every path below is written by the matching
@@ -81,6 +95,7 @@ CONFIGS = {
         capacity=[RES / "sweep_capacity.csv"],
         peft_mixed=RES / "peft_mixed_sxm80.csv",
         meta=RES / "model_metadata.csv",
+        env=RES / "env_metadata.csv",
         targets="query+value",
     ),
     "electra": dict(
@@ -90,6 +105,7 @@ CONFIGS = {
         capacity=[RES / "rebuttal_electra/sweep_electra_capacity.csv"],
         peft_mixed=RES / "rebuttal_electra/peft_mixed_electra.csv",
         meta=RES / "rebuttal_electra/model_metadata.csv",
+        env=RES / "rebuttal_electra/env_metadata.csv",
         targets="query+value",
     ),
     "deberta": dict(
@@ -99,6 +115,7 @@ CONFIGS = {
         capacity=[RES / "rebuttal_deberta/sweep_deberta_capacity.csv"],
         peft_mixed=RES / "rebuttal_deberta/peft_mixed_deberta.csv",
         meta=RES / "rebuttal_deberta/model_metadata.csv",
+        env=RES / "rebuttal_deberta/env_metadata.csv",
         targets="value",
     ),
     "xlmr_xl": dict(
@@ -108,6 +125,7 @@ CONFIGS = {
         capacity=[RES / "rebuttal_xlmr_xl/sweep_xlmrxl_capacity.csv"],
         peft_mixed=RES / "rebuttal_xlmr_xl/peft_mixed_xlmrxl.csv",
         meta=RES / "rebuttal_xlmr_xl/model_metadata.csv",
+        env=RES / "rebuttal_xlmr_xl/env_metadata.csv",
         targets="query+value",
     ),
     "l40s": dict(
@@ -117,6 +135,7 @@ CONFIGS = {
         capacity=[RES / "rebuttal_l40s/sweep_capacity_l40s.csv"],
         peft_mixed=RES / "rebuttal_l40s/peft_mixed_l40s.csv",
         meta=RES / "rebuttal_l40s/model_metadata.csv",
+        env=RES / "rebuttal_l40s/env_metadata.csv",
         targets="query+value",
     ),
 }
@@ -358,9 +377,28 @@ def analyse_config(cfg: dict) -> dict:
         # silently mixed (1.57 MB == 1.50 MiB for a 24x1024 query+value pair).
         out["mb_per_adapter_r8"] = round(b8 / 1e6, 2)
         out["mib_per_adapter_r8"] = round(b8 / 1024**2, 2)
-        out["store_gb_at_ceiling"] = (
-            round(b8 * out["ceiling_n"] / 1024**3, 1) if "ceiling_n" in out else None
-        )
+        # Two units, never one. `_gb` is decimal (1e9), `_gib` binary (2^30);
+        # nvidia-smi and torch report decimal, so a GiB value wearing a GB
+        # label makes the memory budget stop adding up (68.8 + 1.14 != 76.2,
+        # while 73.9 + 1.14 ~= 76.2 once both sides are decimal).
+        out["base_fp16_gib"] = round(int(meta["total_params"]) * 2 / 1024**3, 2)
+        if "ceiling_n" in out:
+            out["store_gb_at_ceiling"] = round(b8 * out["ceiling_n"] / 1e9, 1)
+            out["store_gib_at_ceiling"] = round(b8 * out["ceiling_n"] / 1024**3, 1)
+        else:
+            out["store_gb_at_ceiling"] = None
+            out["store_gib_at_ceiling"] = None
+        # Card capacity as the driver reports it, and what the tenant ceiling
+        # leaves unused. Headroom is an upper bound: it is measured at the
+        # largest pool that ran, and the next probe point OOM'd.
+        total_gb = _gpu_total_gb(cfg.get("env"))
+        if total_gb:
+            out["gpu_total_gb"] = round(total_gb, 1)
+            out["gpu_total_gib"] = round(_gib(total_gb), 1)
+            if out.get("ceiling_peak_mem_gb"):
+                peak_gib = _gib(out["ceiling_peak_mem_gb"])
+                out["ceiling_peak_mem_gib"] = round(peak_gib, 1)
+                out["headroom_upper_bound_gib"] = round(_gib(total_gb) - peak_gib, 1)
         # Analytic FLOP ratio bounding what a free LoRA kernel could recover.
         out["flop_ratio_3d_over_r"] = int(3 * out["hidden_size"] / BASE_RANK)
         out["max_recoverable_flop_pct"] = round(100.0 / out["flop_ratio_3d_over_r"], 2)
@@ -447,6 +485,17 @@ def analyse_assembly(path: Path) -> dict:
         out[f"{variant}_tput_at_large_batches"] = [
             int(round(tput[b])) for b in batches if b >= 64
         ]
+    # Per-batch measured latencies, for the Appendix table (build_numbers.py
+    # renders table_assembly.tex from these rather than back-deriving ms from
+    # the rounded throughputs above).
+    for variant in ("baseline", "indexsel", "indexsel_compile"):
+        out[f"{variant}_total_ms_by_batch"] = {
+            str(b): round(g(b, variant, "total_mean_ms"), 2) for b in batches
+        }
+        out[f"{variant}_assemble_ms_by_batch"] = {
+            str(b): round(g(b, variant, "assemble_mean_ms"), 3) for b in batches
+        }
+
     out["speedup_by_batch"] = {
         str(b): round(g(b, "baseline", "total_mean_ms") / g(b, "indexsel", "total_mean_ms"), 2)
         for b in batches
@@ -608,6 +657,274 @@ def analyse_mixed_rank(path: Path) -> dict:
     return out
 
 
+# ------------------------------------------------------- registration churn
+
+CHURN_DIR = RES / "churn_registration_a100"
+
+# Only the blocking arm is quotable as production behaviour: deploy/server/
+# reload.py takes the same inference lock the serving path holds before it
+# invokes the reload callback, so registration is serialised against inference
+# in the shipped system. The background arm bounds what an overlapped design
+# could buy, and at what tail cost; see CAVEATS.md in the results directory.
+CHURN_MODE = "blocking"
+
+
+def _t95(n: int) -> float:
+    """Two-sided 95% t multiplier for n observations (n-1 df), n <= 10."""
+    return {2: 12.706, 3: 4.303, 4: 3.182, 5: 2.776, 6: 2.571}.get(n, 1.96)
+
+
+def _churn_group(rows: list[dict], keys: tuple[str, ...]) -> dict:
+    out: dict = {}
+    for r in rows:
+        if r["churn_mode"] != CHURN_MODE:
+            continue
+        out.setdefault(tuple(r[k] for k in keys), []).append(r)
+    return out
+
+
+def _churn_cell(rows: list[dict]) -> dict:
+    """One (rate, N) cell, averaged over seeds.
+
+    Registration cost is reported as the within-run median (replace_p50_ms),
+    not the mean. One seed of the 1 update/s ceiling cell pays a single cold
+    first-touch registration that lifts that run's *mean* to 20.7 ms while its
+    median stays at 11.8 ms; a mean over means would report that one stall as
+    if it were the typical cost. The stall is not hidden -- replace_p95_ms
+    carries it -- and the paper reports both columns.
+    """
+    f = lambda c: statistics.fmean(float(x[c]) for x in rows)
+
+    def first(*names):
+        """First column present. The corrected harness renamed two columns
+        after the primary CSVs were written, so both schemas are in the tree."""
+        for n in names:
+            if n in rows[0]:
+                return f(n)
+        raise KeyError(names)
+
+    return {
+        "seeds": len(rows),
+        "batch_size": int(rows[0]["batch_size"]),
+        # share of pod wall-clock capacity spent registering rather than
+        # serving -- a ratio of accumulated times, NOT a per-request mean.
+        "registration_share_pct": round(f("registration_share_pct"), 2),
+        "register_p50_ms": round(f("replace_p50_ms"), 2),
+        "register_p95_ms": round(f("replace_p95_ms"), 2),
+        "register_mean_ms": round(f("replace_mean_ms"), 2),
+        "serve_p50_ms": round(f("serve_p50_ms"), 2),
+        "serve_p99_ms": round(f("serve_p99_ms"), 2),
+        # serve_throughput_samples_sec excludes the intervals the loop spent
+        # registering, so under blocking churn it overstates what the pod
+        # delivers. Recompute the honest denominator: served / wall clock.
+        "throughput_while_serving": int(round(first(
+            "serve_throughput_samples_sec", "serve_throughput_while_serving"))),
+        "delivered_throughput": int(round(statistics.fmean(
+            float(x["batches_served"]) * int(x["batch_size"]) / float(x["wall_s"])
+            for x in rows))),
+        "achieved_admission_rate": round(f("achieved_admission_rate"), 2),
+        "rate_attainment": round(f("rate_attainment"), 3),
+        "sustainable_rate_at_1pct": round(f("sustainable_rate_at_1pct"), 2),
+        "saturation_rate": round(f("saturation_rate"), 1),
+        "peak_gpu_mem_gb": round(f("peak_gpu_mem_gb"), 2),
+        "adapter_cache_gb": round(f("adapter_cache_gb"), 2),
+    }
+
+
+def _head_install_ms() -> dict:
+    """Classification-head install cost, from the host-2 diagnostic run."""
+    txt = (CHURN_DIR / "host2_replication" / "diag_breakdown.txt").read_text()
+    synth, pinned = [], []
+    for line in txt.splitlines():
+        if "on-device head synthesis" in line:
+            synth.append(float(line.split()[-2]))
+        elif "pinned head copy" in line:
+            pinned.append(float(line.split()[-2]))
+    return {
+        "head_synth_ms_range": [min(synth), max(synth)],
+        "head_pinned_copy_ms_range": [min(pinned), max(pinned)],
+        "head_install_ms": round(statistics.fmean(pinned), 2),
+        "head_repeats": len(pinned),
+    }
+
+
+def analyse_churn() -> dict:
+    """Adapter registration measured while the same process keeps serving.
+
+    Answers "what does a live adapter update cost a serving pod, and does that
+    cost grow with the resident pool?" The registration path is the production
+    AdapterStore.load_from_file: adapter file on disk -> GPU weights.
+    """
+    paths = read_csv(CHURN_DIR / "churn_registration_paths.csv")
+    rate = read_csv(CHURN_DIR / "churn_rate_sweep.csv")
+    ceil = read_csv(CHURN_DIR / "churn_rate_sweep_ceiling.csv")
+    host2 = read_csv(CHURN_DIR / "host2_replication" / "host2_registration_paths.csv")
+
+    out: dict = {
+        "model": paths[0]["model"],
+        "gpu": "NVIDIA A100-SXM4-80GB",
+        "mode": CHURN_MODE,
+        "batch_size": int(paths[0]["batch_size"]),
+        "lora_rank": int(paths[0]["lora_rank"]),
+        "note": "blocking arm only; see CAVEATS.md alongside the CSVs",
+    }
+    out.update(_head_install_ms())
+
+    # ---- registration cost by path, at the two pool sizes
+    by_path: dict = {}
+    for (path, resident), rows in _churn_group(paths, ("registration_path", "resident")).items():
+        by_path.setdefault(path, {})[resident] = _churn_cell(rows)
+    out["by_path"] = by_path
+
+    # ---- the O(1)-in-N claim, on the production file path
+    small, big = "1000", "47000"
+    f_small, f_big = by_path["file"][small], by_path["file"][big]
+    out["pool_small"] = int(small)
+    out["pool_large"] = int(big)
+    out["pool_growth"] = int(big) // int(small)
+    out["file_ms_small"] = f_small["register_mean_ms"]
+    out["file_ms_large"] = f_big["register_mean_ms"]
+    out["file_drift_pct"] = round(
+        100.0 * (f_big["register_mean_ms"] - f_small["register_mean_ms"])
+        / f_small["register_mean_ms"], 2)
+
+    # 95% CI half-width on each cell's seed mean; quote the wider of the two.
+    cis = []
+    for resident in (small, big):
+        vals = [float(r["replace_mean_ms"]) for r in paths
+                if r["churn_mode"] == CHURN_MODE and r["registration_path"] == "file"
+                and r["resident"] == resident]
+        cis.append(_t95(len(vals)) * statistics.stdev(vals) / len(vals) ** 0.5)
+    out["file_ci95_ms"] = round(max(cis), 2)
+
+    # ---- second host: the scaling replicates, the constant does not
+    h2: dict = {}
+    for (path, resident), rows in _churn_group(host2, ("registration_path", "resident")).items():
+        h2.setdefault(path, {})[resident] = _churn_cell(rows)
+    out["host2_by_path"] = h2
+    out["host2_file_ms_small"] = h2["file"][small]["register_mean_ms"]
+    out["host2_file_ms_large"] = h2["file"][big]["register_mean_ms"]
+    out["host2_file_drift_pct"] = round(
+        100.0 * (h2["file"][big]["register_mean_ms"] - h2["file"][small]["register_mean_ms"])
+        / h2["file"][small]["register_mean_ms"], 2)
+    out["host2_slower_pct"] = round(
+        100.0 * (h2["file"][small]["register_mean_ms"] - f_small["register_mean_ms"])
+        / f_small["register_mean_ms"], 1)
+
+    # ---- admission-rate sweep: what churn costs a pod's serving capacity
+    sweep: dict = {}
+    for (r_target, resident), rows in _churn_group(
+            rate + ceil, ("target_admission_rate", "resident")).items():
+        sweep.setdefault(str(float(r_target)), {})[resident] = _churn_cell(rows)
+    out["rate_sweep"] = sweep
+
+    quoted = [(r, n) for r in ("1.0", "10.0") for n in (small, big)]
+    out["rate_sweep_quoted"] = [r for r, _ in quoted]
+    out["register_p50_ms_quoted_range"] = [
+        min(sweep[r][n]["register_p50_ms"] for r, n in quoted),
+        max(sweep[r][n]["register_p50_ms"] for r, n in quoted),
+    ]
+    out["serve_p99_ms_quoted_range"] = [
+        min(sweep[r][n]["serve_p99_ms"] for r, n in quoted),
+        max(sweep[r][n]["serve_p99_ms"] for r, n in quoted),
+    ]
+    out["share_pct_at_1_per_s"] = [sweep["1.0"][n]["registration_share_pct"] for n in (small, big)]
+    out["share_pct_at_10_per_s"] = [sweep["10.0"][n]["registration_share_pct"] for n in (small, big)]
+    out["sustainable_rate_at_1pct"] = round(statistics.fmean(
+        sweep[r][n]["sustainable_rate_at_1pct"] for r, n in quoted), 2)
+    out["saturation_rate"] = round(statistics.fmean(
+        sweep[r][n]["saturation_rate"] for r, n in quoted), 0)
+    return out
+
+
+# ------------------------------------------------- allocator capacity probe
+
+ALLOC_PROBE = dict(
+    key="bgem3_a100_alloc",
+    model="BAAI/bge-m3",
+    sweep=RES / "rebuttal_bgem3_alloc/sweep_capacity_bgem3_alloc.csv",
+    meta=RES / "rebuttal_bgem3_alloc/model_metadata.csv",
+    env=RES / "rebuttal_bgem3_alloc/env_metadata.csv",
+)
+
+
+def analyse_capacity_probe(cfg: dict) -> dict:
+    """Where the tenant ceiling actually sits, per CUDA allocator setting.
+
+    Run as two arms in one CSV keyed by `alloc_conf`, so the only difference
+    between them is PYTORCH_CUDA_ALLOC_CONF. Each arm walks N upward until the
+    allocation fails; the OOM rows are kept (status="oom") so the file records
+    that the probe bracketed the ceiling rather than merely stopping.
+    """
+    rows_all = read_csv(cfg["sweep"], measured_only=False)
+    meta = {r["key"]: r["value"] for r in read_csv(cfg["meta"]) if r["model"] == cfg["model"]}
+    b8 = int(meta["lora_bytes_fp16_r8"])
+    total_gb = _gpu_total_gb(cfg["env"])
+
+    out: dict = {
+        "model": cfg["model"],
+        "source": str(cfg["sweep"].relative_to(ROOT)),
+        "analytic_bytes_per_adapter": b8,
+        "base_fp16_gb": round(int(meta["total_params"]) * 2 / 1e9, 3),
+        "base_fp16_gib": round(_gib(int(meta["total_params"]) * 2 / 1e9), 2),
+        "batch_size": int(rows_all[0]["batch_size"]),
+        "lora_rank": int(rows_all[0]["lora_rank"]),
+        "gpu_total_gb": round(total_gb, 1),
+        "gpu_total_gib": round(_gib(total_gb), 1),
+        "arms": {},
+    }
+
+    peaks: dict[int, float] = {}
+    p50s: list[float] = []
+    for conf in sorted({r["alloc_conf"] for r in rows_all}):
+        rows = [r for r in rows_all if r["alloc_conf"] == conf]
+        ok = sorted(int(r["num_adapters"]) for r in rows if r.get("status", "ok") == "ok")
+        oom = sorted(int(r["num_adapters"]) for r in rows if r.get("status") == "oom")
+        ceiling = max(ok)
+        by_n = {int(r["num_adapters"]): r for r in rows if r.get("status", "ok") == "ok"}
+        peak = {n: round(num(by_n[n]["peak_gpu_mem_gb"]), 3) for n in ok}
+        peaks.update(peak)
+        p50 = {n: round(num(by_n[n]["p50_ms"]), 2) for n in ok}
+        p50s += list(p50.values())
+        out["arms"][conf] = {
+            # The claim is only as good as the bracket: the arm must have an
+            # OOM strictly above its best success, or "ceiling" just means
+            # "where we stopped asking".
+            "bracketed": bool(oom) and min(oom) > ceiling,
+            "ceiling_n": ceiling,
+            "n_ok": ok,
+            "n_oom": oom,
+            "p50_ms": {str(n): v for n, v in p50.items()},
+            "peak_gpu_mem_gb": {str(n): v for n, v in peak.items()},
+            "peak_at_ceiling_gb": peak[ceiling],
+            "peak_at_ceiling_gib": round(_gib(peak[ceiling]), 1),
+            "store_gb_at_ceiling": round(b8 * ceiling / 1e9, 1),
+            "store_gib_at_ceiling": round(b8 * ceiling / 1024**3, 1),
+        }
+
+    # Latency must not move as the pool fills; if it does, the ceiling is not
+    # the only thing the allocator setting changed.
+    out["p50_range_ms"] = [min(p50s), max(p50s)]
+    out["p50_spread_pct"] = round(100.0 * (max(p50s) - min(p50s)) / min(p50s), 2)
+
+    # Peak memory vs N is a straight line; the slope is the real per-adapter
+    # cost (analytic weights plus allocator overhead) and the intercept is the
+    # tenant-independent base. Both arms share the same physics, so the fit
+    # runs over the union of measured pool sizes.
+    ns = sorted(peaks)
+    slope, intercept = statistics.linear_regression(ns, [peaks[n] * 1e9 for n in ns])
+    resid = [abs(peaks[n] * 1e9 - (slope * n + intercept)) for n in ns]
+    out["fit_n_points"] = len(ns)
+    out["fit_bytes_per_adapter"] = round(slope)
+    out["fit_fixed_bytes"] = round(intercept)
+    out["fit_fixed_overhead_gb"] = round(
+        (intercept - int(meta["total_params"]) * 2) / 1e9, 3)
+    out["fit_overhead_bytes_per_adapter"] = round(slope) - b8
+    out["fit_overhead_pct_per_adapter"] = round(100.0 * (slope - b8) / b8, 2)
+    out["fit_max_abs_resid_mb"] = round(max(resid) / 1e6, 2)
+    return out
+
+
 def analyse_breakdown() -> dict:
     d = read_json(RES / "forward_breakdown.json")
     return {
@@ -629,6 +946,10 @@ def analyse_breakdown() -> dict:
 
 def main() -> None:
     reg: dict = {"configs": {}, "assembly": {}, "breakdown": analyse_breakdown()}
+    if (CHURN_DIR / "churn_registration_paths.csv").exists():
+        reg["churn"] = analyse_churn()
+    if ALLOC_PROBE["sweep"].exists():
+        reg["capacity_probe"] = {ALLOC_PROBE["key"]: analyse_capacity_probe(ALLOC_PROBE)}
     for key, cfg in CONFIGS.items():
         reg["configs"][key] = analyse_config(cfg)
 
@@ -701,6 +1022,7 @@ def main() -> None:
         "ceiling_r32": b["ceiling_n"] // 4,
         # adapter store as a share of the A100's 80 GB at the ceiling
         "store_gb_at_ceiling": b["store_gb_at_ceiling"],
+        "store_gib_at_ceiling": b["store_gib_at_ceiling"],
         # The at-ceiling column is anchored at N=1,000, so the multiplier the
         # "flat p50" claim has to survive is ceiling/1000, not ceiling/100.
         "pool_growth_vs_n1000_max": round(max(c["ceiling_n"] for c in cs.values()) / 1000),

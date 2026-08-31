@@ -219,3 +219,60 @@
   pages     = {188--197},
   abstract  = {Business-specific Frequently Asked Questions (FAQ) retrieval in task-oriented dialog systems poses unique challenges vis {\`a} vis community based FAQs. Each FAQ question represents an intent which is usually an umbrella term for many related user queries. We evaluate performance for such Business FAQs both with standard FAQ retrieval techniques using query-Question (q-Q) similarity and few-shot intent detection techniques. Implementing a real-world solution for FAQ retrieval in order to support multiple tenants (FAQ sets) entails optimizing speed, accuracy and cost. We propose a novel approach to scale multi-tenant FAQ applications in real-world context by contrastive fine-tuning of the last layer in sentence Bi-Encoders along with tenant-specific weight switching.}
 }
+
+% ------------------------------------------------------------
+% Encoders used in the generalization sweep (Sec 4.5).
+% Verified 2026-08-26: ELECTRA + DeBERTa via DBLP, XLM-R-XL via ACL Anthology.
+% ------------------------------------------------------------
+
+@inproceedings{clark2020electra,
+  title = {{ELECTRA}: Pre-training Text Encoders as Discriminators Rather Than Generators},
+  author = {Kevin Clark and Minh-Thang Luong and Quoc V. Le and Christopher D. Manning},
+  booktitle = {ICLR},
+  year = {2020},
+  url = {https://openreview.net/pdf?id=r1xMH1BtvB}
+}
+
+@inproceedings{he2021deberta,
+  title     = {{DeBERTa}: Decoding-enhanced {BERT} with Disentangled Attention},
+  author    = {He, Pengcheng and Liu, Xiaodong and Gao, Jianfeng and Chen, Weizhu},
+  booktitle = {International Conference on Learning Representations},
+  year      = {2021},
+  url       = {https://openreview.net/forum?id=XPZIaotutsD}
+}
+
+@inproceedings{goyal-etal-2021-larger,
+    title = "Larger-Scale Transformers for Multilingual Masked Language Modeling",
+    author = "Goyal, Naman  and
+      Du, Jingfei  and
+      Ott, Myle  and
+      Anantharaman, Giri  and
+      Conneau, Alexis",
+    editor = "Rogers, Anna  and
+      Calixto, Iacer  and
+      Vuli{\'c}, Ivan  and
+      Saphra, Naomi  and
+      Kassner, Nora  and
+      Camburu, Oana-Maria  and
+      Bansal, Trapit  and
+      Shwartz, Vered",
+    booktitle = "Proceedings of the 6th Workshop on Representation Learning for NLP (RepL4NLP-2021)",
+    month = aug,
+    year = "2021",
+    address = "Online",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2021.repl4nlp-1.4/",
+    doi = "10.18653/v1/2021.repl4nlp-1.4",
+    pages = "29--33",
+    abstract = "Recent work has demonstrated the effectiveness of cross-lingual language model pretraining for cross-lingual understanding. In this study, we present the results of two larger multilingual masked language models, with 3.5B and 10.7B parameters. Our two new models dubbed and outperform XLM-R by 1.8{\%} and 2.4{\%} average accuracy on XNLI. Our model also outperforms the RoBERTa-Large model on several English tasks of the GLUE benchmark by 0.3{\%} on average while handling 99 more languages. This suggests larger capacity models for language understanding may obtain strong performance on high-resource languages while greatly improving low-resource languages. We make our code and models publicly available."
+}
+
+@misc{sanh2020distilbertdistilledversionbert,
+      title={DistilBERT, a distilled version of BERT: smaller, faster, cheaper and lighter},
+      author={Victor Sanh and Lysandre Debut and Julien Chaumond and Thomas Wolf},
+      year={2020},
+      eprint={1910.01108},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/1910.01108},
+}

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Registration-churn measurement for reviewer yeZ9's Q6.
+# Registration-churn measurement.
 #
 # Answers "what % of serving time is spent in adapter registration under
 # realistic churn rates" with the registration path the server actually uses
@@ -26,7 +26,7 @@ COMMON="--engine hf --model $M --dtype fp16 --lora-rank 8 --seq-len 128 \
 
 # --- [1/4] Registration cost by path, at moderate occupancy and at the ceiling.
 # The headline measurement. The three arms exist to explain each other: the
-# synthetic arm reproduces the number the rebuttal currently quotes, so the gap
+# synthetic arm reproduces the currently reported number, so the gap
 # between it and the file arm is reported rather than silently inherited.
 # Run at 10 admissions/s for 30 s => ~300 admissions per cell, enough for a
 # stable per-admission mean.

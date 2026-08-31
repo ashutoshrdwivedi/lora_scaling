@@ -355,7 +355,7 @@ def main():
     parser.add_argument("--seq-len", type=int, default=128)
     parser.add_argument("--num-labels", type=int, default=10)
     # 50/200 is the house protocol, shared with lora_serving.benchmark.run and
-    # every rebuttal_* sweep, so assembly numbers compose with the model sweeps.
+    # every generality sweep, so assembly numbers compose with the model sweeps.
     parser.add_argument("--warmup", type=int, default=50)
     parser.add_argument("--iters", type=int, default=200)
     parser.add_argument(
