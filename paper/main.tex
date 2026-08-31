@@ -803,7 +803,7 @@ Workloads whose adapter population exceeds a single GPU's capacity require
 an LRU eviction policy with CPU offload, or paged adapter storage as in
 S-LoRA's unified paging \cite{sheng2024slora}; either is a natural extension.
 
-\paragraph{Choice of batch assembler.}
+\paragraph{Batch assembler tradeoff.}
 The two assemblers trade dynamism against throughput. The default
 \texttt{BatchAssembler} keeps adapters in a per-adapter store, so a tenant can
 be admitted or evicted without touching the others, but its CPU-side gather
