@@ -135,7 +135,7 @@ for autoregressive decoder workloads, where custom CUDA kernels and
 paged-memory pools optimize memory-bound, token-by-token generation
 over a KV cache.
 Meanwhile, on the encoder side, runtimes do not support mixed-tenant
-LoRA serving: vLLM lacks a runtime LoRA path for encoder models, TEI
+LoRA serving: vLLM lacks a runtime LoRA path for encoder models, TEI \cite{huggingface2023tei}
 serves encoders without adapters, and PEFT's~\cite{mangrulkar2022peft} mixed-batch API is
 restricted to sequential adapter sub-batching and cannot route
 per-tenant heads (\S\ref{sec:relwork}).
