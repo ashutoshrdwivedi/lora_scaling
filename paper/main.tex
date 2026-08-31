@@ -768,13 +768,9 @@ each validated by an OOM at the subsequent probe point (Finding~4).
 Finally, throughput remains multi-fold above PEFT's mixed-batch API in every case (Finding~7).
 Findings 2, 5, and 6 concern per-batch execution rather than pool size, so tenant scaling does not affect them.
 
-
-These ceilings highlight that model size constrains resident tenant capacity rather than
-latency: XLM-RoBERTa-XL sustains the smallest pool among the evaluated models.
-This confirms that VRAM is the binding constraint on the number of adapters,
-with no adverse impact on inference speed on large backbones. Furthermore, the minor \emph{Spread} across sweeps
-in Table~\ref{tab:generalization} reflects baseline measurement noise rather than systematic latency
-degradation.
+This shows that latency generalizes across models and hardware; capacity is set by available memory.
+XLM-RoBERTa-XL, the largest model tested, sustains the smallest pool, and bge-m3 fits 28,000 adapters
+on the L40S against 47,000 on the A100. The Spread column in Table 4 reflects seed noise rather than systematic drift.
 
 % =============================================================================
 \section{Conclusion}
