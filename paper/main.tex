@@ -736,10 +736,11 @@ we replicate the sweep protocol of \S\ref{sec:setup} (\SweepNumSeeds{} seeds,
 \HeadlineDtype{}, sequence length 128) on \GenNumNewEncoders{} additional encoders and a
 second GPU class:
 ELECTRA-large \cite{clark2020electra} (replaced-token detection);
-DeBERTa-v2-xlarge \cite{he2021deberta} (disentangled attention)\footnote{DeBERTa-v2 uses the query projection for batch-shared position
-  bias too. Our sweep targets value projections (\GenDebertaTargets) only, to
-  maintain equivalence with PEFT. Since fewer modules are wrapped, PEFT
-  incurs less mixed-batch overhead, making our reported speedup conservative.};
+DeBERTa-v2-xlarge \cite{he2021deberta} (disentangled attention)\footnote{Adapters target value projections only,
+  as DeBERTa-v2 shares the query projection with
+  batch-shared relative-position embeddings. Since fewer modules are wrapped,
+  PEFT incurs less mixed-batch overhead, making our reported speedup
+  conservative.};
 XLM-RoBERTa-XL \cite{goyal-etal-2021-larger} (\GenXlmrLayers{} layers, $d{=}\GenXlmrHidden$);
 and \texttt{bge-m3} on an L40S-48GB.
 
