@@ -604,8 +604,9 @@ custom kernel.
 
 Because assembly's share grows as the encoder gets cheaper, we
 construct an adversarial case: a high-QPS regime on a small encoder,
-\MiniLmName{}, whose forward is short enough that CPU-side assembly dominates
-each iteration.
+\MiniLmName{} \cite{reimers2019sentencebert}, whose forward is
+short enough that
+CPU-side assembly dominates each iteration.
 There assembly consumes
 \MiniLmBaselineShareLoPct--\MiniLmBaselineShareHiPct\% of latency at
 $\mathcal{B} \geq 64$ and caps single-stream throughput at
